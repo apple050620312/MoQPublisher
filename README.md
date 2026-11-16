@@ -103,7 +103,7 @@ Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease
 
 The app checks `https://api.github.com/repos/apple050620312/MoQPublisher/releases/latest` at startup and when returning to the foreground. A newer compact APK can be downloaded from Settings after broadcasting stops. The updater only accepts the versioned `MoQPublisher-<version>-compact.apk` asset from this repository, follows HTTPS GitHub asset redirects, checks the declared size and SHA-256 digest, then hands the verified file to Android's package installer. It never replaces an APK silently or while a broadcast is active.
 
-Push a tag matching `versionName`, such as `v1.0.16`, to trigger `.github/workflows/release.yml`. The workflow runs the compact build and JVM tests, publishes the APK and its `.sha256` sidecar as a GitHub Release, and generates release notes.
+Run `./publish-release.ps1` on the development computer after committing and pushing source changes. The script runs the compact build and JVM tests locally, creates `MoQPublisher-<versionName>-compact.apk` and its `.sha256` sidecar, pushes the matching `v<versionName>` tag, and uploads both files with `gh release create`. This avoids waiting for a GitHub Actions runner.
 
 `AudioSettings.kt` processes interleaved signed 16-bit PCM before Opus encoding. Economy uses 32/64 Kbps for mono/stereo, Standard 64/128, High 96/192 and Maximum 128/256. Standard preserves the previous bitrate. Capture layout, frame size, encoder channels and video bandwidth reservation use the actual selected format and quality. Unsupported stereo retries mono, selects the corresponding mono bitrate and shows a localized notice. Gain is applied with saturation; 100% preserves every input sample.
 

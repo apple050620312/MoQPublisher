@@ -12,7 +12,7 @@
 ## 發佈規則
 
 - 主程式版本使用 `v<versionName>` Git tag，例如 `v1.0.16`。
-- `.github/workflows/release.yml` 會在 tag push 後建置 compact APK、執行 JVM 測試、產生 SHA-256 sidecar，並建立 GitHub Release。
+- `publish-release.ps1` 在本機建置 compact APK、執行 JVM 測試、產生 SHA-256 sidecar，並用 `gh release create` 建立 GitHub Release；不要依賴 GitHub Actions runner。
 - Release APK 檔名固定為 `MoQPublisher-<versionName>-compact.apk`；App 內更新器只接受此命名、官方 repository 路徑與 SHA-256 驗證通過的檔案。
 - compact APK 必須使用可覆蓋既有安裝的同一簽署金鑰，否則 Android 會拒絕更新。
 
@@ -22,5 +22,5 @@
 
 - 將 adaptive launcher artwork 縮入圓形遮罩的安全區，保留箭頭與 MoQ 字樣完整。
 - 新增 GitHub Releases 主程式更新器：啟動與回到前景時檢查、使用者停止直播後下載、驗證 SHA-256，最後交給 Android Package Installer 安裝。
-- 新增 GitHub Actions release workflow、更新資源、FileProvider 路徑與更新器單元測試。
+- 新增本機 `publish-release.ps1` 發佈腳本、更新資源、FileProvider 路徑與更新器單元測試。
 - 驗證：`assembleCompact`、`testDebugUnitTest`；尚未在實機確認不同廠牌 launcher 的實際圓形遮罩與安裝提示。
