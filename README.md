@@ -95,9 +95,15 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.15)
+## APK variants (v1.0.16)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. Compact uses the existing development certificate for in-place sideload updates. The release Gradle task remains unsigned; the delivered release APK is signed with the same development certificate as the other two APKs. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
+
+## Main app updates
+
+The app checks `https://api.github.com/repos/apple050620312/MoQPublisher/releases/latest` at startup and when returning to the foreground. A newer compact APK can be downloaded from Settings after broadcasting stops. The updater only accepts the versioned `MoQPublisher-<version>-compact.apk` asset from this repository, follows HTTPS GitHub asset redirects, checks the declared size and SHA-256 digest, then hands the verified file to Android's package installer. It never replaces an APK silently or while a broadcast is active.
+
+Push a tag matching `versionName`, such as `v1.0.16`, to trigger `.github/workflows/release.yml`. The workflow runs the compact build and JVM tests, publishes the APK and its `.sha256` sidecar as a GitHub Release, and generates release notes.
 
 `AudioSettings.kt` processes interleaved signed 16-bit PCM before Opus encoding. Economy uses 32/64 Kbps for mono/stereo, Standard 64/128, High 96/192 and Maximum 128/256. Standard preserves the previous bitrate. Capture layout, frame size, encoder channels and video bandwidth reservation use the actual selected format and quality. Unsupported stereo retries mono, selects the corresponding mono bitrate and shows a localized notice. Gain is applied with saturation; 100% preserves every input sample.
 

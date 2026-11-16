@@ -1,8 +1,10 @@
 package com.sangege.moqpublisher
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Size
@@ -130,6 +132,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val streamState by viewModel.streamState.collectAsState()
     val configurationError by viewModel.configurationError.collectAsState()
     val coreState by viewModel.coreState.collectAsState()
+    val appUpdateState by viewModel.appUpdateState.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by rememberSaveable {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -168,6 +171,7 @@ fun MainScreen(viewModel: MainViewModel) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 hasAudioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                viewModel.checkAppUpdates()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -177,6 +181,18 @@ fun MainScreen(viewModel: MainViewModel) {
         if (!hasCameraPermission) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
     }
     val active = streamState is StreamState.Live || streamState is StreamState.Connecting
+    val installAppUpdate: () -> Unit = {
+        viewModel.appUpdateUri()?.let { uri ->
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                })
+            } catch (_: ActivityNotFoundException) {
+                viewModel.setConfigurationError(UiMessage(R.string.app_update_install_failed))
+            }
+        }
+    }
     val onToggleBroadcast: () -> Unit = {
         when {
             active -> viewModel.stopBroadcast()
@@ -258,6 +274,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 lockLandscape = lockLandscape, onLockLandscapeChange = viewModel::setLockLandscape,
                 backgroundStreaming = backgroundStreaming, onBackgroundStreamingChange = viewModel::setBackgroundStreaming,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
+                appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
+                onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
                 isStreaming = active, onBack = { showSettings = false }
             )
         }
@@ -849,6 +867,8 @@ fun SettingsScreen(
     lockLandscape: Boolean, onLockLandscapeChange: (Boolean) -> Unit,
     backgroundStreaming: Boolean, onBackgroundStreamingChange: (Boolean) -> Unit,
     coreState: CoreState, onCoreCheck: () -> Unit,
+    appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
+    onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
     isStreaming: Boolean, onBack: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
@@ -857,6 +877,7 @@ fun SettingsScreen(
     SettingsScaffold(onBack) {
         profileError?.let { StatusNotice(it.text(), error = true) }
         if (isStreaming) StatusNotice(stringResource(R.string.streaming_settings_locked))
+        AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
         CoreStatusCard(coreState, onCoreCheck)
         SettingCard(stringResource(R.string.broadcast_behavior)) {
             SettingSwitch(stringResource(R.string.background_streaming), stringResource(R.string.background_streaming_hint),
@@ -945,6 +966,56 @@ fun SettingsScreen(
                 AppLanguage.SYSTEM to stringResource(R.string.language_system)), onLanguageChange)
             ChoiceOptions(stringResource(R.string.theme), theme, listOf(
                 AppTheme.DARK to stringResource(R.string.theme_dark), AppTheme.LIGHT to stringResource(R.string.theme_light)), onThemeChange)
+        }
+    }
+}
+
+@Composable
+private fun AppUpdateCard(
+    state: AppUpdateState,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onInstall: () -> Unit,
+    isStreaming: Boolean
+) {
+    SettingCard(stringResource(R.string.app_update_title), stringResource(R.string.app_update_description)) {
+        Text(stringResource(R.string.app_update_current, state.currentVersion), style = MaterialTheme.typography.bodyMedium)
+        state.latestVersion?.let { latest ->
+            SupportingText(stringResource(R.string.app_update_latest, latest))
+        }
+        when (state.phase) {
+            AppUpdatePhase.CHECKING -> {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                SupportingText(stringResource(R.string.app_update_checking))
+            }
+            AppUpdatePhase.AVAILABLE -> SupportingText(stringResource(R.string.app_update_available))
+            AppUpdatePhase.DOWNLOADING -> {
+                LinearProgressIndicator(progress = { (state.progressPercent ?: 0) / 100f }, modifier = Modifier.fillMaxWidth())
+                SupportingText(stringResource(R.string.app_update_downloading, state.progressPercent ?: 0))
+            }
+            AppUpdatePhase.READY -> StatusNotice(stringResource(R.string.app_update_ready), success = true)
+            AppUpdatePhase.UP_TO_DATE -> SupportingText(stringResource(R.string.app_update_up_to_date))
+            AppUpdatePhase.FAILED -> StatusNotice(stringResource(R.string.app_update_failed), error = true)
+            AppUpdatePhase.IDLE -> Unit
+        }
+        if (isStreaming && state.phase in setOf(AppUpdatePhase.AVAILABLE, AppUpdatePhase.READY)) {
+            SupportingText(stringResource(R.string.app_update_streaming))
+        }
+        val action = when (state.phase) {
+            AppUpdatePhase.READY -> onInstall
+            AppUpdatePhase.AVAILABLE -> onDownload
+            else -> onCheck
+        }
+        val label = when (state.phase) {
+            AppUpdatePhase.READY -> R.string.app_update_install
+            AppUpdatePhase.AVAILABLE -> R.string.app_update_download
+            AppUpdatePhase.FAILED -> R.string.app_update_retry
+            else -> R.string.app_update_check
+        }
+        val enabled = state.phase != AppUpdatePhase.CHECKING && state.phase != AppUpdatePhase.DOWNLOADING &&
+            !(isStreaming && state.phase in setOf(AppUpdatePhase.AVAILABLE, AppUpdatePhase.READY))
+        OutlinedButton(onClick = action, enabled = enabled, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+            Text(stringResource(label))
         }
     }
 }

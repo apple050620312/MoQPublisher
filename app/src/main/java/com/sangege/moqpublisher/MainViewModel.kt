@@ -12,6 +12,7 @@ import android.util.Log
 import android.util.Size
 import androidx.camera.core.ImageProxy
 import androidx.core.content.edit
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.moq.VideoCodec
@@ -59,7 +60,9 @@ class MainViewModel internal constructor(
     private val session = (application as MoqApplication).session
     private val diagnostics = session.diagnostics
     private val core = (application as MoqApplication).core
+    private val appUpdates = (application as MoqApplication).appUpdates
     val coreState = core.state
+    val appUpdateState = appUpdates.state
     val cameraControls = session.controls
     val cameraControlState: StateFlow<CameraControlState> = cameraControls.state
     val streamer = session.streamer
@@ -169,6 +172,16 @@ class MainViewModel internal constructor(
     }
 
     fun checkCoreUpdates() = core.checkForUpdates()
+
+    fun checkAppUpdates() = appUpdates.checkForUpdates()
+
+    fun downloadAppUpdate() {
+        if (!streamState.value.isActive()) appUpdates.downloadUpdate()
+    }
+
+    fun appUpdateUri(): Uri? = appUpdates.downloadedFile()?.let { file ->
+        FileProvider.getUriForFile(getApplication(), "${getApplication<Application>().packageName}.updates", file)
+    }
 
     fun setRelayUrl(url: String) {
         _relayUrl.value = url
