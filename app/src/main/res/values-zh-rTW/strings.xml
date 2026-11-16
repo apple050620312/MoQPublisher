@@ -14,7 +14,7 @@
     <string name="zoom_out">縮小</string>
     <string name="reset_zoom">重設為 1×</string>
     <string name="zoom_value">%1$.1f×</string>
-    <string name="tap_to_focus_hint">點按取景畫面对焦；雙指縮放，雙擊重設縮放。</string>
+    <string name="tap_to_focus_hint">點按取景畫面對焦；雙指縮放，雙擊重設縮放。</string>
     <string name="appearance">外觀與語言</string>
     <string name="appearance_description">切換後立即生效，所有設定會自動儲存。</string>
     <string name="language">語言</string>
