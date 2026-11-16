@@ -1,4 +1,4 @@
-package com.sangege.moqpublisher
+﻿package com.sangege.moqpublisher
 
 import android.app.Application
 import android.content.Context
@@ -48,7 +48,7 @@ private const val DEFAULT_VIDEO_WIDTH = 1280
 private const val DEFAULT_VIDEO_HEIGHT = 720
 private const val DEFAULT_VIDEO_FPS = 30
 private val SUPPORTED_FPS = setOf(15, 24, 30, 60)
-private val RELAY_SCHEMES = setOf("http", "https", "ws", "wss")
+private val RELAY_SCHEMES = setOf("https", "wss")
 
 class MainViewModel internal constructor(
     application: Application, private val prefs: SharedPreferences,
@@ -495,7 +495,7 @@ class MainViewModel internal constructor(
         }
 
         val path = getEffectiveStreamPath()
-        if (path.isEmpty() || path.any { it.isWhitespace() }) {
+        if (!StreamPath.isValid(path)) {
             return UiMessage(R.string.error_path_invalid)
         }
 
@@ -524,3 +524,5 @@ class MainViewModel internal constructor(
         diagnostics.event("viewmodel_cleared")
     }
 }
+
+

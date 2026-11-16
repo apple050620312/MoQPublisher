@@ -19,7 +19,7 @@
     <string name="appearance">Appearance &amp; Language</string>
     <string name="appearance_description">Changes apply immediately and are saved automatically.</string>
     <string name="language">Language</string>
-    <string name="language_zh" translatable="false">?撚????</string>
+    <string name="language_zh" translatable="false">Traditional Chinese</string>
     <string name="language_en" translatable="false">English</string>
     <string name="language_system">Follow system</string>
     <string name="theme">Theme</string>
@@ -31,7 +31,7 @@
     <string name="relay_url">Relay server URL</string>
     <string name="relay_url_example" translatable="false">https://cdn.moq.pro/placeholder</string>
     <string name="auth_token">Auth token / JWT (optional)</string>
-    <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn??/string>
+    <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn</string>
     <string name="auth_token_hint">Added as a jwt query parameter when broadcasting starts.</string>
     <string name="effective_url">Connection URL</string>
     <string name="broadcast_path">Broadcast path</string>
@@ -73,8 +73,8 @@
     <string name="status_connecting">Connecting</string>
     <string name="status_live">Live</string>
     <string name="status_error">Failed</string>
-    <string name="live_tag">??LIVE</string>
-    <string name="connecting_relay">Connecting to the relay??/string>
+    <string name="live_tag">LIVE</string>
+    <string name="connecting_relay">Connecting to the relay</string>
     <string name="start_broadcast">Start broadcast</string>
     <string name="stop_broadcast">Stop broadcast</string>
     <string name="cancel_connection">Cancel connection</string>
@@ -83,7 +83,7 @@
     <string name="stat_bitrate">Bitrate</string>
     <string name="stat_sent">Sent</string>
     <string name="stat_codec">Codec / FPS</string>
-    <string name="stat_unavailable">??/string>
+    <string name="stat_unavailable"></string>
     <string name="value_ms">%1$d ms</string>
     <string name="value_mbps">%1$.2f Mbps</string>
     <string name="value_mb">%1$.2f MB</string>
@@ -115,14 +115,14 @@
     <string name="error_audio_capture">Could not capture or encode microphone audio. Check microphone access or try mono. Details are saved in diagnostics.</string>
     <string name="error_encoder_unsupported">No hardware %1$s encoder supports %2$d?%3$d at %4$d FPS. Try a lower resolution or frame rate.</string>
     <string name="diagnostics_export">Export diagnostics</string>
-    <string name="diagnostics_preparing">Preparing diagnostics??/string>
+    <string name="diagnostics_preparing">Preparing diagnostics</string>
     <string name="diagnostics_ready">Diagnostics ready</string>
     <string name="diagnostics_description">Attach this ZIP to the conversation. You can share it now or save it to your device first.</string>
     <string name="diagnostics_share">Share diagnostics</string>
     <string name="diagnostics_clip_label">MoQ diagnostics</string>
     <string name="share">Share</string>
     <string name="save_file">Save file</string>
-    <string name="saving">Saving??/string>
+    <string name="saving">Saving</string>
     <string name="diagnostics_saved">Diagnostics saved. You can attach the ZIP to the conversation.</string>
     <string name="diagnostics_save_failed">Could not save diagnostics. Please try again.</string>
     <string name="diagnostics_export_failed">Could not create diagnostics. Check device storage and try again.</string>
@@ -131,7 +131,7 @@
     <string name="core_architecture">Device core: %1$s</string>
     <string name="core_description">Downloaded directly from official MoQ releases on Maven Central. Saved across APK updates; checks for compatible updates at startup.</string>
     <string name="core_version">In use: %1$s</string>
-    <string name="core_checking">Checking official releases??/string>
+    <string name="core_checking">Checking official releases</string>
     <string name="core_downloading">Downloading and verifying core: %1$d%%</string>
     <string name="core_download_failed">The core could not be downloaded or verified. Check your internet connection and retry.</string>
     <string name="core_deferred">Core updates will resume after the broadcast ends.</string>
@@ -205,9 +205,9 @@
     <string name="publishing_not_decode_verified">Publishing indicates media handoff. Receiver decoding is checked separately in Relay settings.</string>
     <string name="verify_subscription">Verify remote media decoding</string>
     <string name="verify_hint">Start broadcasting first. This opens a separate remote Subscribe session for up to 30 seconds and decodes video and enabled audio. It uses extra data and does not verify a separate browser or OBS client.</string>
-    <string name="verify_connecting">Connecting with the Subscribe Token??/string>
-    <string name="verify_catalog">Waiting for the remote Hang namespace and catalog??/string>
-    <string name="verify_decoding">Receiving and decoding remote video and audio??/string>
+    <string name="verify_connecting">Connecting with the Subscribe Token</string>
+    <string name="verify_catalog">Waiting for the remote Hang namespace and catalog</string>
+    <string name="verify_decoding">Receiving and decoding remote video and audio</string>
     <string name="verify_passed">Remote decode passed: %1$s, %2$d ? %3$d; decoded frames: %4$d; %5$s. Browser playback still needs checking.</string>
     <string name="verify_audio_passed">Opus decoded</string>
     <string name="verify_audio_disabled">audio disabled</string>
@@ -215,5 +215,8 @@
     <string name="verify_failed">Remote decoding failed. Check the Subscribe Token, relay namespace/track support and device decoder. Export diagnostics for the specific stage and error.</string>
     <string name="verify_codec_unsupported">The remote video codec or dimensions cannot be verified by this device decoder.</string>
 </resources>
+
+
+
 
 
