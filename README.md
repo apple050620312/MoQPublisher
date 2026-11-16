@@ -1,4 +1,4 @@
-﻿# MoQ Publisher
+# MoQ Publisher
 
 Author: sangege
 
@@ -10,7 +10,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 - Collapsible camera details, with camera actions on the left and zoom/broadcast controls or statistics on the right in landscape.
 - H.264 and H.265 hardware video encoding, with explicit errors for unsupported device/codec/resolution combinations.
 - Device-supported resolution selection and 15/24/30/60 FPS targets.
-- Optional 48 kHz mono/stereo Opus microphone audio, with four quality/bitrate presets, 0??00% PCM gain and automatic mono fallback.
+- Optional 48 kHz mono/stereo Opus microphone audio, with four quality/bitrate presets, 0-300% PCM gain and automatic mono fallback.
 - Relay URL, broadcast path, JWT and TLS certificate verification settings.
 - Switchable moq.pro and Cloudflare MoQ Draft 18 profiles, with encrypted connection tokens,
   separate Subscribe-only viewing/OBS links, connection phases and an opt-in remote decoder check.
@@ -28,19 +28,19 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 
 1. Install the compact (recommended), debug or release APK on a supported Android device. Each APK supports ARM64, ARMv7 and x86_64 and omits the MoQ core.
 2. On first launch, connect to the internet and allow the official MoQ core package to download (about 33 MB). Only the running process ABI is extracted and saved. Grant camera permission; microphone permission is requested when an audio broadcast starts.
-3. Open **Settings ??Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
+3. Open **Settings -> Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
    For Cloudflare, enter a **Publish + Subscribe connection token** and a full Hang broadcast name
    (default `twcam.hang`). This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`;
    do not use a Management API token, Project ID, Relay ID or `?jwt=`.
-4. Select the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. **???舫??迎??Ｙ?皜﹦??* enables network adaptation; disable it to retain the configured encoder target.
-5. Press **????皝? / Start broadcast** while the app is visible. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission; denying it does not grant extra background permissions or bypass the foreground-service rules. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
+4. Select the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. **Adaptive bitrate** enables network adaptation; disable it to retain the configured encoder target.
+5. Press **Start broadcast** while the app is visible. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission; denying it does not grant extra background permissions or bypass the foreground-service rules. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
 6. The core must be ready before streaming. Later APK updates reuse the saved core; compatible core updates apply on the next cold app launch. Downloads defer while broadcasting. Stop broadcasting before changing stream parameters. Language, theme and landscape lock can change while live; opening Settings keeps capture running. A new broadcast fixes its encoding orientation at start, while the preview continues to follow the display.
 
-In landscape, the narrow left rail contains camera switching, center focus, torch, Settings and the details toggle. The narrow right rail contains a vertical zoom slider and the broadcast button. Drag upward to zoom in or downward to zoom out; tap the displayed zoom ratio to reset to 1?. Statistics and diagnostic export open in a separate panel beside the right rail. The actions and details can scroll on short screens; the zoom rail accepts vertical drags directly. Portrait keeps one set of focus/torch controls and a separate zoom row.
+In landscape, the narrow left rail contains camera switching, center focus, torch, Settings and the details toggle. The narrow right rail contains a vertical zoom slider and the broadcast button. Drag upward to zoom in or downward to zoom out; tap the displayed zoom ratio to reset to 1.0x. Statistics and diagnostic export open in a separate panel beside the right rail. The actions and details can scroll on short screens; the zoom rail accepts vertical drags directly. Portrait keeps one set of focus/torch controls and a separate zoom row.
 
 Settings are grouped as Broadcast behavior (background broadcast and landscape lock), Connection (relay URL and broadcast path), Video (codec, resolution, FPS and bitrate), Audio (microphone, channels, quality and gain), Security & Authentication (JWT and TLS), and Appearance & Language (theme and language). Streaming settings stay locked while broadcasting; appearance and orientation controls remain available. The exposure icon beside the zoom controls opens the EV slider and reset action; unsupported cameras show a localized explanation.
 
-The JWT is added as a `jwt` query parameter at connection time and is masked in the settings preview. The relay URL may use `http`, `https`, `ws` or `wss`; a host and a non-empty broadcast path are required.
+The JWT is added as a `jwt` query parameter at connection time and is masked in the settings preview. The relay URL must use `https` or `wss`; it must include a host and a valid non-empty broadcast path.
 
 The **Bitrate** statistic measures the change in bytes actually sent over the elapsed sample time, displayed in decimal Mbps, including transport overhead and retransmissions. It does not display the congestion controller's estimate of available bandwidth. The first sample, a reconnect, or a transport that provides no byte counter shows `--` until a valid measurement is available.
 
@@ -55,8 +55,8 @@ Audio capture/publication uses a separate lock from video encoding. A capture ga
 ## Report a playback problem from the phone
 
 1. Install v1.0.3 or later, start a broadcast and reproduce buffering or delay in moq.watch for about one minute.
-2. Return to the broadcaster and tap **??穿?桃捂謘?* on the main screen. This works while live, after stopping, and after an error.
-3. Select **???** to share the ZIP, or **????澗??** to save it with Android's file picker. Attach that ZIP to the support conversation. Include the viewing URL and viewing browser if available.
+2. Return to the broadcaster and tap **Export diagnostics** on the main screen. This works while live, after stopping, and after an error.
+3. Select **Share** to share the ZIP, or **Save file** to save it with Android's file picker. Attach that ZIP to the support conversation. Include the viewing URL and viewing browser if available.
 
 Recording starts automatically. A rotating event history survives app restarts and is capped at 1 MiB in the app's private, non-backed-up storage. Per-frame counters stay in memory; once-per-second summaries record actual camera/submitted/encoded/published FPS, pacing/busy drops, keyframes, frame handoff latency, audio packets/resets and ages of the last camera/video/audio activity. Session samples add RTT, measured send rate, capacity estimates, transport loss/counters, encoder queue size, CPU, heap use and thermal status.
 
@@ -95,7 +95,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.11)
+## APK variants (v1.0.14)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. Compact uses the existing development certificate for in-place sideload updates. The release Gradle task remains unsigned; the delivered release APK is signed with the same development certificate as the other two APKs. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 
@@ -159,4 +159,3 @@ of portrait, both landscape directions, front/back cameras and receiver aspect r
 
 See `build/diagnostics/cloudflare-v1.0.12/verification.md` for compatibility evidence, file changes,
 build/test results and the remaining device checks.
-

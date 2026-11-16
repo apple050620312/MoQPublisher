@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name" translatable="false">MoQ Publisher</string>
     <string name="app_title" translatable="false">MoQ Publisher</string>
     <string name="settings">Settings</string>
@@ -13,8 +13,8 @@
     <string name="zoom">Zoom</string>
     <string name="zoom_in">Zoom in</string>
     <string name="zoom_out">Zoom out</string>
-    <string name="reset_zoom">Reset zoom to 1?</string>
-    <string name="zoom_value">%1$.1f?</string>
+    <string name="reset_zoom">Reset zoom to 1.0&#215;</string>
+    <string name="zoom_value">%1$.1f&#215;</string>
     <string name="tap_to_focus_hint">Tap the preview to focus. Pinch to zoom; double tap resets zoom.</string>
     <string name="appearance">Appearance &amp; Language</string>
     <string name="appearance_description">Changes apply immediately and are saved automatically.</string>
@@ -31,7 +31,7 @@
     <string name="relay_url">Relay server URL</string>
     <string name="relay_url_example" translatable="false">https://cdn.moq.pro/placeholder</string>
     <string name="auth_token">Auth token / JWT (optional)</string>
-    <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn</string>
+    <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn...</string>
     <string name="auth_token_hint">Added as a jwt query parameter when broadcasting starts.</string>
     <string name="effective_url">Connection URL</string>
     <string name="broadcast_path">Broadcast path</string>
@@ -65,7 +65,7 @@
     <string name="percent_value">%1$d%%</string>
     <string name="reset_gain" formatted="false">Reset to 100%</string>
     <string name="stereo_fallback">Stereo capture is unavailable on this device. This broadcast is using mono.</string>
-    <string name="audio_capture_summary">Audio: %1$s 蝜?Gain %2$d%% 蝜?%3$d Kbps</string>
+    <string name="audio_capture_summary">Audio: %1$s &#8226; Gain %2$d%% &#8226; %3$d Kbps</string>
     <string name="tls_verify">Verify TLS certificate</string>
     <string name="tls_strict">Validate the relay certificate and hostname.</string>
     <string name="tls_disabled">Allow self-signed certificates for local development.</string>
@@ -87,17 +87,17 @@
     <string name="value_ms">%1$d ms</string>
     <string name="value_mbps">%1$.2f Mbps</string>
     <string name="value_mb">%1$.2f MB</string>
-    <string name="value_codec_fps">%1$s 蝜?%2$d FPS</string>
-    <string name="video_summary">%1$s 蝜?%2$d?%3$d 蝜?%4$d FPS</string>
-    <string name="resolution_value">%1$d?%2$d</string>
-    <string name="resolution_named">%1$d?%2$d (%3$s)</string>
+    <string name="value_codec_fps">%1$s &#8226; %2$d FPS</string>
+    <string name="video_summary">%1$s &#8226; %2$d&#215;%3$d &#8226; %4$d FPS</string>
+    <string name="resolution_value">%1$d&#215;%2$d</string>
+    <string name="resolution_named">%1$d&#215;%2$d (%3$s)</string>
     <string name="resolution_4k" translatable="false">4K UHD</string>
     <string name="resolution_fhd" translatable="false">1080p FHD</string>
     <string name="resolution_hd" translatable="false">720p HD</string>
     <string name="resolution_sd" translatable="false">480p SD</string>
     <string name="resolution_vga" translatable="false">VGA</string>
-    <string name="performance_summary">Output %1$s / %2$d FPS 蝜?Encoder target %3$s Mbps</string>
-    <string name="camera_capture_summary">Camera %1$d?%2$d 蝜?%3$s FPS</string>
+    <string name="performance_summary">Output %1$s / %2$d FPS &#8226; Encoder target %3$s Mbps</string>
+    <string name="camera_capture_summary">Camera %1$d&#215;%2$d &#8226; %3$s FPS</string>
     <string name="camera_fps_limited">This camera and resolution support up to %1$d FPS. Try a lower resolution or switch cameras.</string>
     <string name="permission_title">Camera access required</string>
     <string name="permission_description">Camera permission is required to preview and broadcast video. Microphone permission is requested only when audio is enabled.</string>
@@ -113,7 +113,7 @@
     <string name="error_broadcast">Could not connect or publish to the relay. Check the server URL, path, authentication, TLS and network. Details are saved in diagnostics.</string>
     <string name="error_video">Video encoding or transmission failed. Try a lower resolution or frame rate. Details are saved in diagnostics.</string>
     <string name="error_audio_capture">Could not capture or encode microphone audio. Check microphone access or try mono. Details are saved in diagnostics.</string>
-    <string name="error_encoder_unsupported">No hardware %1$s encoder supports %2$d?%3$d at %4$d FPS. Try a lower resolution or frame rate.</string>
+    <string name="error_encoder_unsupported">No hardware %1$s encoder supports %2$d&#215;%3$d at %4$d FPS. Try a lower resolution or frame rate.</string>
     <string name="diagnostics_export">Export diagnostics</string>
     <string name="diagnostics_preparing">Preparing diagnostics</string>
     <string name="diagnostics_ready">Diagnostics ready</string>
@@ -157,7 +157,7 @@
     <string name="audio_quality_standard">Standard</string>
     <string name="audio_quality_high">High</string>
     <string name="audio_quality_maximum">Maximum</string>
-    <string name="audio_quality_option">%1$s 蝜?%2$d Kbps</string>
+    <string name="audio_quality_option">%1$s &#8226; %2$d Kbps</string>
     <string name="audio_quality_hint">Sets the actual Opus bitrate. Higher quality uses more bandwidth. Mono fallback adjusts the bitrate automatically.</string>
     <string name="broadcast_notification_channel">Live broadcasts</string>
     <string name="broadcast_notification_title">MoQ broadcast</string>
@@ -208,15 +208,10 @@
     <string name="verify_connecting">Connecting with the Subscribe Token</string>
     <string name="verify_catalog">Waiting for the remote Hang namespace and catalog</string>
     <string name="verify_decoding">Receiving and decoding remote video and audio</string>
-    <string name="verify_passed">Remote decode passed: %1$s, %2$d ? %3$d; decoded frames: %4$d; %5$s. Browser playback still needs checking.</string>
+    <string name="verify_passed">Remote decode passed: %1$s, %2$d &#215; %3$d; decoded frames: %4$d; %5$s. Browser playback still needs checking.</string>
     <string name="verify_audio_passed">Opus decoded</string>
     <string name="verify_audio_disabled">audio disabled</string>
     <string name="verify_timeout">Verification timed out: no complete remote catalog and decodable media arrived. Check matching relay tokens, namespace routing, subscription permissions and keyframes. Connection success alone is insufficient.</string>
     <string name="verify_failed">Remote decoding failed. Check the Subscribe Token, relay namespace/track support and device decoder. Export diagnostics for the specific stage and error.</string>
     <string name="verify_codec_unsupported">The remote video codec or dimensions cannot be verified by this device decoder.</string>
 </resources>
-
-
-
-
-

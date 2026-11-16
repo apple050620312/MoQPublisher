@@ -76,6 +76,14 @@ internal class VideoPublishQueue(private val capacity: Int = 6) : AutoCloseable 
 
     fun depth(): Int = synchronized(monitor) { queue.size }
 
+    companion object {
+        /** Keeps up to roughly 250 ms of encoded video during short writer stalls. */
+        fun capacityFor(framerate: Int): Int {
+            require(framerate in 1..120)
+            return ((framerate * 250L + 999L) / 1_000L).toInt().coerceIn(6, 16)
+        }
+    }
+
     override fun close() {
         synchronized(monitor) {
             closed = true

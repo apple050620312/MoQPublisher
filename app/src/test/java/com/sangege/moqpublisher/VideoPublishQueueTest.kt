@@ -7,6 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VideoPublishQueueTest {
+    @Test
+    fun capacityScalesWithFrameRateWithoutUnboundedLatency() {
+        assertEquals(6, VideoPublishQueue.capacityFor(15))
+        assertEquals(8, VideoPublishQueue.capacityFor(30))
+        assertEquals(15, VideoPublishQueue.capacityFor(60))
+        assertEquals(16, VideoPublishQueue.capacityFor(120))
+    }
+
     @Test fun reconnectDropsOldGopAndRequiresANewKeyframe() {
         val queue = VideoPublishQueue(3)
         queue.offer(packet(1, true))

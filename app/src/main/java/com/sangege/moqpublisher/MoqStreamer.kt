@@ -323,7 +323,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     /** Runs MoQ video writes on a dedicated thread, behind a bounded queue. */
     private fun startVideoPublisher(broadcast: BroadcastProducer) {
-        val queue = VideoPublishQueue(capacity = 6)
+        val queueCapacity = VideoPublishQueue.capacityFor(configuredFramerate)
+        val queue = VideoPublishQueue(capacity = queueCapacity)
+        diagnostics.event("video_publish_queue", mapOf("capacity_frames" to queueCapacity, "window_ms" to (queueCapacity * 1_000L / configuredFramerate)))
         val executor = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "MoqVideoPublisher").apply { isDaemon = true }
         }
