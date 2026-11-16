@@ -24,3 +24,4 @@
 - 新增 GitHub Releases 主程式更新器：啟動與回到前景時檢查、使用者停止直播後下載、驗證 SHA-256，最後交給 Android Package Installer 安裝。
 - 新增本機 `publish-release.ps1` 發佈腳本、更新資源、FileProvider 路徑與更新器單元測試。
 - 驗證：`assembleCompact`、`testDebugUnitTest`；尚未在實機確認不同廠牌 launcher 的實際圓形遮罩與安裝提示。
+- 已以本機建置並上傳 `v1.0.16` GitHub Release；APK SHA-256 為 `fa217facdd0ece53f3c07b979cf3a3525f3dcabf4db69464d87ec9f3f10992c2`。
