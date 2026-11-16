@@ -128,6 +128,8 @@
     <string name="app_update_install">安裝更新</string>
     <string name="app_update_retry">重試更新</string>
     <string name="app_update_install_failed">找不到可用的 Android APK 安裝程式。</string>
+    <string name="about">關於</string>
+    <string name="about_description">MoQ Publisher 版本、App 更新與已下載的 MoQ 核心。</string>
     <string name="core_title">MoQ 核心</string>
     <string name="core_architecture">核心架構：%1$s</string>
     <string name="core_description">直接從 Maven Central 的 MoQ 官方發布下載。更新 APK 後保留，啟動時自動檢查相容的新版本。</string>

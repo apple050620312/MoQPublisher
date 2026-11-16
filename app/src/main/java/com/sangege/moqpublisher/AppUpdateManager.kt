@@ -49,7 +49,7 @@ private data class AppRelease(
     val checksum: ReleaseAsset?
 )
 
-/** Checks and downloads signed compact APKs published by this repository's GitHub Releases. */
+/** Checks and downloads signed release APKs published by this repository's GitHub Releases. */
 class AppUpdateManager(context: Context, private val currentVersion: String = packageVersion(context)) {
     private companion object {
         const val TAG = "MoqAppUpdater"

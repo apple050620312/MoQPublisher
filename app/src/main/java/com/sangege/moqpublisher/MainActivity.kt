@@ -877,8 +877,6 @@ fun SettingsScreen(
     SettingsScaffold(onBack) {
         profileError?.let { StatusNotice(it.text(), error = true) }
         if (isStreaming) StatusNotice(stringResource(R.string.streaming_settings_locked))
-        AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
-        CoreStatusCard(coreState, onCoreCheck)
         SettingCard(stringResource(R.string.broadcast_behavior)) {
             SettingSwitch(stringResource(R.string.background_streaming), stringResource(R.string.background_streaming_hint),
                 backgroundStreaming, onBackgroundStreamingChange, editable)
@@ -966,6 +964,10 @@ fun SettingsScreen(
                 AppLanguage.SYSTEM to stringResource(R.string.language_system)), onLanguageChange)
             ChoiceOptions(stringResource(R.string.theme), theme, listOf(
                 AppTheme.DARK to stringResource(R.string.theme_dark), AppTheme.LIGHT to stringResource(R.string.theme_light)), onThemeChange)
+        }
+        SettingCard(stringResource(R.string.about), stringResource(R.string.about_description)) {
+            AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
+            CoreStatusCard(coreState, onCoreCheck)
         }
     }
 }

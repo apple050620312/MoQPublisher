@@ -143,6 +143,8 @@
     <string name="app_update_install">Install update</string>
     <string name="app_update_retry">Retry update</string>
     <string name="app_update_install_failed">No Android package installer is available for this APK.</string>
+    <string name="about">About</string>
+    <string name="about_description">MoQ Publisher version, app updates and the downloaded MoQ core.</string>
     <string name="core_title">MoQ core</string>
     <string name="core_architecture">Device core: %1$s</string>
     <string name="core_description">Downloaded directly from official MoQ releases on Maven Central. Saved across APK updates; checks for compatible updates at startup.</string>

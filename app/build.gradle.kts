@@ -13,8 +13,8 @@ android {
         applicationId = "com.sangege.moqpublisher"
         minSdk = 24
         targetSdk = 37
-        versionCode = 17
-        versionName = "1.0.16"
+        versionCode = 18
+        versionName = "1.0.17"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -25,6 +25,9 @@ android {
 
     buildTypes {
         release {
+            // The local release workflow uses the development key so Android can install
+            // updates over the existing sideloaded builds without a separate keystore.
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = true
                 keepRules {

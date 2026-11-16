@@ -6,7 +6,7 @@ internal object AppUpdatePolicy {
     const val REPOSITORY = "MoQPublisher"
     const val API_URL = "https://api.github.com/repos/$OWNER/$REPOSITORY/releases/latest"
     const val APK_PREFIX = "MoQPublisher-"
-    const val APK_SUFFIX = "-compact.apk"
+    const val APK_SUFFIX = "-release.apk"
     private val versionPattern = Regex("[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}")
     private val digestPattern = Regex("[0-9a-f]{64}")
 

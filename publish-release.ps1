@@ -16,8 +16,8 @@ if ((git status --porcelain) -and -not $SkipTests) {
 $version = [regex]::Match((Get-Content app/build.gradle.kts -Raw), 'versionName\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"').Groups[1].Value
 if ([string]::IsNullOrWhiteSpace($version)) { throw "Could not read versionName from app/build.gradle.kts" }
 $tag = "v$version"
-$apkName = "MoQPublisher-$version-compact.apk"
-$apk = Join-Path $repoRoot "app\build\outputs\apk\compact\app-compact.apk"
+$apkName = "MoQPublisher-$version-release.apk"
+$apk = Join-Path $repoRoot "app\build\outputs\apk\release\app-release.apk"
 $dist = Join-Path $repoRoot "dist"
 $releaseApk = Join-Path $dist $apkName
 $checksum = "$releaseApk.sha256"
@@ -25,10 +25,10 @@ $gradle = Join-Path $env:USERPROFILE ".gradle\wrapper\dists\gradle-9.6.0-bin\42k
 if (-not (Test-Path $gradle)) { $gradle = Join-Path $repoRoot "gradlew.bat" }
 
 if (-not $SkipTests) {
-    & $gradle assembleCompact testDebugUnitTest --no-configuration-cache
+    & $gradle assembleRelease testDebugUnitTest --no-configuration-cache
     if ($LASTEXITCODE -ne 0) { throw "Gradle build or tests failed" }
 }
-if (-not (Test-Path $apk)) { throw "Compact APK was not produced: $apk" }
+if (-not (Test-Path $apk)) { throw "Release APK was not produced: $apk" }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 Copy-Item -LiteralPath $apk -Destination $releaseApk -Force
