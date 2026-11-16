@@ -1,0 +1,219 @@
+﻿<resources>
+    <string name="app_name" translatable="false">MoQ Publisher</string>
+    <string name="app_title" translatable="false">MoQ Publisher</string>
+    <string name="settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="switch_camera">Switch camera</string>
+    <string name="camera_controls">Camera controls</string>
+    <string name="show_details">Show details</string>
+    <string name="hide_details">Hide details</string>
+    <string name="focus_center">Focus center</string>
+    <string name="toggle_flashlight">Toggle flashlight</string>
+    <string name="flashlight_unavailable">Flashlight unavailable</string>
+    <string name="zoom">Zoom</string>
+    <string name="zoom_in">Zoom in</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="reset_zoom">Reset zoom to 1?</string>
+    <string name="zoom_value">%1$.1f?</string>
+    <string name="tap_to_focus_hint">Tap the preview to focus. Pinch to zoom; double tap resets zoom.</string>
+    <string name="appearance">Appearance &amp; Language</string>
+    <string name="appearance_description">Changes apply immediately and are saved automatically.</string>
+    <string name="language">Language</string>
+    <string name="language_zh" translatable="false">?撚????</string>
+    <string name="language_en" translatable="false">English</string>
+    <string name="language_system">Follow system</string>
+    <string name="theme">Theme</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
+    <string name="streaming_settings_locked">Stop broadcasting to change stream settings. Language and theme can be changed at any time.</string>
+    <string name="connection_settings">Connection</string>
+    <string name="connection_settings_description">Choose the relay server and broadcast path.</string>
+    <string name="relay_url">Relay server URL</string>
+    <string name="relay_url_example" translatable="false">https://cdn.moq.pro/placeholder</string>
+    <string name="auth_token">Auth token / JWT (optional)</string>
+    <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn??/string>
+    <string name="auth_token_hint">Added as a jwt query parameter when broadcasting starts.</string>
+    <string name="effective_url">Connection URL</string>
+    <string name="broadcast_path">Broadcast path</string>
+    <string name="broadcast_path_example" translatable="false">live/camera</string>
+    <string name="video_configuration">Video</string>
+    <string name="video_codec">Video codec</string>
+    <string name="codec_h264" translatable="false">H.264 (AVC)</string>
+    <string name="codec_h265" translatable="false">H.265 (HEVC)</string>
+    <string name="codec_h264_short" translatable="false">H.264</string>
+    <string name="codec_h265_short" translatable="false">H.265</string>
+    <string name="camera_resolution">Camera resolution (device supported)</string>
+    <string name="target_framerate">Target frame rate</string>
+    <string name="fps_value">%1$d FPS</string>
+    <string name="target_bitrate">Target video bitrate (Kbps)</string>
+    <string name="bitrate_hint">Try 8000 Kbps for 1080p / 60 FPS. Actual bitrate also depends on the scene and encoder.</string>
+    <string name="adaptive_bitrate">Automatically adjust bitrate</string>
+    <string name="adaptive_bitrate_on">Uses the target as a ceiling and reduces bitrate when bandwidth is limited.</string>
+    <string name="adaptive_bitrate_off">Keeps the configured encoder target without reducing it based on bandwidth estimates.</string>
+    <string name="audio_settings">Audio</string>
+    <string name="audio_settings_description">Control microphone capture, channels and volume gain.</string>
+    <string name="security_authentication">Security &amp; Authentication</string>
+    <string name="security_authentication_description">Manage the access token and TLS certificate verification.</string>
+    <string name="broadcast_audio">Broadcast audio</string>
+    <string name="broadcast_audio_hint">Capture microphone audio and encode it with Opus at 48 kHz.</string>
+    <string name="audio_channel">Audio channel</string>
+    <string name="audio_mono">Mono</string>
+    <string name="audio_stereo">Stereo</string>
+    <string name="audio_channel_hint">Stereo automatically falls back to mono if the microphone format is unavailable.</string>
+    <string name="audio_gain">Audio gain</string>
+    <string name="audio_gain_hint" formatted="false">100% keeps the original volume. 0% mutes audio; higher values amplify it, up to 300%.</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="reset_gain" formatted="false">Reset to 100%</string>
+    <string name="stereo_fallback">Stereo capture is unavailable on this device. This broadcast is using mono.</string>
+    <string name="audio_capture_summary">Audio: %1$s 蝜?Gain %2$d%% 蝜?%3$d Kbps</string>
+    <string name="tls_verify">Verify TLS certificate</string>
+    <string name="tls_strict">Validate the relay certificate and hostname.</string>
+    <string name="tls_disabled">Allow self-signed certificates for local development.</string>
+    <string name="status_idle">Ready</string>
+    <string name="status_connecting">Connecting</string>
+    <string name="status_live">Live</string>
+    <string name="status_error">Failed</string>
+    <string name="live_tag">??LIVE</string>
+    <string name="connecting_relay">Connecting to the relay??/string>
+    <string name="start_broadcast">Start broadcast</string>
+    <string name="stop_broadcast">Stop broadcast</string>
+    <string name="cancel_connection">Cancel connection</string>
+    <string name="live_stats">Live stream statistics</string>
+    <string name="stat_rtt">RTT</string>
+    <string name="stat_bitrate">Bitrate</string>
+    <string name="stat_sent">Sent</string>
+    <string name="stat_codec">Codec / FPS</string>
+    <string name="stat_unavailable">??/string>
+    <string name="value_ms">%1$d ms</string>
+    <string name="value_mbps">%1$.2f Mbps</string>
+    <string name="value_mb">%1$.2f MB</string>
+    <string name="value_codec_fps">%1$s 蝜?%2$d FPS</string>
+    <string name="video_summary">%1$s 蝜?%2$d?%3$d 蝜?%4$d FPS</string>
+    <string name="resolution_value">%1$d?%2$d</string>
+    <string name="resolution_named">%1$d?%2$d (%3$s)</string>
+    <string name="resolution_4k" translatable="false">4K UHD</string>
+    <string name="resolution_fhd" translatable="false">1080p FHD</string>
+    <string name="resolution_hd" translatable="false">720p HD</string>
+    <string name="resolution_sd" translatable="false">480p SD</string>
+    <string name="resolution_vga" translatable="false">VGA</string>
+    <string name="performance_summary">Output %1$s / %2$d FPS 蝜?Encoder target %3$s Mbps</string>
+    <string name="camera_capture_summary">Camera %1$d?%2$d 蝜?%3$s FPS</string>
+    <string name="camera_fps_limited">This camera and resolution support up to %1$d FPS. Try a lower resolution or switch cameras.</string>
+    <string name="permission_title">Camera access required</string>
+    <string name="permission_description">Camera permission is required to preview and broadcast video. Microphone permission is requested only when audio is enabled.</string>
+    <string name="grant_permission">Grant camera access</string>
+    <string name="error_microphone_permission">Microphone permission is required when broadcast audio is enabled. Grant access or turn off broadcast audio.</string>
+    <string name="error_camera">Could not start the camera. Check camera access or try another camera or resolution. Details are saved in diagnostics.</string>
+    <string name="error_relay_required">Enter a relay server URL.</string>
+    <string name="error_relay_invalid">Enter a valid relay URL, such as https://relay.example.com.</string>
+    <string name="error_path_invalid">Enter a broadcast path without spaces.</string>
+    <string name="error_fps_invalid">Select a supported frame rate.</string>
+    <string name="error_bitrate_invalid">Enter a bitrate from 100 to 2147483.647 Kbps, with at most three decimal places.</string>
+    <string name="error_resolution_invalid">Select a valid camera resolution.</string>
+    <string name="error_broadcast">Could not connect or publish to the relay. Check the server URL, path, authentication, TLS and network. Details are saved in diagnostics.</string>
+    <string name="error_video">Video encoding or transmission failed. Try a lower resolution or frame rate. Details are saved in diagnostics.</string>
+    <string name="error_audio_capture">Could not capture or encode microphone audio. Check microphone access or try mono. Details are saved in diagnostics.</string>
+    <string name="error_encoder_unsupported">No hardware %1$s encoder supports %2$d?%3$d at %4$d FPS. Try a lower resolution or frame rate.</string>
+    <string name="diagnostics_export">Export diagnostics</string>
+    <string name="diagnostics_preparing">Preparing diagnostics??/string>
+    <string name="diagnostics_ready">Diagnostics ready</string>
+    <string name="diagnostics_description">Attach this ZIP to the conversation. You can share it now or save it to your device first.</string>
+    <string name="diagnostics_share">Share diagnostics</string>
+    <string name="diagnostics_clip_label">MoQ diagnostics</string>
+    <string name="share">Share</string>
+    <string name="save_file">Save file</string>
+    <string name="saving">Saving??/string>
+    <string name="diagnostics_saved">Diagnostics saved. You can attach the ZIP to the conversation.</string>
+    <string name="diagnostics_save_failed">Could not save diagnostics. Please try again.</string>
+    <string name="diagnostics_export_failed">Could not create diagnostics. Check device storage and try again.</string>
+    <string name="diagnostics_share_failed">Could not open sharing. Use Save file instead.</string>
+    <string name="core_title">MoQ core</string>
+    <string name="core_architecture">Device core: %1$s</string>
+    <string name="core_description">Downloaded directly from official MoQ releases on Maven Central. Saved across APK updates; checks for compatible updates at startup.</string>
+    <string name="core_version">In use: %1$s</string>
+    <string name="core_checking">Checking official releases??/string>
+    <string name="core_downloading">Downloading and verifying core: %1$d%%</string>
+    <string name="core_download_failed">The core could not be downloaded or verified. Check your internet connection and retry.</string>
+    <string name="core_deferred">Core updates will resume after the broadcast ends.</string>
+    <string name="core_up_to_date">The latest compatible core is ready.</string>
+    <string name="core_offline">Update check unavailable. Your saved core is ready for use.</string>
+    <string name="core_incompatible">Official version %1$s requires different app bindings. Continuing with the latest compatible core.</string>
+    <string name="core_update_ready">Version %1$s is saved and will be used the next time the app starts.</string>
+    <string name="core_check_updates">Check for updates</string>
+    <string name="core_retry">Download / retry</string>
+    <string name="core_required">Download the MoQ core before starting a broadcast.</string>
+    <string name="exposure_compensation">Exposure</string>
+    <string name="exposure_ev">%1$+.1f EV</string>
+    <string name="exposure_hint">Adjust image brightness. The supported range depends on the selected camera.</string>
+    <string name="exposure_reset">Reset exposure</string>
+    <string name="exposure_unavailable">This camera does not support exposure compensation.</string>
+    <string name="broadcast_behavior">Broadcast behavior</string>
+    <string name="lock_landscape">Lock landscape</string>
+    <string name="lock_landscape_hint">Keep the interface horizontal. Both landscape directions are supported.</string>
+    <string name="background_streaming">Background broadcast</string>
+    <string name="background_streaming_hint">Keep broadcasting when switching apps or turning off the screen. Use the broadcast notification to stop.</string>
+    <string name="audio_quality">Audio quality</string>
+    <string name="audio_quality_economy">Economy</string>
+    <string name="audio_quality_standard">Standard</string>
+    <string name="audio_quality_high">High</string>
+    <string name="audio_quality_maximum">Maximum</string>
+    <string name="audio_quality_option">%1$s 蝜?%2$d Kbps</string>
+    <string name="audio_quality_hint">Sets the actual Opus bitrate. Higher quality uses more bandwidth. Mono fallback adjusts the bitrate automatically.</string>
+    <string name="broadcast_notification_channel">Live broadcasts</string>
+    <string name="broadcast_notification_title">MoQ broadcast</string>
+    <string name="broadcast_notification_live">Broadcasting camera and enabled audio. Tap to return to the app.</string>
+    <string name="error_background_start">Could not start the broadcast service. Return to the app and check camera and microphone access, then try again.</string>
+    <string name="error_stream_stopping">The previous broadcast is finishing. Please try again in a moment.</string>
+    <string name="cancel">Cancel</string>
+    <string name="relay_provider">Relay Provider</string>
+    <string name="provider_moq_pro">moq.pro</string>
+    <string name="provider_cloudflare">Cloudflare MoQ</string>
+    <string name="cloudflare_draft_18">MoQ Transport Draft 18</string>
+    <string name="cloudflare_compatibility">Uses the existing Kotlin SDK and Hang media pipeline. Current moq.watch implements Draft 18; playback must still be verified with your relay and device.</string>
+    <string name="cloudflare_publish_token">Publish Connection Token</string>
+    <string name="cloudflare_publish_hint">Enter a Cloudflare Publish + Subscribe connection token. It is stored with Android Keystore encryption and sent in the URL path.</string>
+    <string name="cloudflare_subscribe_token">Subscribe Connection Token (optional)</string>
+    <string name="cloudflare_subscribe_hint">Use a separate Subscribe-only token for watching, OBS and receiver verification. Never use a Publish token here.</string>
+    <string name="cloudflare_broadcast_name">Broadcast Name</string>
+    <string name="cloudflare_broadcast_hint">Full Hang broadcast path, including the .hang suffix. Nested paths are preserved.</string>
+    <string name="cloudflare_no_management_token">Do not enter a Cloudflare Management API Token. No Relay ID or moq.pro Project ID is needed.</string>
+    <string name="cloudflare_viewing">Viewing and OBS subscription</string>
+    <string name="cloudflare_share_warning">A viewing link contains the Subscribe Token. Anyone with the link can subscribe within its permissions until it expires or is revoked.</string>
+    <string name="cloudflare_subscribe_required">Enter a separate Subscribe-only token and a valid .hang broadcast path to enable sharing.</string>
+    <string name="cloudflare_obs_info">Relay:\n%1$s\n\nBroadcast:\n%2$s</string>
+    <string name="copy_watch_url">Copy viewing URL</string>
+    <string name="copy_obs_info">Copy OBS subscription info</string>
+    <string name="subscription_copied">Subscription information copied</string>
+    <string name="confirm_subscribe_only">Confirm Subscribe-only Token</string>
+    <string name="confirm_subscribe_only_hint">Confirm that this token has only Subscribe permission. Cloudflare tokens are opaque: the app cannot infer their permissions. The viewing URL and OBS info include this token.</string>
+    <string name="confirm_subscribe_only_action">Confirm and continue</string>
+    <string name="cloudflare_tls_required">Cloudflare always verifies TLS certificates. Connection tokens are encrypted with Android Keystore and excluded from backup.</string>
+    <string name="error_token_storage">Could not securely load or save the connection token. Re-enter it; if the error persists, restart the app. No plaintext fallback is used.</string>
+    <string name="error_cloudflare_publish_token">Enter a Cloudflare Publish + Subscribe connection token, without a URL, Bearer prefix or query parameters.</string>
+    <string name="error_cloudflare_draft">This Cloudflare profile requires MoQ Transport Draft 18.</string>
+    <string name="error_cloudflare_broadcast">Enter a complete .hang broadcast path, without empty segments, spaces, query parameters or relative path segments.</string>
+    <string name="error_cloudflare_connection">Cloudflare Draft 18 connection failed. Check the connection token, relay permissions, network and compatible core. A connected session alone does not verify Hang publication.</string>
+    <string name="error_relay_auth">Relay rejected authentication or permissions. Check that the connection token is valid, unexpired and permits the required operation.</string>
+    <string name="error_relay_protocol">Relay protocol failure: %1$s / %2$s (code %3$s). This operation was not accepted; media delivery is unverified. See the exported diagnostics.</string>
+    <string name="error_relay_timeout">Relay connection timed out. Check the endpoint, network and QUIC availability, then try again.</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_publishing">Publishing</string>
+    <string name="status_reconnecting">Reconnecting</string>
+    <string name="connected_waiting_media">Connected; waiting for a subscriber to request the video track.</string>
+    <string name="stat_reconnects">Reconnect count: %1$d</string>
+    <string name="stat_endpoint_draft">Endpoint: Draft %1$d. Negotiated draft is not exposed by SDK 0.5.3.</string>
+    <string name="publishing_not_decode_verified">Publishing indicates media handoff. Receiver decoding is checked separately in Relay settings.</string>
+    <string name="verify_subscription">Verify remote media decoding</string>
+    <string name="verify_hint">Start broadcasting first. This opens a separate remote Subscribe session for up to 30 seconds and decodes video and enabled audio. It uses extra data and does not verify a separate browser or OBS client.</string>
+    <string name="verify_connecting">Connecting with the Subscribe Token??/string>
+    <string name="verify_catalog">Waiting for the remote Hang namespace and catalog??/string>
+    <string name="verify_decoding">Receiving and decoding remote video and audio??/string>
+    <string name="verify_passed">Remote decode passed: %1$s, %2$d ? %3$d; decoded frames: %4$d; %5$s. Browser playback still needs checking.</string>
+    <string name="verify_audio_passed">Opus decoded</string>
+    <string name="verify_audio_disabled">audio disabled</string>
+    <string name="verify_timeout">Verification timed out: no complete remote catalog and decodable media arrived. Check matching relay tokens, namespace routing, subscription permissions and keyframes. Connection success alone is insufficient.</string>
+    <string name="verify_failed">Remote decoding failed. Check the Subscribe Token, relay namespace/track support and device decoder. Export diagnostics for the specific stage and error.</string>
+    <string name="verify_codec_unsupported">The remote video codec or dimensions cannot be verified by this device decoder.</string>
+</resources>
+
+

@@ -1,0 +1,165 @@
+﻿# MoQ Publisher
+Author: sangege
+
+MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, CameraX and the `dev.moq` client. A GPU surface pipeline feeds Android MediaCodec without CPU YUV pixel copies, publishes compressed H.264/H.265 access units to a MoQ relay, and can publish microphone audio as Opus. An application-owned session and camera/microphone foreground service keep broadcasts independent of the Activity.
+
+## Features
+
+- CameraX capture with front/back camera switching, tap-to-focus, pinch/button/slider zoom, torch and saved exposure compensation within each camera's supported range.
+- Collapsible camera details, with camera actions on the left and zoom/broadcast controls or statistics on the right in landscape.
+- H.264 and H.265 hardware video encoding, with explicit errors for unsupported device/codec/resolution combinations.
+- Device-supported resolution selection and 15/24/30/60 FPS targets.
+- Optional 48 kHz mono/stereo Opus microphone audio, with four quality/bitrate presets, 0??00% PCM gain and automatic mono fallback.
+- Relay URL, broadcast path, JWT and TLS certificate verification settings.
+- Switchable moq.pro and Cloudflare MoQ Draft 18 profiles, with encrypted connection tokens,
+  separate Subscribe-only viewing/OBS links, connection phases and an opt-in remote decoder check.
+- Live RTT, measured send rate, bytes-sent statistics and actual published FPS alongside its target.
+- On-device diagnostic ZIP export with sharing and saving to the phone, without USB or adb.
+- Configurable video bitrate in Kbps (default 8000 Kbps), optional congestion-aware bitrate adaptation and sensor-timestamp frame pacing.
+- Settings and the last selected camera/video options are persisted locally.
+- Traditional Chinese and dark mode by default, with instant English/system-language and dark/light theme selection.
+- The screen stays awake during connection and streaming.
+- Background broadcasts continue when switching apps or turning off the screen, with a broadcast notification, Stop action and a bounded, renewed CPU wake lock.
+- Saved landscape lock supports both landscape directions; interface rotation does not restart the live camera session.
+- Universal APKs for ARM64, ARMv7 and x86_64. The MoQ core is downloaded from official Maven releases on first launch, cached across APK updates and checked for compatible updates at startup.
+
+## Usage
+
+1. Install the compact (recommended), debug or release APK on a supported Android device. Each APK supports ARM64, ARMv7 and x86_64 and omits the MoQ core.
+2. On first launch, connect to the internet and allow the official MoQ core package to download (about 33 MB). Only the running process ABI is extracted and saved. Grant camera permission; microphone permission is requested when an audio broadcast starts.
+3. Open **Settings ??Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
+   For Cloudflare, enter a **Publish + Subscribe connection token** and a full Hang broadcast name
+   (default `twcam.hang`). This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`;
+   do not use a Management API token, Project ID, Relay ID or `?jwt=`.
+4. Select the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. **???舫??迎??Ｙ?皜﹦??* enables network adaptation; disable it to retain the configured encoder target.
+5. Press **????皝? / Start broadcast** while the app is visible. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission; denying it does not grant extra background permissions or bypass the foreground-service rules. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
+6. The core must be ready before streaming. Later APK updates reuse the saved core; compatible core updates apply on the next cold app launch. Downloads defer while broadcasting. Stop broadcasting before changing stream parameters. Language, theme and landscape lock can change while live; opening Settings keeps capture running. A new broadcast fixes its encoding orientation at start, while the preview continues to follow the display.
+
+In landscape, the narrow left rail contains camera switching, center focus, torch, Settings and the details toggle. The narrow right rail contains a vertical zoom slider and the broadcast button. Drag upward to zoom in or downward to zoom out; tap the displayed zoom ratio to reset to 1?. Statistics and diagnostic export open in a separate panel beside the right rail. The actions and details can scroll on short screens; the zoom rail accepts vertical drags directly. Portrait keeps one set of focus/torch controls and a separate zoom row.
+
+Settings are grouped as Broadcast behavior (background broadcast and landscape lock), Connection (relay URL and broadcast path), Video (codec, resolution, FPS and bitrate), Audio (microphone, channels, quality and gain), Security & Authentication (JWT and TLS), and Appearance & Language (theme and language). Streaming settings stay locked while broadcasting; appearance and orientation controls remain available. The exposure icon beside the zoom controls opens the EV slider and reset action; unsupported cameras show a localized explanation.
+
+The JWT is added as a `jwt` query parameter at connection time and is masked in the settings preview. The relay URL may use `http`, `https`, `ws` or `wss`; a host and a non-empty broadcast path are required.
+
+The **Bitrate** statistic measures the change in bytes actually sent over the elapsed sample time, displayed in decimal Mbps, including transport overhead and retransmissions. It does not display the congestion controller's estimate of available bandwidth. The first sample, a reconnect, or a transport that provides no byte counter shows `--` until a valid measurement is available.
+
+Video bitrate is a saved setting rather than a hard-coded 2.5 Mbps ceiling. New installations default to 8000 Kbps. Existing Mbps preferences migrate once (8 Mbps becomes 8000 Kbps) without changing the encoder target. Values are decimal Kbps (at least 100 Kbps), converted to integer bits per second, and must fit the encoder's Android integer bitrate field; the device must also support the chosen codec/resolution/FPS/bitrate combination. Actual encoder output can vary with scene complexity and hardware rate control. With adaptation enabled (the default), the target acts as the ceiling; the controller reserves transport/audio headroom, drops promptly and recovers gradually all the way to the selected target. With adaptation disabled, the app does not lower the encoder bitrate based on congestion capacity estimates.
+
+CameraX provides one camera surface to an EGL renderer. The renderer feeds the MediaCodec input surface at the selected frame rate and draws a separate preview at up to 30 FPS; hiding or destroying the display surface does not remove the encoder output. Camera frames above the selected streaming FPS are dropped using sensor timestamps. The pacer re-anchors if switching cameras changes the sensor clock origin. CameraX queries FPS support for the actual capture session and configures a session-wide range, preferring a fixed range at the target when supported. Sensor resolutions stay within the requested dimensions, independent of display rotation; if no mode fits, the smallest available mode is used.
+
+The main screen shows measured output FPS, the current encoder target bitrate, capture resolution and requested camera FPS range. It displays a notice when the selected camera range tops out below the target FPS. A variable camera range may slow down in low light, and actual FPS still depends on device performance. MediaCodec output drains on its own callback thread; GPU submission has bounded pending frames and a stalled encoder produces an error instead of silently freezing forever. Raw pixels never cross the MoQ FFI boundary. Encoded video queue overflow waits for a fresh keyframe instead of publishing deltas with missing references. Diagnostics record `gpu_submit_*` timings. The earlier YUV encoder remains as a separate backend in source, but the app's normal capture path uses surfaces.
+
+Audio capture/publication uses a separate lock from video encoding. A capture gap resets the Opus sample clock so resumed audio follows live time; a failed microphone stops the broadcast with an error. Video carries SPS/PPS (plus VPS for H.265) on every keyframe, uses a one-second keyframe interval, and requests a fresh keyframe when viewers subscribe. The H.265 option requires a hardware HEVC encoder on the phone and HEVC decoding support in the viewing browser.
+
+## Report a playback problem from the phone
+
+1. Install v1.0.3 or later, start a broadcast and reproduce buffering or delay in moq.watch for about one minute.
+2. Return to the broadcaster and tap **??穿?桃捂謘?* on the main screen. This works while live, after stopping, and after an error.
+3. Select **???** to share the ZIP, or **????澗??** to save it with Android's file picker. Attach that ZIP to the support conversation. Include the viewing URL and viewing browser if available.
+
+Recording starts automatically. A rotating event history survives app restarts and is capped at 1 MiB in the app's private, non-backed-up storage. Per-frame counters stay in memory; once-per-second summaries record actual camera/submitted/encoded/published FPS, pacing/busy drops, keyframes, frame handoff latency, audio packets/resets and ages of the last camera/video/audio activity. Session samples add RTT, measured send rate, capacity estimates, transport loss/counters, encoder queue size, CPU, heap use and thermal status.
+
+Starting with v1.0.4, reports also record camera-selected sizes/FPS, actual frame dimensions/crops/rotation/plane strides, and average/maximum pixel-copy, codec-input, codec-drain, MoQ-publication and full video-callback times. These stage timings are nested: codec drain includes MoQ publication, and the callback includes both; they should not be added together. Version 1.0.5 adds saved bitrate/adaptation settings, session-specific FPS query results and preview resolution. The reported `video_budget_bps` tracks the last bitrate successfully accepted by the encoder, including when dynamic bitrate changes are rejected.
+
+Each ZIP contains `summary.txt` (device, state, settings, network and AVC/HEVC encoder capabilities), `events.log`, a best-effort `app-logcat.txt` snapshot of the current app process, and a field guide in `README.txt`. Authentication fields are omitted; URL query values, URL credentials, bearer tokens and recognizable JWTs are redacted before persistence and again before export. Camera/video frames and microphone samples are not recorded. The Android share grants read access to the selected ZIP only; saving uses the system file picker and needs no storage permission. The latest three exports are retained in app cache.
+
+## Project layout
+
+- `MainActivity.kt` contains the Compose screens and permission flow.
+- `MainViewModel.kt` owns persisted settings and validation and observes the application-owned broadcast state.
+- `BroadcastSession.kt` and `BroadcastService.kt` own the live session, foreground notification, generation-safe stop actions and CPU wake lock.
+- `CameraPreview.kt` owns only the display texture and camera gestures; `CameraCaptureEngine.kt` owns the independent CameraX lifecycle.
+- `CameraSurfaceRenderer.kt` and `SurfaceVideoEncoder.kt` feed GPU surfaces to the hardware encoder and drain compressed frames asynchronously.
+- `MoqStreamer.kt` owns the MoQ session, media producers, audio capture and cleanup.
+- `HardwareVideoEncoder.kt`, `YuvPlaneCopy.kt` and `AnnexB.kt` handle hardware encoding, camera/codec plane layouts and independently decodable H.264/H.265 access units.
+- `CameraCapturePolicy.kt` bounds sensor resolution choices and chooses supported camera FPS ranges.
+- `AudioTimeline.kt`, `VideoFramePacer.kt`, `VideoBitrateControl.kt`, `VideoBitrateSettings.kt` and `SendRateEstimator.kt` handle live timing, encoder rate settings/control and measured transport throughput.
+- `AppDiagnostics.kt`, `DiagnosticRecorder.kt`, `StreamMetrics.kt` and `DiagnosticsExportButton.kt` record bounded diagnostics and export/share reports from the phone.
+- `RelayUrl.kt` contains URL construction and masking helpers with JVM unit tests.
+
+## Verification
+
+Run the unit tests with:
+
+```text
+./gradlew testDebugUnitTest
+```
+
+Build the debug APK with:
+
+```text
+./gradlew assembleDebug
+```
+
+Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
+
+
+## APK variants (v1.0.11)
+
+Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. Compact uses the existing development certificate for in-place sideload updates. The release Gradle task remains unsigned; the delivered release APK is signed with the same development certificate as the other two APKs. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
+
+`AudioSettings.kt` processes interleaved signed 16-bit PCM before Opus encoding. Economy uses 32/64 Kbps for mono/stereo, Standard 64/128, High 96/192 and Maximum 128/256. Standard preserves the previous bitrate. Capture layout, frame size, encoder channels and video bandwidth reservation use the actual selected format and quality. Unsupported stereo retries mono, selects the corresponding mono bitrate and shows a localized notice. Gain is applied with saturation; 100% preserves every input sample.
+
+`AppLocale.kt` scopes Android configuration/resources to Compose, preserving the Activity context chain and avoiding activity/session restarts. `AppSettings.kt` persists the default Chinese/dark choices and alternatives; all interface messages use Android string resources, including errors already on screen. `MainActivity.kt` shares cards, controls and status notices between portrait/landscape layouts, wraps options on narrow screens and scrolls control panels on short screens. It applies FLAG_KEEP_SCREEN_ON during connection/live states and releases it when stopped or failed.
+
+Additional JVM tests cover Kbps migration/boundaries, audio gain/clipping and stereo fallback. Device tests in `SettingsPersistenceTest.kt` and `AppearanceTest.kt` cover real preferences and immediate resource/theme/error updates; compile with `./gradlew assembleDebugAndroidTest`, and execute with `./gradlew connectedDebugAndroidTest` on an ARM64 Android device. A build without a connected device does not validate microphone hardware, actual layout or end-to-end playback.
+
+## Audio continuity and core updates in 1.0.10
+
+Microphone capture and publication use separate audio-priority threads. The bundled Opus implementation is retained inside the downloaded core. A local compressed-packet bridge forwards each packet immediately into 200 ms MoQ groups, reducing audio QUIC stream creation from 50 to 5 streams per second. It preserves OpusHead/pre-skip and epoch resets. Video encoding and transport remain unchanged. Diagnostics add microphone/publication intervals, queue wait, PCM silence/peak and hardware capture-clock observations without recording microphone samples.
+
+Official artifacts are fetched over verified HTTPS. The updater checks artifact SHA-256, source binding contracts, the extracted ELF architecture and all 213 required native ABI checks before activation. Downloads are cached in app-private storage and do not need to repeat for each APK update or build type. Existing cores work offline, and updates never replace an active process library during a broadcast.
+
+See `build/diagnostics/audio-20261116/verification.md` for diagnostic evidence, file changes, native audio verification, APK hashes and test limitations.
+
+## Camera, background broadcasting and surface pipeline in 1.0.11
+
+Exposure, landscape lock, background broadcasting and audio quality are persisted. Camera exposure is clamped to each newly attached camera's range. The foreground service starts from a visible Activity, declares the camera and enabled microphone service types, and releases its wake lock and notification when stopped. A stopped process is not automatically restarted into camera/microphone capture; Android force-stop, revoked permissions and vendor battery policies can end a broadcast.
+
+Activity destruction no longer closes the streamer or the live camera. A stream generation prevents an old service/notification from stopping a newer broadcast. The broadcast job owns cleanup exactly once. The GPU renderer uses an off-screen context and independent display/encoder surfaces; the front preview is mirrored explicitly while encoded video stays unmirrored. Display rotation keeps the live encoding orientation stable. Audio publication uses one coroutine event loop per publisher thread, preserving immediate Opus delivery and 200 ms groups without creating a new blocking coroutine for each packet. The app continues to use the official Kotlin bindings and downloaded compatible Rust core.
+
+See `build/diagnostics/v1.0.11/verification.md` for the changed files, validation and device-test limitations. JVM tests and host native Opus tests do not validate an Android GPU/codec, actual background capture, layout or real network playback.
+
+## Cloudflare and camera orientation in 1.0.12
+
+Both providers share the same camera, H.264/H.265 encoders, Opus encoder, Hang catalog/tracks,
+timestamps, bounded queues, adaptation and foreground service. Changing providers while stopped
+does not require restarting the app and preserves each provider's saved destination. Cloudflare
+always verifies TLS and disables the moq.pro WebSocket fallback. Connection tokens are AES-GCM
+encrypted with an Android Keystore key, excluded from backup, and never logged in URLs. The old
+moq.pro authentication preference migrates into the encrypted store after a successful write.
+
+Enter a different **Subscribe-only connection token from the same relay** to enable viewing and
+OBS information. The app never substitutes the Publish Token. Before copying, confirm that the
+opaque token has Subscribe-only permissions; the app cannot infer those permissions. Shared
+links intentionally contain the Subscribe Token. Draft 18 links use
+`https://moq.watch/<subscribe-token>/<full-broadcast-name>?cloudflare=draft-18`.
+
+Connected means session establishment; Publishing requires a subscriber's video demand and media
+handoff. Neither proves remote decoding. While broadcasting, **Verify remote media decoding**
+opens a distinct remote Subscribe session, waits for the Hang catalog, decodes three video frames
+with Android MediaCodec and, when enabled, three Opus packets with the existing SDK. It times out
+after 30 seconds and closes its consumers/connection. This is extra network traffic, not a
+moq.watch browser test. No Cloudflare account tokens or Android device were available during
+development, so real Cloudflare publication, browser decoding and device behavior remain to be
+verified. SDK 0.5.3 does not expose a negotiated-version getter or namespace-acceptance ACK.
+
+The SDK's automatic reconnect re-announces broadcasts with exponential backoff. A change of the
+Android default network additionally rebuilds the session/media publishers; both routes request a
+fresh keyframe, discard the old queued GOP and preserve the foreground service. Stats distinguish
+the selected endpoint draft from the unexposed negotiated draft and count established reconnects.
+
+The 1.0.11 rendering path could apply HAL texture orientation and app rotation together. 1.0.12
+normalizes the HAL orientation/mirroring while retaining its crop/GL flip, applies clockwise camera
+rotation and center crop once through shared UV/metering geometry, and tracks 180-degree display
+changes. Only the front preview is mirrored. The camera dump now records transformation metadata
+without image pixels. JVM tests verify geometry, not real Android GPU output; phone verification
+of portrait, both landscape directions, front/back cameras and receiver aspect remains necessary.
+
+See `build/diagnostics/cloudflare-v1.0.12/verification.md` for compatibility evidence, file changes,
+build/test results and the remaining device checks.
+
+
+
+
+
