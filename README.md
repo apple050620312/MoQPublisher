@@ -1,4 +1,6 @@
 ﻿# MoQ Publisher
+
+![MoQ Publisher](favicon.svg)
 Author: sangege
 
 MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, CameraX and the `dev.moq` client. A GPU surface pipeline feeds Android MediaCodec without CPU YUV pixel copies, publishes compressed H.264/H.265 access units to a MoQ relay, and can publish microphone audio as Opus. An application-owned session and camera/microphone foreground service keep broadcasts independent of the Activity.
@@ -158,6 +160,7 @@ of portrait, both landscape directions, front/back cameras and receiver aspect r
 
 See `build/diagnostics/cloudflare-v1.0.12/verification.md` for compatibility evidence, file changes,
 build/test results and the remaining device checks.
+
 
 
 
