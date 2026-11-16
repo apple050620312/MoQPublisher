@@ -20,4 +20,5 @@ local.properties
 *.aab
 *.zip
 *.idsig
+dist/
 /.idea/
