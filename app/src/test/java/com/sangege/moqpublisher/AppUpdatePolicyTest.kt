@@ -19,7 +19,7 @@ class AppUpdatePolicyTest {
 
     @Test
     fun checksumAndAssetNamesAreStrict() {
-        assertEquals("MoQPublisher-1.0.17-release.apk", AppUpdatePolicy.apkName("1.0.17"))
+        assertEquals("MoQPublisher-1.0.18-release.apk", AppUpdatePolicy.apkName("1.0.18"))
         assertEquals("a".repeat(64), AppUpdatePolicy.normalizeDigest("sha256:${"A".repeat(64)}"))
         assertEquals("b".repeat(64), AppUpdatePolicy.checksumFromSidecar("${"b".repeat(64)}  app.apk\n"))
         assertNull(AppUpdatePolicy.normalizeDigest("not-a-digest"))

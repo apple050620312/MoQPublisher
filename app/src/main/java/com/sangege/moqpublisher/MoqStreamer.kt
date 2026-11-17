@@ -293,10 +293,14 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             startStatsMonitoring(moq)
             launch {
                 var lastEpoch = 0uL
+                var lastStatus: ConnectionStatus? = null
                 while (isActive) {
                     val status = moq.session.status()
                     val epoch = moq.epoch()
-                    diagnostics.event("relay_status", mapOf("status" to status, "epoch" to epoch))
+                    if (status != lastStatus || epoch != lastEpoch) {
+                        diagnostics.event("relay_status", mapOf("status" to status, "epoch" to epoch))
+                        lastStatus = status
+                    }
                     when (status) {
                         ConnectionStatus.CONNECTED -> {
                             _streamState.update { current ->
@@ -316,6 +320,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             if (current is StreamState.Live) current.copy(phase = RelayConnectionPhase.RECONNECTING) else current
                         }
                     }
+                    delay(RelayConnectionPolicy.SESSION_STATUS_POLL_MS)
                 }
             }
             awaitCancellation()

@@ -4,6 +4,10 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class RelayConnectionPolicyTest {
+    @Test fun sessionStatusPollingIsResponsiveWithoutBusyLooping() {
+        assertTrue(RelayConnectionPolicy.SESSION_STATUS_POLL_MS in 100L..1_000L)
+    }
+
     @Test fun connectionAloneAndUnrequestedWritesDoNotClaimPublication() {
         val connected = StreamState.Live()
         assertEquals(RelayConnectionPhase.CONNECTED, RelayConnectionPolicy.mediaWritten(connected, false).phase)

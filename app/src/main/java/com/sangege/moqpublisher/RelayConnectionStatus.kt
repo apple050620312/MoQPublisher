@@ -13,6 +13,9 @@ internal fun StreamState.isActive(): Boolean = this is StreamState.Connecting ||
 
 internal object RelayConnectionPolicy {
     const val CONNECT_TIMEOUT_MS = 45_000L
+    // Status changes are event-like; polling at 4 Hz is responsive to handovers
+    // without turning the relay monitor into a busy loop while media is live.
+    const val SESSION_STATUS_POLL_MS = 250L
     const val INITIAL_BACKOFF_US = 1_000_000uL
     const val MAX_BACKOFF_US = 30_000_000uL
     const val RETRY_WINDOW_US = 120_000_000uL

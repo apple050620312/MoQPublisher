@@ -26,3 +26,5 @@
 - 驗證：`assembleCompact`、`testDebugUnitTest`；尚未在實機確認不同廠牌 launcher 的實際圓形遮罩與安裝提示。
 - 已以本機建置並上傳 `v1.0.16` GitHub Release；APK SHA-256 為 `fa217facdd0ece53f3c07b979cf3a3525f3dcabf4db69464d87ec9f3f10992c2`。
 - 將 Release 發佈改為真正的 `assembleRelease`，並把 App 更新與 MoQ 核心更新移到設定頁最底部的「關於」區塊；本次版本為 `v1.0.17`。
+- 將 relay session 狀態監控改為 250 ms 輪詢，只有狀態或 epoch 變更時寫入診斷事件，避免直播期間忙碌迴圈消耗 CPU、電量與診斷儲存；同步將版本升至 `1.0.18`，README 安裝建議改為 signed release APK。
+- 驗證：`assembleRelease`、`testDebugUnitTest`、UTF-8/XML 掃描、APK 簽章驗證；尚未在實機量測不同手機的長時間編碼與網路切換表現。

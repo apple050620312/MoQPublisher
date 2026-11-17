@@ -24,7 +24,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 
 ## Usage
 
-1. Install the compact (recommended), debug or release APK on a supported Android device. Each APK supports ARM64, ARMv7 and x86_64 and omits the MoQ core.
+1. Install the signed release APK (recommended), compact APK or debug APK on a supported Android device. Each APK supports ARM64, ARMv7 and x86_64 and omits the MoQ core.
 2. On first launch, connect to the internet and allow the official MoQ core package to download (about 33 MB). Only the running process ABI is extracted and saved. Grant camera permission; microphone permission is requested when an audio broadcast starts.
 3. Open **Settings -> Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
    For Cloudflare, enter a **Publish + Subscribe connection token** and a full Hang broadcast name
@@ -93,7 +93,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.17)
+## APK variants (v1.0.18)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 
