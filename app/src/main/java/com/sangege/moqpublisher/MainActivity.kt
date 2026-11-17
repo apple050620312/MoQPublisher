@@ -5,8 +5,10 @@ import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import android.util.Size
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -18,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -36,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -63,6 +68,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sangege.moqpublisher.ui.theme.LiveRed
 import com.sangege.moqpublisher.ui.theme.MoQPublisherTheme
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -134,6 +140,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val coreState by viewModel.coreState.collectAsState()
     val appUpdateState by viewModel.appUpdateState.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by rememberSaveable {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
@@ -142,6 +149,15 @@ fun MainScreen(viewModel: MainViewModel) {
     }
     var pendingAudioStart by rememberSaveable { mutableStateOf(false) }
     var notificationsRequested by rememberSaveable { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var isResumed by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
+    var resetRemindersOnStart by remember { mutableStateOf(false) }
+    var pendingInstallPermission by rememberSaveable { mutableStateOf(false) }
+    var preparingAppInstall by remember { mutableStateOf(false) }
+    var dismissedAppUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var dismissedCoreUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val updateReminder = updateReminderFor(appUpdateState, coreState)
+        ?.withoutDismissed(dismissedAppUpdateKey, dismissedCoreUpdateKey)
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         viewModel.startBroadcast()
     }
@@ -164,14 +180,69 @@ fun MainScreen(viewModel: MainViewModel) {
             else viewModel.setConfigurationError(UiMessage(R.string.error_microphone_permission))
         }
     }
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val active = streamState is StreamState.Live || streamState is StreamState.Connecting
+    val scope = rememberCoroutineScope()
+    val installVerifiedApp: () -> Unit = {
+        if (!preparingAppInstall) {
+            preparingAppInstall = true
+            scope.launch {
+                try {
+                    viewModel.prepareAppUpdateInstall()?.let { uri ->
+                        context.startActivity(AppUpdateInstaller.intent(uri))
+                    }
+                } catch (_: ActivityNotFoundException) {
+                    viewModel.setConfigurationError(UiMessage(R.string.app_update_install_failed))
+                } catch (_: SecurityException) {
+                    viewModel.setConfigurationError(UiMessage(R.string.app_update_install_permission))
+                } finally {
+                    preparingAppInstall = false
+                }
+            }
+        }
+    }
+    val installPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (pendingInstallPermission) {
+            pendingInstallPermission = false
+            if (Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()) installVerifiedApp()
+            else viewModel.setConfigurationError(UiMessage(R.string.app_update_install_permission))
+        }
+    }
+    val installAppUpdate: () -> Unit = {
+        if (viewModel.streamState.value.isActive()) {
+            viewModel.setConfigurationError(UiMessage(R.string.app_update_streaming))
+        } else if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
+            pendingInstallPermission = true
+            try {
+                installPermissionLauncher.launch(Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")))
+            } catch (_: ActivityNotFoundException) {
+                pendingInstallPermission = false
+                viewModel.setConfigurationError(UiMessage(R.string.app_update_install_permission))
+            }
+        } else installVerifiedApp()
+    }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             viewModel.onLifecycleEvent(event.name)
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-                hasAudioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-                viewModel.checkAppUpdates()
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    if (resetRemindersOnStart && !pendingInstallPermission) {
+                        dismissedAppUpdateKey = null
+                        dismissedCoreUpdateKey = null
+                    }
+                    resetRemindersOnStart = false
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    isResumed = true
+                    hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                    hasAudioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    // Do not replace the selected APK while returning from installation permission settings.
+                    if (!pendingInstallPermission && !preparingAppInstall) viewModel.checkAppUpdates()
+                    viewModel.checkCoreUpdates()
+                }
+                Lifecycle.Event.ON_PAUSE -> isResumed = false
+                Lifecycle.Event.ON_STOP -> resetRemindersOnStart = true
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -179,19 +250,6 @@ fun MainScreen(viewModel: MainViewModel) {
     }
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-    }
-    val active = streamState is StreamState.Live || streamState is StreamState.Connecting
-    val installAppUpdate: () -> Unit = {
-        viewModel.appUpdateUri()?.let { uri ->
-            try {
-                context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                })
-            } catch (_: ActivityNotFoundException) {
-                viewModel.setConfigurationError(UiMessage(R.string.app_update_install_failed))
-            }
-        }
     }
     val onToggleBroadcast: () -> Unit = {
         when {
@@ -203,7 +261,7 @@ fun MainScreen(viewModel: MainViewModel) {
             else -> startWithNotification()
         }
     }
-    val openSettings = { showSettings = true }
+    val openSettings = { openAboutOnEntry = false; showSettings = true }
     BackHandler(enabled = showSettings) { showSettings = false }
     Box(Modifier.fillMaxSize()) {
         if (!hasCameraPermission) {
@@ -276,10 +334,84 @@ fun MainScreen(viewModel: MainViewModel) {
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
-                isStreaming = active, onBack = { showSettings = false }
+                isStreaming = active, onBack = { showSettings = false }, openAboutOnEntry = openAboutOnEntry
+            )
+        }
+        updateReminder?.takeIf { isResumed && !pendingInstallPermission && !preparingAppInstall }?.let { reminder ->
+            UpdateReminderDialog(
+                reminder = reminder,
+                isStreaming = active,
+                onDismiss = {
+                    reminder.appKey?.let { dismissedAppUpdateKey = it }
+                    reminder.coreKey?.let { dismissedCoreUpdateKey = it }
+                },
+                onPrimaryAction = {
+                    reminder.appKey?.let { dismissedAppUpdateKey = it }
+                    reminder.coreKey?.let { dismissedCoreUpdateKey = it }
+                    if (reminder.hasAppUpdate) {
+                        if (active) {
+                            openAboutOnEntry = true
+                            showSettings = true
+                        } else if (reminder.appReady) {
+                            installAppUpdate()
+                        } else {
+                            openAboutOnEntry = true
+                            showSettings = true
+                            viewModel.downloadAppUpdate()
+                        }
+                    } else {
+                        openAboutOnEntry = true
+                        showSettings = true
+                    }
+                }
             )
         }
     }
+}
+
+@Composable
+private fun UpdateReminderDialog(
+    reminder: UpdateReminder,
+    isStreaming: Boolean,
+    onDismiss: () -> Unit,
+    onPrimaryAction: () -> Unit
+) {
+    val primaryLabel = when {
+        reminder.hasAppUpdate && !isStreaming && reminder.appReady -> R.string.app_update_install
+        reminder.hasAppUpdate && !isStreaming -> R.string.app_update_download
+        else -> R.string.update_open_about
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.update_available_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                reminder.appVersion?.let { version ->
+                    Text(stringResource(
+                        if (reminder.appReady) R.string.update_app_ready else R.string.update_app_available,
+                        version
+                    ))
+                }
+                reminder.coreVersion?.let { version ->
+                    Text(stringResource(
+                        when (reminder.coreKind) {
+                            CoreUpdateReminderKind.READY -> R.string.update_core_available
+                            CoreUpdateReminderKind.DEFERRED -> R.string.update_core_deferred
+                            CoreUpdateReminderKind.INCOMPATIBLE -> R.string.update_core_incompatible
+                        },
+                        version
+                    ))
+                }
+                if (reminder.hasAppUpdate && isStreaming) Text(stringResource(R.string.app_update_streaming))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onPrimaryAction) { Text(stringResource(primaryLabel)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.update_later)) }
+        }
+    )
 }
 
 @Composable
@@ -869,12 +1001,21 @@ fun SettingsScreen(
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
-    isStreaming: Boolean, onBack: () -> Unit
+    isStreaming: Boolean, onBack: () -> Unit, openAboutOnEntry: Boolean = false
 ) {
     val focusManager = LocalFocusManager.current
     val editable = !isStreaming
     val bitrateValid = VideoBitrateSettings.parseKbps(videoBitrateKbps) != null
-    SettingsScaffold(onBack) {
+    val scroll = rememberScrollState()
+    var aboutOffset by remember { mutableIntStateOf(-1) }
+    var scrolledToAbout by remember { mutableStateOf(false) }
+    LaunchedEffect(openAboutOnEntry, aboutOffset) {
+        if (openAboutOnEntry && aboutOffset >= 0 && !scrolledToAbout) {
+            scroll.scrollTo(aboutOffset)
+            scrolledToAbout = true
+        }
+    }
+    SettingsScaffold(onBack, scroll) {
         profileError?.let { StatusNotice(it.text(), error = true) }
         if (isStreaming) StatusNotice(stringResource(R.string.streaming_settings_locked))
         SettingCard(stringResource(R.string.broadcast_behavior)) {
@@ -965,7 +1106,8 @@ fun SettingsScreen(
             ChoiceOptions(stringResource(R.string.theme), theme, listOf(
                 AppTheme.DARK to stringResource(R.string.theme_dark), AppTheme.LIGHT to stringResource(R.string.theme_light)), onThemeChange)
         }
-        SettingCard(stringResource(R.string.about), stringResource(R.string.about_description)) {
+        SettingCard(stringResource(R.string.about), stringResource(R.string.about_description),
+            Modifier.onGloballyPositioned { aboutOffset = it.positionInParent().y.roundToInt() }) {
             AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
             CoreStatusCard(coreState, onCoreCheck)
         }
@@ -1055,22 +1197,22 @@ private fun CoreStatusCard(state: CoreState, onCheck: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScaffold(onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsScaffold(onBack: () -> Unit, scroll: ScrollState, content: @Composable ColumnScope.() -> Unit) {
     Scaffold(modifier = Modifier.fillMaxSize().imePadding(), topBar = {
         TopAppBar(title = { Text(stringResource(R.string.settings)) }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back)) }
         }, colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface))
     }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 840.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+            Column(Modifier.widthIn(max = 840.dp).fillMaxWidth().verticalScroll(scroll).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp), content = content)
         }
     }
 }
 
 @Composable
-private fun SettingCard(title: String, description: String? = null, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
+private fun SettingCard(title: String, description: String? = null, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)

@@ -93,13 +93,17 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.18)
+## APK variants (v1.0.19)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 
 ## Main app updates
 
 The app checks `https://api.github.com/repos/apple050620312/MoQPublisher/releases/latest` at startup and when returning to the foreground. A newer release APK can be downloaded from Settings after broadcasting stops. The updater only accepts the versioned `MoQPublisher-<version>-release.apk` asset from this repository, follows HTTPS GitHub asset redirects, checks the declared size and SHA-256 digest, then hands the verified file to Android's package installer. It never replaces an APK silently or while a broadcast is active.
+
+Available App and MoQ core updates now open an on-screen reminder at startup and when returning to the foreground. The reminder combines both updates, offers APK download or installation, and opens the About section directly. A downloaded APK prompts again when it is ready to install. Core reminders explain when a download is deferred until broadcasting stops, when a downloaded core will apply on the next cold start, or when a newer core requires updated app bindings. Dismissing a reminder suppresses that version and stage for the current foreground session.
+
+Version 1.0.19 gives update APKs and diagnostic exports separate FileProvider components. Android caches local providers by component class; sharing one class between the two authorities could send the installer an unreadable APK URI. Installation now includes a ClipData read grant, opens Android's unknown-app-source permission screen when needed, and resumes installation after permission is granted. Before opening the installer, the app rechecks the file size, SHA-256, package name, release version, increasing version code, Android compatibility and signing certificate on an IO dispatcher. If an earlier version reports a package parsing error, download this release APK in a browser and install it over the existing app once; subsequent updates use the repaired flow.
 
 Run `./publish-release.ps1` on the development computer after committing and pushing source changes. The script runs the signed release build and JVM tests locally, creates `MoQPublisher-<versionName>-release.apk` and its `.sha256` sidecar, pushes the matching `v<versionName>` tag, and uploads both files with `gh release create`. This avoids waiting for a GitHub Actions runner.
 

@@ -77,10 +77,10 @@ class AppUpdateManager(context: Context, private val currentVersion: String = pa
     @Synchronized fun checkForUpdates() {
         if (job?.isActive == true) return
         val nextJob = scope.launch {
-            mutableState.value = AppUpdateState(
+            mutableState.value = state.value.copy(
                 phase = AppUpdatePhase.CHECKING,
                 currentVersion = currentVersion,
-                latestVersion = state.value.latestVersion
+                lastError = null
             )
             try {
                 val latest = fetchLatestRelease()
@@ -163,6 +163,21 @@ class AppUpdateManager(context: Context, private val currentVersion: String = pa
     }
 
     fun downloadedFile(): File? = state.value.downloadedPath?.let(::File)?.takeIf { it.isFile }
+
+    /** Run on IO: recheck the bytes as well as the Android archive before installation. */
+    suspend fun installStatus(): AppUpdateInstallStatus {
+        val candidate = release ?: return AppUpdateInstallStatus.MISSING
+        val file = downloadedFile() ?: return AppUpdateInstallStatus.MISSING
+        if (file.name != candidate.apk.name) return AppUpdateInstallStatus.MISSING
+        val expected = candidate.apk.sha256 ?: candidate.checksum?.let { downloadChecksum(it) }
+        if (expected == null || file.length() != candidate.apk.size ||
+            runCatching { CoreLibraryFiles.verifySha256(file, expected) }.isFailure) {
+            file.delete()
+            mutableState.value = state.value.copy(phase = AppUpdatePhase.AVAILABLE, downloadedPath = null)
+            return AppUpdateInstallStatus.INVALID
+        }
+        return AppUpdateInstaller.inspect(context, file, candidate.version)
+    }
 
     private fun fetchLatestRelease(): AppRelease {
         val connection = open(AppUpdatePolicy.API_URL, downloads = false)

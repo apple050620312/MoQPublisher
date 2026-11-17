@@ -34,7 +34,7 @@
             android:foregroundServiceType="camera|microphone"
             android:stopWithTask="false" />
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".DiagnosticsFileProvider"
             android:authorities="${applicationId}.diagnostics"
             android:exported="false"
             android:grantUriPermissions="true">
@@ -43,7 +43,7 @@
                 android:resource="@xml/diagnostic_paths" />
         </provider>
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".AppUpdateFileProvider"
             android:authorities="${applicationId}.updates"
             android:exported="false"
             android:grantUriPermissions="true">

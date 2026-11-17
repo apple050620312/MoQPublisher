@@ -16,10 +16,13 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.moq.VideoCodec
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val PREFS_NAME = "moq_stream_prefs"
 private const val KEY_RELAY_URL = "relay_url"
@@ -179,8 +182,37 @@ class MainViewModel internal constructor(
         if (!streamState.value.isActive()) appUpdates.downloadUpdate()
     }
 
-    fun appUpdateUri(): Uri? = appUpdates.downloadedFile()?.let { file ->
-        FileProvider.getUriForFile(getApplication(), "${getApplication<Application>().packageName}.updates", file)
+    suspend fun prepareAppUpdateInstall(): Uri? {
+        if (streamState.value.isActive()) {
+            setConfigurationError(UiMessage(R.string.app_update_streaming))
+            return null
+        }
+        return try {
+            val (status, uri) = withContext(Dispatchers.IO) {
+                val status = appUpdates.installStatus()
+                val uri = if (status == AppUpdateInstallStatus.READY) appUpdates.downloadedFile()?.let { file ->
+                    FileProvider.getUriForFile(getApplication(), "${getApplication<Application>().packageName}.updates", file)
+                } else null
+                // Exercise the actual registered provider before asking another app to read it.
+                uri?.let { getApplication<Application>().contentResolver.openFileDescriptor(it, "r")?.use { descriptor ->
+                    check(descriptor.statSize > 0) { "Empty update URI" }
+                } ?: error("Cannot open update URI") }
+                status to uri
+            }
+            if (streamState.value.isActive()) {
+                setConfigurationError(UiMessage(R.string.app_update_streaming))
+                null
+            } else {
+                setConfigurationError(status.errorMessage())
+                uri
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            diagnostics.error("app_update_install_preparation", error)
+            setConfigurationError(UiMessage(R.string.app_update_invalid_apk))
+            null
+        }
     }
 
     fun setRelayUrl(url: String) {

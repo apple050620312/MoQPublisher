@@ -13,8 +13,8 @@ android {
         applicationId = "com.sangege.moqpublisher"
         minSdk = 24
         targetSdk = 37
-        versionCode = 19
-        versionName = "1.0.18"
+        versionCode = 20
+        versionName = "1.0.19"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -49,6 +49,9 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
     // Both languages must be installed for instant offline switching, including from an App Bundle.
     bundle {
@@ -94,6 +97,7 @@ dependencies {
     implementation(libs.camerax.view)
 
     testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.18")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
