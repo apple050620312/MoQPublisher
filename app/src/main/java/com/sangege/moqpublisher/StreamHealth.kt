@@ -32,7 +32,8 @@ data class StreamHealthInput(
     val audioAgeMs: Long? = null,
     val targetFps: Int = 0,
     val publishedFps: Double? = null,
-    val queueDepth: Int = 0
+    val queueDepth: Int = 0,
+    val queueMediaAgeMs: Long? = null
 )
 
 /** Pure evaluator used by the streamer and JVM tests. */
@@ -41,6 +42,11 @@ internal class StreamHealthEvaluator(private val cleanSamplesToRecover: Int = 3)
 
     fun reset(): StreamHealthSnapshot {
         previous = StreamHealthSnapshot()
+        return previous
+    }
+
+    fun markRecovering(): StreamHealthSnapshot {
+        previous = previous.copy(level = StreamHealthLevel.RECOVERING)
         return previous
     }
 
@@ -60,7 +66,9 @@ internal class StreamHealthEvaluator(private val cleanSamplesToRecover: Int = 3)
         if (input.audioExpected && input.audioAgeMs != null && input.audioAgeMs > 2_000L) {
             reasons += StreamHealthReason.AUDIO_STALLED
         }
-        if (input.queueDepth >= 45) reasons += StreamHealthReason.QUEUE_PRESSURE
+        if (input.queueDepth >= 6 || input.queueMediaAgeMs != null && input.queueMediaAgeMs > 400L) {
+            reasons += StreamHealthReason.QUEUE_PRESSURE
+        }
 
         val critical = reasons.any {
             it == StreamHealthReason.ENCODER_STALLED || it == StreamHealthReason.PUBLISH_STALLED

@@ -31,6 +31,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
 
     init {
         streamer.beforeVideoEncoderClose = camera::detachEncoder
+        streamer.requestCameraRecovery = camera::recover
         var previousConnection: Pair<ULong, Long>? = null
         scope.launch {
             streamer.streamState.collect { state ->

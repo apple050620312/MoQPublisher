@@ -14,7 +14,8 @@ internal data class EncodedVideoPacket(
     val codec: VideoCodec,
     val accessUnit: AnnexB.AccessUnit,
     val headers: ByteArray,
-    val timestampUs: Long
+    val timestampUs: Long,
+    val enqueuedAtNs: Long = System.nanoTime()
 )
 
 /**
@@ -75,6 +76,10 @@ internal class VideoPublishQueue(private val capacity: Int = 6) : AutoCloseable 
     fun waitForKeyframe() = synchronized(monitor) { queue.clear(); waitingForKeyframe = true }
 
     fun depth(): Int = synchronized(monitor) { queue.size }
+
+    fun mediaAgeMs(nowNs: Long = System.nanoTime()): Long? = synchronized(monitor) {
+        queue.firstOrNull()?.enqueuedAtNs?.let { (nowNs - it).coerceAtLeast(0L) / 1_000_000L }
+    }
 
     companion object {
         /** Keeps up to roughly 250 ms of encoded video during short writer stalls. */

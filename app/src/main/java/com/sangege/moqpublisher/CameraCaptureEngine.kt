@@ -95,6 +95,25 @@ internal class CameraCaptureEngine(
     fun detachPreview(texture: SurfaceTexture) = renderer.detachPreview(texture)
     fun detachEncoder() = renderer.detachEncoder()
 
+    /** Rebinds the CameraX surface while the application-owned stream remains live. */
+    fun recover() {
+        executor.execute {
+            if (!uiActive && !streaming) return@execute
+            generation++
+            removeCameraObserver()
+            val oldPreview = preview
+            preview = null
+            camera = null
+            controls.detach()
+            oldPreview?.let { provider?.unbind(it) }
+            mutableCapture.value = null
+            diagnostics.event("camera_recovery_rebind", mapOf("streaming" to streaming, "generation" to generation))
+            lifecycle.currentState = Lifecycle.State.CREATED
+            lifecycle.currentState = Lifecycle.State.RESUMED
+            bind()
+        }
+    }
+
     fun updateDisplayRotation(rotation: Int) {
         if (displayRotation == rotation) return
         displayRotation = rotation
@@ -170,7 +189,8 @@ internal class CameraCaptureEngine(
                 cameraObserver = Observer<CameraState> { state ->
                     if (camera === bound && state.error?.code in setOf(CameraState.ERROR_STREAM_CONFIG,
                             CameraState.ERROR_CAMERA_DISABLED, CameraState.ERROR_CAMERA_FATAL_ERROR)) {
-                        onError(IllegalStateException("Camera state error: ${state.error?.code}"))
+                        val error = IllegalStateException("Camera state error: ${state.error?.code}")
+                        if (streaming) streamer.cameraFailed(error) else onError(error)
                     }
                 }.also { bound.cameraInfo.cameraState.observe(this, it) }
                 controls.attach(bound, this, { x, y ->
@@ -187,7 +207,7 @@ internal class CameraCaptureEngine(
             } catch (error: Throwable) {
                 preview = null; camera = null; controls.detach(); mutableCapture.value = null
                 diagnostics.error("camera_bind_failed", error)
-                onError(error)
+                if (streaming) streamer.cameraFailed(error) else onError(error)
             }
         }, executor)
     }

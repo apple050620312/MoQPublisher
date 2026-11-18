@@ -43,8 +43,15 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.LinkedHashMap
 
 private const val TAG = "MoqStreamer"
+
+private data class RecoveryRequest(
+    val component: RecoveryComponent,
+    val error: Throwable,
+    val fallbackMessage: Int
+)
 
 sealed interface StreamState {
     data object Idle : StreamState
@@ -115,6 +122,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var audioCaptureFuture: Future<*>? = null
     private val audioHealth = AudioHealthMetrics()
     private val audioMute = AtomicBoolean(false)
+    private val recoveryCoordinator = BroadcastRecoveryCoordinator()
+    private val recoveryLock = Any()
+    private val pendingRecoveries = LinkedHashMap<RecoveryComponent, RecoveryRequest>()
+    private var recoveryWorker: Job? = null
 
     @Volatile
     private var broadcastProducer: BroadcastProducer? = null
@@ -143,7 +154,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var configuredAudioEnabled = false
     private var configuredProvider = RelayProvider.MOQ_PRO
     private var configuredDraft: Int? = null
+    private var audioTrackCounter = 0
     internal var beforeVideoEncoderClose: () -> Unit = {}
+    internal var requestCameraRecovery: () -> Unit = {}
     internal val canStart: Boolean get() = synchronized(lifecycleLock) { !closed && broadcastJob == null }
 
     fun startBroadcast(
@@ -165,6 +178,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             // A cancelled job still owns its resources until cleanup completes.
             if (closed || broadcastJob != null) return
 
+            cancelRecoveryWorker()
+            recoveryCoordinator.reset()
+            audioTrackCounter = 0
             diagnostics.metrics.reset()
             audioHealth.reset()
             diagnostics.event("broadcast_start_requested", mapOf(
@@ -307,7 +323,14 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 isBroadcasting.set(true)
             }
 
-            if (enableAudio) startAudioCapture(broadcast, bandwidth)
+            if (enableAudio) {
+                try {
+                    startAudioCapture(broadcast, bandwidth)
+                } catch (error: Throwable) {
+                    if (classifyRecovery(error) == RecoveryClassification.FATAL) throw error
+                    scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, error, R.string.error_audio_capture)
+                }
+            }
 
             currentCoroutineContext().ensureActive()
             Log.d(TAG, "Announcing broadcast route...")
@@ -446,7 +469,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             } catch (_: InterruptedException) {
                 // Cleanup interrupts the worker after closing its queue.
             } catch (error: Throwable) {
-                if (isBroadcasting.get()) failBroadcast(error)
+                if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.VIDEO_PUBLISH_QUEUE, error, R.string.error_video)
             } finally {
                 activeProducer?.let {
                     runCatching { it.finish() }
@@ -463,7 +486,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     @SuppressLint("MissingPermission")
-    private fun startAudioCapture(broadcast: BroadcastProducer, bandwidth: Bandwidth) {
+    private fun startAudioCapture(broadcast: BroadcastProducer, bandwidth: Bandwidth?) {
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.RECORD_AUDIO
@@ -477,6 +500,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             var record: AudioRecord? = null
             var producer: MoqAudioPublisher? = null
             var publisherStarted = false
+            val trackName = nextAudioTrackName()
             try {
                 val (actualChannel, createdRecord) = AudioSettings.openCapture(configuredAudioChannel, ::openAudioRecord) {
                     diagnostics.error("audio_stereo_fallback", it)
@@ -489,7 +513,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 }
                 Log.d(TAG, "Encoding audio with Opus (48kHz, $actualChannel)...")
                 val actualBitrate = configuredAudioQuality.bitrateBps(actualChannel)
-                val audio = MoqAudioPublisher.open(broadcast, actualChannel, bandwidth, actualBitrate)
+                val audio = MoqAudioPublisher.open(broadcast, actualChannel, bandwidth, actualBitrate, trackName)
                 producer = audio
 
                 val activeRecord = createdRecord
@@ -498,6 +522,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     "sample_rate" to sampleRate, "frame_bytes" to frameBytes,
                     "channel_requested" to configuredAudioChannel, "channel_actual" to actualChannel,
                     "gain_percent" to configuredAudioGain, "bitrate_bps" to actualBitrate, "quality" to configuredAudioQuality,
+                    "track" to trackName,
                     "group_duration_ms" to MoqAudioPublisher.GROUP_DURATION_MS,
                     "audio_thread_priority" to Process.THREAD_PRIORITY_AUDIO
                 ))
@@ -553,7 +578,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             }
                         }
                     } catch (e: Throwable) {
-                        if (!Thread.currentThread().isInterrupted && isBroadcasting.get()) failBroadcast(e)
+                        if (!Thread.currentThread().isInterrupted && isBroadcasting.get())
+                            scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, e, R.string.error_audio_capture)
                     }
                 }
             } catch (e: Throwable) {
@@ -593,7 +619,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             } catch (_: InterruptedException) {
                 // Cleanup interrupts the worker after closing its queue.
             } catch (error: Throwable) {
-                if (isBroadcasting.get()) failBroadcast(error)
+                if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, error, R.string.error_audio_capture)
             } finally {
                 audio.close()
             }
@@ -605,6 +631,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             .onFailure { diagnostics.error("audio_thread_priority_failed", it) }
         worker.run()
     }, name).apply { isDaemon = true }
+
+    private fun nextAudioTrackName(): String {
+        val index = audioTrackCounter++
+        return if (index == 0) "mic" else "mic_$index"
+    }
 
     /** Probe and start the requested hardware format before publishing its channel count to MoQ. */
     @SuppressLint("MissingPermission")
@@ -681,10 +712,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         } catch (e: Throwable) {
             Log.e(TAG, "Error encoding/writing video frame: ${DiagnosticRedactor.redact(e.stackTraceToString())}")
             diagnostics.error("video_error", e)
-            if (isBroadcasting.get()) {
-                _streamState.value = StreamState.Error(formatError(e, R.string.error_video))
-                stopBroadcast()
-            }
+            if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.VIDEO_ENCODER, e, R.string.error_video)
         } finally {
             imageProxy.close()
             if (recordTiming) diagnostics.metrics.timing(StreamMetrics.Stage.VIDEO_CALLBACK, System.nanoTime() - callbackStartedNs)
@@ -724,8 +752,132 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     internal fun cameraFailed(error: Throwable) {
         val state = _streamState.value
-        if (state is StreamState.Connecting || state is StreamState.Live)
-            scope.launch { failBroadcast(error, R.string.error_video) }
+        if (state is StreamState.Connecting || state is StreamState.Live) {
+            if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.CAMERA, error, R.string.error_video)
+            else scope.launch { failBroadcast(error, R.string.error_video) }
+        }
+    }
+
+    private fun scheduleMediaRecovery(component: RecoveryComponent, error: Throwable, fallbackMessage: Int) {
+        if (closed || !isBroadcasting.get()) return
+        val request = RecoveryRequest(component, error, fallbackMessage)
+        val started = synchronized(recoveryLock) {
+            pendingRecoveries[component] = request
+            if (recoveryWorker?.isActive == true) false else {
+                recoveryWorker = scope.launch { runRecoveryWorker() }
+                true
+            }
+        }
+        diagnostics.event(
+            if (started) "media_recovery_queued" else "media_recovery_coalesced",
+            mapOf("component" to component, "error" to DiagnosticRedactor.redact(error.javaClass.simpleName))
+        )
+    }
+
+    private suspend fun runRecoveryWorker() {
+        try {
+            while (currentCoroutineContext().isActive && isBroadcasting.get()) {
+                val request = synchronized(recoveryLock) {
+                    pendingRecoveries.entries.firstOrNull()?.also { pendingRecoveries.remove(it.key) }?.value
+                } ?: return
+                val classification = classifyRecovery(request.error)
+                val attempt = recoveryCoordinator.begin(request.component, classification)
+                diagnostics.event("media_recovery_attempt", mapOf(
+                    "component" to request.component, "attempt" to attempt.attempt,
+                    "delay_ms" to attempt.delayMs, "allowed" to attempt.allowed,
+                    "classification" to attempt.classification
+                ))
+                if (!attempt.allowed) {
+                    diagnostics.error("media_recovery_exhausted", request.error)
+                    failBroadcast(request.error, request.fallbackMessage)
+                    return
+                }
+
+                transitionLifecycle(BroadcastLifecycleEvent.RecoveryStarted)
+                _healthState.value = healthEvaluator.markRecovering()
+                try {
+                    delay(attempt.delayMs)
+                    currentCoroutineContext().ensureActive()
+                    recoverComponent(request.component)
+                    recoveryCoordinator.succeeded(request.component)
+                    transitionLifecycle(BroadcastLifecycleEvent.RecoveryCompleted(videoDemand?.isUsed() == true))
+                    diagnostics.event("media_recovery_succeeded", mapOf(
+                        "component" to request.component, "attempt" to attempt.attempt
+                    ))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Throwable) {
+                    diagnostics.error("media_recovery_failed", error)
+                    synchronized(recoveryLock) {
+                        pendingRecoveries[request.component] = request.copy(error = error)
+                    }
+                }
+            }
+        } finally {
+            synchronized(recoveryLock) {
+                recoveryWorker = null
+                if (pendingRecoveries.isNotEmpty() && isBroadcasting.get() && !closed) {
+                    recoveryWorker = scope.launch { runRecoveryWorker() }
+                }
+            }
+        }
+    }
+
+    private fun recoverComponent(component: RecoveryComponent) {
+        when (component) {
+            RecoveryComponent.CAMERA -> {
+                resetVideoPipeline("camera")
+                requestCameraRecovery()
+            }
+            RecoveryComponent.VIDEO_ENCODER -> resetVideoPipeline("video_encoder")
+            RecoveryComponent.VIDEO_PUBLISH_QUEUE -> {
+                val broadcast = synchronized(streamLock) { broadcastProducer }
+                    ?: error("Broadcast is unavailable for video publisher recovery")
+                stopVideoPublisher()
+                resetVideoPipeline("video_publish_queue")
+                if (isBroadcasting.get()) startVideoPublisher(broadcast)
+            }
+            RecoveryComponent.AUDIO_CAPTURE -> recoverAudioCapture()
+        }
+    }
+
+    private fun recoverAudioCapture() {
+        val broadcast = synchronized(streamLock) { broadcastProducer }
+            ?: error("Broadcast is unavailable for audio recovery")
+        val bandwidth = synchronized(streamLock) { sessionBandwidth }
+        synchronized(audioLock) {
+            stopAudioCaptureLocked()
+            if (isBroadcasting.get()) startAudioCapture(broadcast, bandwidth)
+        }
+    }
+
+    private fun resetVideoPipeline(reason: String) {
+        synchronized(videoLock) {
+            if (!isBroadcasting.get()) return
+            runCatching { beforeVideoEncoderClose() }
+                .onFailure { diagnostics.error("encoder_surface_detach_failed", it) }
+            runCatching { hardwareEncoder?.close() }
+            hardwareEncoder = null
+            runCatching { videoDemand?.close() }
+            videoDemand = null
+            videoProducer = null
+            videoWasUsed = false
+            videoGeneration++
+            currentVideoWidth = 0
+            currentVideoHeight = 0
+            videoPublishQueue?.waitForKeyframe()
+            diagnostics.event("video_pipeline_reset", mapOf("reason" to reason, "generation" to videoGeneration))
+        }
+    }
+
+    private fun classifyRecovery(error: Throwable): RecoveryClassification = when {
+        error is CancellationException -> RecoveryClassification.FATAL
+        error is MoqException && error.isAuth -> RecoveryClassification.FATAL
+        error is UiException && error.uiMessage.resource in setOf(
+            R.string.error_encoder_unsupported,
+            R.string.error_microphone_permission
+        ) -> RecoveryClassification.FATAL
+        else -> RecoveryClassification.TRANSIENT
     }
 
     private fun createVideoProducerLocked(width: Int, height: Int, surfaceInput: Boolean = false) {
@@ -755,6 +907,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         )
         val encoded: (AnnexB.AccessUnit, ByteArray, Long) -> Unit = encoded@{ unit, headers, timestampUs ->
             if (!isBroadcasting.get()) return@encoded
+            if (generation != videoGeneration) return@encoded
             val queue = videoPublishQueue ?: return@encoded
             val result = queue.offer(EncodedVideoPacket(
                 generation = generation,
@@ -799,6 +952,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     val epoch = moq.epoch()
                     val rttMs = stats.rttUs?.let { (it / 1000uL).toLong() }
                     val videoQueueDepth = videoPublishQueue?.depth() ?: 0
+                    val videoQueueAgeMs = videoPublishQueue?.mediaAgeMs()
                     var bitrateChanged: Long? = null
                     var bitrateError: Throwable? = null
                     if (isActive && isBroadcasting.get() && moqSession === moq) {
@@ -859,7 +1013,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             audioAgeMs = metricLong(frameMetrics["last_audio_age_ms"] ?: audioMetrics["audio_capture_interval_max_ms"]),
                             targetFps = configuredFramerate,
                             publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
-                            queueDepth = videoQueueDepth
+                            queueDepth = videoQueueDepth,
+                            queueMediaAgeMs = videoQueueAgeMs
                         ))
                         val previousHealth = _healthState.value
                         if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {
@@ -886,6 +1041,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         diagnostics.event("metrics", frameMetrics + audioMetrics + encoderStatus + diagnostics.performance() + mapOf(
                             "health" to health.level,
                             "health_reasons" to health.reasons.map { it.name },
+                            "video_queue_media_age_ms" to videoQueueAgeMs,
                             "epoch" to epoch, "rtt_ms" to rttMs, "send_kbps" to sendKbps,
                             "network_capacity_bps" to stats.estimatedSendRateBps, "transport_bytes_sent" to stats.bytesSent,
                             "transport_bytes_received" to stats.bytesReceived, "transport_bytes_lost" to stats.bytesLost,
@@ -917,6 +1073,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     fun stopBroadcast() {
         diagnostics.event("broadcast_stop_requested")
         transitionLifecycle(BroadcastLifecycleEvent.StopRequested)
+        cancelRecoveryWorker()
         val job = synchronized(lifecycleLock) {
             isBroadcasting.set(false)
             broadcastJob
@@ -971,6 +1128,29 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         executor?.shutdownNow()
     }
 
+    private fun stopAudioCaptureLocked() {
+        runCatching { audioRecord?.stop() }
+        audioCaptureExecutor?.shutdownNow()
+        runCatching { audioCaptureFuture?.get(750L, TimeUnit.MILLISECONDS) }
+        runCatching { audioCaptureExecutor?.awaitTermination(750L, TimeUnit.MILLISECONDS) }
+        audioCaptureFuture = null
+        audioCaptureExecutor = null
+        runCatching { audioRecord?.release() }
+        audioRecord = null
+        stopAudioPublisher()
+        _audioCaptureStatus.value = null
+        _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
+    }
+
+    private fun cancelRecoveryWorker() {
+        synchronized(recoveryLock) {
+            pendingRecoveries.clear()
+            recoveryWorker?.cancel()
+            recoveryWorker = null
+            recoveryCoordinator.reset()
+        }
+    }
+
     /** Releases the native session and coroutine scope when the ViewModel is cleared. */
     fun close() {
         synchronized(lifecycleLock) {
@@ -985,6 +1165,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     private fun cleanup() {
         isBroadcasting.set(false)
+        cancelRecoveryWorker()
         // Release the EGL producer before its MediaCodec input Surface, including on handover.
         runCatching { beforeVideoEncoderClose() }.onFailure { diagnostics.error("encoder_surface_detach_failed", it) }
         statsJob?.cancel()
@@ -993,17 +1174,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         // write/close race from reaching the MoQ FFI and bounds teardown time.
         stopVideoPublisher()
         synchronized(audioLock) {
-            runCatching { audioRecord?.stop() }
-            audioCaptureExecutor?.shutdownNow()
-            runCatching { audioCaptureFuture?.get(750L, TimeUnit.MILLISECONDS) }
-            runCatching { audioCaptureExecutor?.awaitTermination(750L, TimeUnit.MILLISECONDS) }
-            audioCaptureFuture = null
-            audioCaptureExecutor = null
-            runCatching { audioRecord?.release() }
-            audioRecord = null
-            stopAudioPublisher()
-            _audioCaptureStatus.value = null
-            _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
+            stopAudioCaptureLocked()
         }
 
         synchronized(videoLock) {

@@ -31,6 +31,18 @@ class BroadcastLifecycleTest {
     }
 
     @Test
+    fun mediaRecoveryReturnsToTheCorrectDemandState() {
+        var state = BroadcastLifecycleState(phase = BroadcastPhase.PUBLISHING)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryStarted)
+        assertEquals(BroadcastPhase.RECOVERING, state.phase)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryCompleted(false))
+        assertEquals(BroadcastPhase.WAITING_FOR_SUBSCRIBER, state.phase)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryStarted)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryCompleted(true))
+        assertEquals(BroadcastPhase.PUBLISHING, state.phase)
+    }
+
+    @Test
     fun illegalTransitionsAndCleanupAreSafe() {
         val idle = BroadcastLifecycleState()
         assertEquals(idle, BroadcastLifecyclePolicy.reduce(idle, BroadcastLifecycleEvent.Announced))

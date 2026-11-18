@@ -1180,3 +1180,5 @@ P0 > P1 > P2
 - `v1.0.21`：將 Cloudflare 發布路徑集中為 provider 的 publication path。名稱留空時保留空字串並傳入 `createBroadcast("")`，不回退到 moq.pro 路徑；同步修正空白名稱的驗證文案並加入回歸測試。
 - 驗證：`testDebugUnitTest` 175 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置、Cloudflare Relay 或 OBS，未執行實際空 namespace 推流與播放驗證。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.21` GitHub Release；檔案為 `MoQPublisher-1.0.21-release.apk`，SHA-256 為 `92790d60d56eb86bc6694216d3a59fb656bda891b7cb50b5b0b9cbf9ff55b385`。
+- `v1.0.22`：新增按元件隔離的媒體故障恢復協調器。相機錯誤可重綁 CameraX，影片錯誤可重建 EGL／MediaCodec／發布 worker，AudioRecord 可重啟，所有恢復使用有限次數與指數退避，停止直播時取消恢復。影片佇列新增媒體年齡健康門檻，音訊恢復使用新的 track 名稱與連續直播時間戳。
+- 驗證：`testDebugUnitTest` 180 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置、Cloudflare Relay 或 OBS，未執行實際故障注入與長時間恢復驗證。

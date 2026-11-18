@@ -79,7 +79,7 @@ internal class MoqAudioPublisher private constructor(
 
         fun open(
             broadcast: BroadcastProducer, channel: AudioChannel, bandwidth: Bandwidth? = null,
-            bitrateBps: Long = channel.bitrateBps
+            bitrateBps: Long = channel.bitrateBps, trackName: String = "mic"
         ): MoqAudioPublisher {
             val local = BroadcastProducer()
             var source: BroadcastConsumer? = null
@@ -89,7 +89,7 @@ internal class MoqAudioPublisher private constructor(
             try {
                 encoder = AudioCodec.opus().use { codec ->
                     local.encodeAudio(
-                        name = "mic",
+                        name = trackName,
                         input = AudioEncoderInput(
                             format = AudioSampleFormat.S16,
                             sampleRate = AudioSettings.SAMPLE_RATE.toUInt(),
@@ -109,18 +109,18 @@ internal class MoqAudioPublisher private constructor(
                 val (head, subscription) = runBlocking {
                     withTimeout(READ_TIMEOUT_MS) {
                         val config = activeSource.subscribeCatalog().use { catalog ->
-                            checkNotNull(catalog.next()?.audio?.get("mic")) { "Missing Opus catalog" }
+                            checkNotNull(catalog.next()?.audio?.get(trackName)) { "Missing Opus catalog" }
                         }
                         check(config.codec == "opus" && config.channelCount == channel.count.toUInt())
                         checkNotNull(config.description) { "Missing OpusHead" } to activeSource.subscribeMedia(
-                            name = "mic", container = MoqContainer.Legacy,
+                            name = trackName, container = MoqContainer.Legacy,
                             // Retain all local packets while the publisher reads one per write.
                             subscription = Subscription(maxAgeUs = 5_000_000u, groupStart = 0u)
                         )
                     }
                 }
                 packets = subscription
-                output = broadcast.publishAudio(AudioInit(format = AudioFormat.OPUS, data = head, track = "mic"))
+                output = broadcast.publishAudio(AudioInit(format = AudioFormat.OPUS, data = head, track = trackName))
                 return MoqAudioPublisher(local, activeSource, encoder, subscription, output)
             } catch (error: Throwable) {
                 runCatching { packets?.cancel() }

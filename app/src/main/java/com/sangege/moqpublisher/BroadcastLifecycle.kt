@@ -26,6 +26,8 @@ sealed interface BroadcastLifecycleEvent {
     data object Announced : BroadcastLifecycleEvent
     data class SubscriberDemand(val requested: Boolean) : BroadcastLifecycleEvent
     data object Degraded : BroadcastLifecycleEvent
+    data object RecoveryStarted : BroadcastLifecycleEvent
+    data class RecoveryCompleted(val subscriberDemanded: Boolean) : BroadcastLifecycleEvent
     data object Reconnecting : BroadcastLifecycleEvent
     data object Recovered : BroadcastLifecycleEvent
     data object StopRequested : BroadcastLifecycleEvent
@@ -53,6 +55,12 @@ internal object BroadcastLifecyclePolicy {
             else -> state
         }
         BroadcastLifecycleEvent.Degraded -> if (state.phase == BroadcastPhase.PUBLISHING) state.copy(phase = BroadcastPhase.DEGRADED) else state
+        BroadcastLifecycleEvent.RecoveryStarted -> if (state.phase !in setOf(BroadcastPhase.IDLE, BroadcastPhase.STOPPING, BroadcastPhase.FAILED)) {
+            state.copy(phase = BroadcastPhase.RECOVERING, error = null)
+        } else state
+        is BroadcastLifecycleEvent.RecoveryCompleted -> if (state.phase == BroadcastPhase.RECOVERING) {
+            state.copy(phase = if (event.subscriberDemanded) BroadcastPhase.PUBLISHING else BroadcastPhase.WAITING_FOR_SUBSCRIBER)
+        } else state
         BroadcastLifecycleEvent.Reconnecting -> if (state.phase !in setOf(BroadcastPhase.IDLE, BroadcastPhase.STOPPING, BroadcastPhase.FAILED)) {
             state.copy(phase = BroadcastPhase.RECONNECTING)
         } else state

@@ -6,8 +6,8 @@
 |---|---|---|---|---|---|---|---|
 | 01 | 端對端直播測試基礎 | 有 JVM、遠端 verifier 與 release 流程 | 建立可重複的 moq.pro／Cloudflare／OBS 手動流程與測試紀錄 | IN_PROGRESS | 基線建置通過 | BLOCKED | 沒有 Android 裝置、OBS、有效 Relay 帳號 |
 | 02 | 完整直播狀態機 | 有 Idle、Connecting、Live、Error 與 relay phase | 統一 publisher lifecycle 與遠端驗證狀態 | IMPLEMENTED | `BroadcastLifecycleTest` 與既有 RelayConnectionPolicyTest | 未驗證 | OBS 接收狀態仍由獨立 verifier 表達 |
-| 03 | 直播 Watchdog | 有每秒 StreamMetrics 與 AudioHealthMetrics | 健康等級、門檻、遲滯、UI／診斷整合 | IMPLEMENTED | `StreamHealthTest`、`StreamMetricsTest` | 未驗證 | 需要長時間裝置資料校準 |
-| 04 | 媒體管線自動恢復 | 有 cleanup、generation、keyframe recovery | 元件級有限重試與恢復協調器 | NOT_STARTED | — | 未驗證 | 需要實機 Codec／CameraX 故障情境 |
+| 03 | 直播 Watchdog | 有每秒 StreamMetrics 與 AudioHealthMetrics | 健康等級、門檻、遲滯、UI／診斷整合 | IMPLEMENTED | `StreamHealthTest`、`StreamMetricsTest`、`VideoPublishQueueTest` | 未驗證 | 需要長時間裝置資料校準 |
+| 04 | 媒體管線自動恢復 | 有 cleanup、generation、keyframe recovery | 元件級有限重試與恢復協調器 | IMPLEMENTED | `BroadcastRecoveryTest`、`BroadcastLifecycleTest` | 未驗證 | 需要實機 Codec／CameraX／AudioRecord 故障情境 |
 | 05 | 網路切換與重連 | 有 DefaultNetworkMonitor、QUIC reconnect、退避與 keyframe | 完整網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | RelayConnectionPolicyTest | BLOCKED | 未連接 Wi-Fi／4G／5G 與 Relay |
 | 06 | ABR | 有 VideoBitrateControl、headroom、遲滯與動態 encoder bitrate | 解析度／FPS 動態切換與更多 queue age 規則 | TESTED | VideoBitrateControlTest | 未驗證 | Codec 是否支援動態 bitrate 依裝置而異 |
 | 07 | 音畫同步 | 有 AudioTimeline、VideoTimestampMapper、reset 與 monotonic tests | 接收端延遲與音畫誤差量測 | TESTED | AudioTimeline、VideoTimestampMapper tests | BLOCKED | 端到端誤差不能以 RTT 代替 |
@@ -40,4 +40,4 @@
 
 - `assembleRelease` 與 `testDebugUnitTest` 在 v1.0.20 基線通過。
 - 目前沒有連接 Android 裝置，不能把真實 Cloudflare、moq.pro 或 OBS 行為標示為通過。
-- 下一個開發批次先完成 02、03、09，再處理 04 與 11。
+- 下一個開發批次先完成 11，再處理 12～18 的產品化整合。

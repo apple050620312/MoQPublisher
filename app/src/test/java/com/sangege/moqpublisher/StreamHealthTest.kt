@@ -55,6 +55,17 @@ class StreamHealthTest {
     }
 
     @Test
+    fun queueAgeAndDepthRaisePressureWithoutMakingItCritical() {
+        val evaluator = StreamHealthEvaluator()
+        val age = evaluator.evaluate(healthy.copy(queueDepth = 2, queueMediaAgeMs = 401L))
+        assertEquals(StreamHealthLevel.WARNING, age.level)
+        assertTrue(StreamHealthReason.QUEUE_PRESSURE in age.reasons)
+        val depth = evaluator.evaluate(healthy.copy(queueDepth = 6, queueMediaAgeMs = null))
+        assertEquals(StreamHealthLevel.WARNING, depth.level)
+        assertTrue(StreamHealthReason.QUEUE_PRESSURE in depth.reasons)
+    }
+
+    @Test
     fun resetReturnsToIdle() {
         val evaluator = StreamHealthEvaluator()
         evaluator.evaluate(healthy)

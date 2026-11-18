@@ -65,4 +65,14 @@ class VideoPublishQueueTest {
         assertEquals(4L, latest.timestampUs)
         assertEquals(0, queue.depth())
     }
+
+    @Test
+    fun reportsAgeOfTheOldestQueuedFrame() {
+        val queue = VideoPublishQueue(3)
+        queue.offer(packet(1, keyframe = true).copy(enqueuedAtNs = 1_000_000L))
+        queue.offer(packet(2).copy(enqueuedAtNs = 2_000_000L))
+        assertEquals(499L, queue.mediaAgeMs(500_000_000L))
+        queue.take()
+        assertEquals(498L, queue.mediaAgeMs(500_000_000L))
+    }
 }
