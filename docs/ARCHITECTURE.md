@@ -35,6 +35,7 @@ flowchart LR
 - `BroadcastService` 在 Android 前景服務中持有相機／麥克風直播與短期續期 WakeLock，通知提供停止操作。
 - `BroadcastService` 也觀察即時靜音狀態，背景通知會反映音訊是否已靜音。
 - `CameraCaptureEngine` 管理 CameraX。`CameraSurfaceRenderer` 將相機紋理送到預覽與 MediaCodec input surface，避免在正常路徑複製 YUV。
+- ScreenCaptureEngine 透過 MediaProjection 建立 VirtualDisplay，將畫面送到同一個 surface encoder。切換到螢幕來源時先停止 CameraX encoder 輸出，停止投影後重新啟動相機來源，且投影撤銷只結束螢幕來源。
 - `SurfaceVideoEncoder` 和 `HardwareVideoEncoder` 封裝 MediaCodec。正常路徑使用 surface encoder，輸出在 callback 執行緒排入有上限的 `VideoPublishQueue`。
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
 - `LocalRecordingManager` 使用獨立 bounded queue 和 worker，沿用已編碼的 H.264／H.265 影像，另外以 AAC encoder 將 PCM 轉成 MP4 音訊。每個分段從關鍵影格開始，磁碟低於安全門檻或 MediaMuxer 失敗只停止錄影，並保留 MoQ 直播。

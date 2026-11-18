@@ -1301,5 +1301,15 @@ P0 > P1 > P2
 
 ### 2026-11-19
 
+- 完成第 28 項螢幕直播核心。ScreenCaptureEngine 使用 MediaProjection／VirtualDisplay 將畫面送入既有 surface encoder，設定頁提供系統授權、啟停按鈕，前景 Service 宣告 mediaProjection 類型，投影撤銷不會直接結束 MoQ session。
+- testDebugUnitTest 維持通過，新增 Android compile／manifest 驗證尚待本批次 Release 建置。沒有實機，尚未驗證 Android 投影授權、旋轉、權限撤銷和 playback audio。
+
+### 2026-11-19
+
+- `v1.0.46` 將 MediaProjection 螢幕來源接入設定頁和前景服務。啟動螢幕來源會暫停 CameraX encoder 輸出並使用相同的 surface encoder，停止或系統撤銷投影時恢復相機來源。
+- 驗證 `testDebugUnitTest` 217 項、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 errors）通過。尚未在 Android 實機驗證 MediaProjection 同意、旋轉、撤銷和 playback audio。
+
+### 2026-11-19
+
 - `v1.0.45` 完成第 25 項本機備援錄影。設定頁支援只推流或推流並錄影、5／15／30／60 分鐘分段、App-private Movies 輸出、H.264／H.265 影像、AAC 音訊、儲存空間警告與獨立錯誤處理。錄影 worker 使用 bounded queue，不會阻塞 MoQ 直播。
 - 驗證 `testDebugUnitTest`、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`、UTF-8/XML 掃描；尚未在 Android 實機確認 MediaMuxer 檔案可播放、長時間分段與低儲存空間行為。

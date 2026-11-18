@@ -31,7 +31,7 @@
 | 25 | 本機備援錄影 | — | MediaMuxer、分段、儲存監測、獨立錯誤處理 | IMPLEMENTED | `RecordingSettingsTest`、release compile、lint | 未驗證 | 使用 App-private Movies 目錄、H.264／H.265 壓縮影像與 AAC 音訊，尚未在 Android 實機量測長時間檔案完整性 |
 | 26 | 多鏡頭／防手震 | 依 Camera2 能力列出邏輯／實體鏡頭、套用支援的防手震、對焦與曝光鎖定 | 驗證多鏡頭切換後的實際尺寸、時間戳及 OBS 解碼 | IMPLEMENTED | camera policy／geometry tests | 未驗證 | 聯繫手機廠商提供的 Camera2 能力判斷鏡頭是否可用 |
 | 27 | 遠端監控／控制 | — | 安全配對、可撤銷控制通道 | NOT_STARTED | — | 未驗證 | 需定義低維運傳輸方案 |
-| 28 | Android 螢幕直播 | — | MediaProjection、screen source、rotation、playback audio | NOT_STARTED | — | 未驗證 | Android 權限與前景服務限制 |
+| 28 | Android 螢幕直播 | — | MediaProjection Screen source、系統授權、旋轉尺寸與前景服務 mediaProjection 類型 | IMPLEMENTED | debug／release compile、manifest validation | 未驗證 | 尚未在 Android 實機確認投影權限撤銷與播放音訊擷取 |
 | 29 | 直播疊圖 | GPU renderer 可作為整合點 | overlay model、clock、logo、opacity、同步預覽 | NOT_STARTED | — | 未驗證 | — |
 | 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道以獨立程序輸出 Enhanced RTMP 與 SRT | 真實 Relay、Android 與 OBS 相容性及長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 實測 H.264／H.265＋Opus 雙路解碼 | 未驗證 | 需支援對應影音格式的接收端 |
 | 31 | 輸出方向／進階相機 | 固定方向、手動直向／橫向、前置輸出鏡像，直播中更新 GPU 與影片 Track | Android 旋轉、輸出切換與 OBS 解碼 | IMPLEMENTED | geometry、camera policy、mode change tests | 未驗證 | 需確認兩種 codec 在 OBS 的新畫質 Track |

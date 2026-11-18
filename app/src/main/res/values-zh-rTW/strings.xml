@@ -210,6 +210,14 @@
     <string name="recording_active">錄影分段 %1$d・%2$d MiB</string>
     <string name="recording_storage">可用錄影儲存空間 %1$d MiB</string>
     <string name="recording_error">錄影已停止：%1$s</string>
+    <string name="screen_capture_settings">螢幕來源</string>
+    <string name="screen_capture_settings_hint">透過現有視訊編碼器分享 Android 螢幕，系統會顯示同意對話框。</string>
+    <string name="start_screen_capture">分享螢幕</string>
+    <string name="stop_screen_capture">停止螢幕來源</string>
+    <string name="screen_capture_active">螢幕來源 %1$d×%2$d、%3$d FPS</string>
+    <string name="screen_capture_requires_stream">請先開始直播，再分享螢幕。</string>
+    <string name="screen_capture_start_failed">無法啟動螢幕來源。</string>
+    <string name="screen_capture_error">螢幕來源已停止：%1$s</string>
     <string name="app_update_latest">最新版本：%1$s</string>
     <string name="app_update_checking">正在檢查 GitHub Releases</string>
     <string name="app_update_available">有較新的 App 版本可用。</string>

@@ -121,6 +121,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     val alertState: StateFlow<StreamAlertState> = _alertState.asStateFlow()
     private val localRecording = LocalRecordingManager(context, diagnostics)
     val recordingState: StateFlow<RecordingState> = localRecording.state
+    private var screenEncoder: SurfaceVideoEncoder? = null
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleLock = Any()
@@ -909,6 +910,26 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             .takeUnless { modeChange?.result?.value == LiveVideoModeChange.Result.FAILED }
     }
 
+    internal fun prepareScreenSurface(width: Int, height: Int, framerate: Int): Surface? = synchronized(videoLock) {
+        if (!isBroadcasting.get() || resettingVideo) return@synchronized null
+        try {
+            beforeVideoEncoderClose()
+            createVideoProducerLocked(width, height, surfaceInput = true, framerate = framerate)
+            screenEncoder = hardwareEncoder as? SurfaceVideoEncoder
+            screenEncoder?.inputSurface
+        } catch (error: Throwable) {
+            diagnostics.error("screen_encoder_prepare_failed", error)
+            null
+        }
+    }
+
+    internal fun releaseScreenSurface() {
+        synchronized(videoLock) {
+            screenEncoder = null
+            if (isBroadcasting.get()) resetVideoPipeline("screen_capture_stopped")
+        }
+    }
+
     /** Called by the GPU thread before submitting a frame, using the sensor clock for pacing. */
     internal fun onSurfaceFrame(sensorTimestampNs: Long): Long? = synchronized(videoLock) {
         if (!isBroadcasting.get() || resettingVideo) return@synchronized null
@@ -1516,6 +1537,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         synchronized(videoLock) {
             runCatching { hardwareEncoder?.close() }
             hardwareEncoder = null
+            screenEncoder = null
             encoderModeChange = null
             runCatching { videoDemand?.close() }
             videoDemand = null

@@ -225,6 +225,14 @@
     <string name="recording_active">Recording segment %1$d · %2$d MiB</string>
     <string name="recording_storage">Available recording storage %1$d MiB</string>
     <string name="recording_error">Recording stopped: %1$s</string>
+    <string name="screen_capture_settings">Screen source</string>
+    <string name="screen_capture_settings_hint">Share the Android screen through the existing video encoder. Android shows a system consent dialog.</string>
+    <string name="start_screen_capture">Share screen</string>
+    <string name="stop_screen_capture">Stop screen source</string>
+    <string name="screen_capture_active">Screen source %1$d×%2$d at %3$d FPS</string>
+    <string name="screen_capture_requires_stream">Start a broadcast before sharing the screen.</string>
+    <string name="screen_capture_start_failed">Could not start the screen source.</string>
+    <string name="screen_capture_error">Screen source stopped: %1$s</string>
     <string name="app_update_latest">Latest release: %1$s</string>
     <string name="app_update_checking">Checking GitHub Releases</string>
     <string name="app_update_available">A newer app version is available.</string>

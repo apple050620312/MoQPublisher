@@ -150,6 +150,7 @@ class MainViewModel internal constructor(
     val audioMuted: StateFlow<Boolean> = streamer.audioMuted
     val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
     val recordingState: StateFlow<RecordingState> = streamer.recordingState
+    val screenCaptureState: StateFlow<ScreenCaptureState> = session.screenCaptureState
     private val _recordingPreferences = MutableStateFlow(RecordingPreferences(
         mode = runCatching { RecordingMode.valueOf(prefs.getString(KEY_RECORDING_MODE, null) ?: RecordingMode.STREAM_ONLY.name) }
             .getOrDefault(RecordingMode.STREAM_ONLY),
@@ -496,6 +497,13 @@ class MainViewModel internal constructor(
             putInt(KEY_RECORDING_SEGMENT, next.segmentMinutes)
         }
     }
+
+    fun screenCapturePermissionIntent(): Intent = session.screenCapture.permissionIntent()
+
+    fun startScreenCapture(resultCode: Int, data: Intent, width: Int, height: Int, fps: Int, densityDpi: Int): Boolean =
+        session.startScreenCapture(resultCode, data, width, height, fps, densityDpi)
+
+    fun stopScreenCapture() = session.stopScreenCapture()
 
     fun setVideoCodec(codec: String) {
         val normalized = codec.uppercase().takeIf { it == "H264" || it == "H265" } ?: return

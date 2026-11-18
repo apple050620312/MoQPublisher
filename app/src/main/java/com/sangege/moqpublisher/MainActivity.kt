@@ -1,6 +1,7 @@
 package com.sangege.moqpublisher
 
 import android.Manifest
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
@@ -148,6 +149,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val streamHealth by viewModel.streamHealth.collectAsState()
     val recordingPreferences by viewModel.recordingPreferences.collectAsState()
     val recordingState by viewModel.recordingState.collectAsState()
+    val screenCaptureState by viewModel.screenCaptureState.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var stopConfirmationGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
@@ -189,6 +191,19 @@ fun MainScreen(viewModel: MainViewModel) {
             if (granted) startWithNotification()
             else viewModel.setConfigurationError(UiMessage(R.string.error_microphone_permission))
         }
+    }
+    val screenCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val data = result.data
+        if (result.resultCode == Activity.RESULT_OK && data != null) {
+            val metrics = context.resources.displayMetrics
+            if (!viewModel.startScreenCapture(
+                    result.resultCode, data, metrics.widthPixels, metrics.heightPixels, videoFps, metrics.densityDpi
+                )) viewModel.setConfigurationError(UiMessage(R.string.screen_capture_start_failed))
+        }
+    }
+    val requestScreenCapture: () -> Unit = {
+        if (streamState.isActive()) screenCaptureLauncher.launch(viewModel.screenCapturePermissionIntent())
+        else viewModel.setConfigurationError(UiMessage(R.string.screen_capture_requires_stream))
     }
     val active = streamState is StreamState.Live || streamState is StreamState.Connecting
     val scope = rememberCoroutineScope()
@@ -370,6 +385,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 streamAlerts = streamAlerts,
                 recordingPreferences = recordingPreferences, recordingState = recordingState,
                 onRecordingPreferencesChange = viewModel::setRecordingPreferences,
+                screenCaptureState = screenCaptureState, onRequestScreenCapture = requestScreenCapture,
+                onStopScreenCapture = viewModel::stopScreenCapture,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1202,6 +1219,7 @@ internal fun SettingsScreen(
     streamAlerts: StreamAlertState,
     recordingPreferences: RecordingPreferences, recordingState: RecordingState,
     onRecordingPreferencesChange: (RecordingMode, Int) -> Unit,
+    screenCaptureState: ScreenCaptureState, onRequestScreenCapture: () -> Unit, onStopScreenCapture: () -> Unit,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1289,6 +1307,7 @@ internal fun SettingsScreen(
             !changingVideoMode && (editable || canVerifySubscription)
         )
         RecordingSettingsCard(recordingPreferences, recordingState, onRecordingPreferencesChange, editable)
+        ScreenCaptureSettingsCard(screenCaptureState, onRequestScreenCapture, onStopScreenCapture, isStreaming)
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
             SelectionDropdown(
@@ -1420,6 +1439,29 @@ private fun RecordingSettingsCard(
             SupportingText(stringResource(R.string.recording_storage, available / (1024 * 1024)))
         }
         state.error?.let { SupportingText(stringResource(R.string.recording_error, it)) }
+    }
+}
+
+@Composable
+private fun ScreenCaptureSettingsCard(
+    state: ScreenCaptureState,
+    onRequest: () -> Unit,
+    onStop: () -> Unit,
+    streaming: Boolean
+) {
+    SettingCard(stringResource(R.string.screen_capture_settings), stringResource(R.string.screen_capture_settings_hint)) {
+        if (state.active) {
+            SupportingText(stringResource(R.string.screen_capture_active, state.width, state.height, state.fps))
+            OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.stop_screen_capture))
+            }
+        } else {
+            OutlinedButton(onClick = onRequest, enabled = streaming, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.start_screen_capture))
+            }
+            if (!streaming) SupportingText(stringResource(R.string.screen_capture_requires_stream))
+        }
+        state.error?.let { SupportingText(stringResource(R.string.screen_capture_error, it)) }
     }
 }
 

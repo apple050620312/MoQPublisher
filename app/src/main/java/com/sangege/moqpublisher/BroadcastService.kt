@@ -97,6 +97,16 @@ class BroadcastService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SCREEN_CAPTURE) {
+            if (started && Build.VERSION.SDK_INT >= 29) {
+                startForeground(NOTIFICATION_ID, notification(session.streamer.streamState.value),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                        (if (session.streamer.audioMuted.value || session.streamer.streamState.value.isActive())
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            }
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             if (session.stopOwned(intent.getLongExtra(EXTRA_GENERATION, -1))) stopSelfResult(startId)
             return START_NOT_STICKY
@@ -228,9 +238,14 @@ class BroadcastService : Service() {
         private const val ALERT_NOTIFICATION_ID = 102
         private const val ALERT_COOLDOWN_MS = 10_000L
         private const val ACTION_STOP = "com.sangege.moqpublisher.STOP_BROADCAST"
+        private const val ACTION_SCREEN_CAPTURE = "com.sangege.moqpublisher.SCREEN_CAPTURE"
         private const val EXTRA_GENERATION = "broadcast_generation"
         internal fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, BroadcastService::class.java))
+        }
+
+        internal fun updateScreenCaptureType(context: Context) {
+            context.startService(Intent(context, BroadcastService::class.java).setAction(ACTION_SCREEN_CAPTURE))
         }
     }
 }
