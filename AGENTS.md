@@ -1199,4 +1199,5 @@ P0 > P1 > P2
 - 驗證：`testDebugUnitTest` 189 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置實測各廠牌 MediaCodec runtime bitrate 行為。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.27` GitHub Release；檔案為 `MoQPublisher-1.0.27-release.apk`，SHA-256 為 `a23469f31d54a77d24cfffb7174c1437b4b175e602b162265abc977eccaf199d`。
 - `v1.0.28`：直播儀表板新增視訊佇列深度與 media age、encoder bitrate、packet loss；保留 publisher 狀態與遠端解碼驗證分離，不顯示虛構 OBS 數據。
-- 驗證：`testDebugUnitTest` 189 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置或 OBS 驗證實際接收端數值。
+- 驗證：`testDebugUnitTest` 189 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置或 OBS 驗證實際接收端數值。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.28` GitHub Release；檔案為 `MoQPublisher-1.0.28-release.apk`，SHA-256 為 `5c33fb6932f9b6d5331543bc4a4114a6a87d6388321e58cde9bce32ebe775006`。
