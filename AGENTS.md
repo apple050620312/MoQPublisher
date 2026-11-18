@@ -1253,3 +1253,4 @@ P0 > P1 > P2
 
 - `v1.0.38`：完成第 23 項憑證清除流程。設定頁可直接移除加密保存的 moq.pro JWT 與 Cloudflare Publish／Subscribe Token，沿用 Keystore ciphertext removal，不寫入明文，也不改變既有 Token 分離與遮罩流程。
 - 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認 Keystore 清除後的系統行為。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.38` GitHub Release。Release APK SHA-256 為 `9791956ce6dfa6560823096d19cdc62ba29e258f47ed5ea30012fe760d740a26`，Offline APK SHA-256 為 `bfcecf15e71d1909ff465b226d5ad6269809e66cdeca2b6dc8750ec0298a7092`。
