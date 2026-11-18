@@ -2,8 +2,39 @@ package com.sangege.moqpublisher
 
 import org.junit.Assert.*
 import org.junit.Test
+import uniffi.moq.MoqErrorScope
+import uniffi.moq.MoqException
+import uniffi.moq.MoqProtocolError
+import uniffi.moq.MoqProtocolKind
 
 class RelayConnectionPolicyTest {
+    @Test
+    fun transientDialErrorsRetryWithBoundedBackoffAndResetAfterConnection() {
+        val retry = RelayDialRetry()
+        val dns = java.net.UnknownHostException()
+        val transport = MoqException.Transport("relay unavailable")
+        assertEquals(45_000L, retry.timeoutMs(0))
+        assertEquals(1_000L, retry.delayAfterFailure(dns, 100))
+        assertEquals(2_000L, retry.delayAfterFailure(transport, 1_200))
+        assertEquals(4_000L, retry.delayAfterFailure(transport, 3_200))
+        assertNull(retry.delayAfterFailure(transport, 7_200))
+        retry.connected()
+        assertEquals(45_000L, retry.timeoutMs(180_000))
+        assertEquals(1_000L, retry.delayAfterFailure(dns, 180_200))
+    }
+
+    @Test
+    fun exhaustedWindowCapsDialTimeAndAuthenticationRejectionEndsImmediately() {
+        val retry = RelayDialRetry(windowMs = 5_000)
+        assertEquals(5_000L, retry.timeoutMs(10_000))
+        assertEquals(800L, retry.timeoutMs(14_200))
+        assertNull(retry.delayAfterFailure(MoqException.Transport("closed"), 14_200))
+        assertEquals(0L, retry.timeoutMs(15_000))
+        retry.connected()
+        val denied = MoqException.Protocol(MoqProtocolError(MoqErrorScope.SESSION, 2u, MoqProtocolKind.UNAUTHORIZED, "denied"))
+        assertNull(retry.delayAfterFailure(denied, 16_000))
+        assertNull(retry.delayAfterFailure(MoqException.Url("invalid"), 16_000))
+    }
     @Test
     fun reconnectWindowStartsOverAfterAWorkingConnection() {
         val deadline = RelayReconnectDeadline(retryMs = 120_000)

@@ -69,7 +69,7 @@ internal object BroadcastPreflightPolicy {
             "An audio input is available", "No compatible microphone input is available")
         checks += check(PreflightCheckId.ENCODER_CAPABILITY, input.hardwareSurfaceEncoderReported,
             "Android reports a hardware surface encoder for this codec",
-            "Android did not report a hardware surface encoder for this codec. The app will try to configure it",
+            "Android did not report a hardware surface encoder for this codec. The app will try the available MediaCodec encoders when starting",
             warningWhenFalse = true)
         checks += check(PreflightCheckId.RESOLUTION_FPS, input.resolutionFpsValid,
             "The requested resolution and FPS are valid", "The requested resolution or FPS is invalid")

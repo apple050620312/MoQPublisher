@@ -1335,3 +1335,11 @@ P0 > P1 > P2
 - 230 項 JVM 測試、Release／Offline／Android Test APK、lint（0 errors）、UTF-8／XML、簽章、ABI 和 ZIP 對齊通過。原回報手機的編碼模式、外部 Relay 與 OBS、2／4 小時測試，以及 production 簽章尚待外部驗收。
 - Release APK SHA-256 為 `36a42394a85f97ad217c2d7c2ccf4f757b32b09d24d687265751df013108c9b0`，Offline APK 為 `3c56bc7ccdcb68e3b2a64dde4f557f5bf781e42c44329c72bb4f95bb90ee6251`。
 - 加入可重跑的本機備援閘道測試，八組 codec／名稱／輸出均解碼 60 個畫格和音訊。實機待驗事項列於 `docs/testing/END_TO_END.md`。
+
+### 2026-11-19
+
+- `v1.0.51` 修復開播時的 MediaCodec 篩選。優先配置硬體編碼器，必要時以原選的 H.264／H.265、尺寸、FPS 與碼率配置可用的軟體編碼器。診斷記錄實際編碼器名稱和硬體加速狀態。
+- 初次連線的暫時性 DNS、逾時或傳輸失敗可在期限內重試最多三次。已識別的認證拒絕立即回報。Android 36 模擬器驗證初次連線逾時後能重新連到本機 Draft 18 Relay 並發布空名稱廣播。
+- Android 36 模擬器以兩種 codec 各在 640×480／24、1280×720／30、1920×1080／60 的設定產出可獨立解碼的關鍵影格。本機 Draft 18 Relay 另收到兩種 codec 的 480p24、720p30 相機推流，FFmpeg 解碼尺寸相符，模擬器的實測幀率低於設定值。
+- 232 項 JVM 測試、Release／Offline APK、Android Test APK、lint（0 errors）、UTF-8/XML、包名、版本、ABI、APK 簽章和 ZIP 對齊檢查通過。原回報手機的持續幀率、Cloudflare／moq.pro 與 OBS Browser Source 的 WebTransport 播放尚待驗證。
+- Release APK SHA-256 為 `d6425712820394d3a7e90db64615f4962ed632aa71914de5953a6a54ca967566`，Offline APK 為 `5fd302056d62fd9fc82f2d138e0b1f459237a5b3b4215e16d0b3f1665faf90c8`。

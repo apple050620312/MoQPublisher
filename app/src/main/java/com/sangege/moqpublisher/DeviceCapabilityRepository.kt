@@ -3,7 +3,6 @@ package com.sangege.moqpublisher
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.os.Build
 import android.util.Range
 
 data class VideoEncoderCapability(
@@ -48,7 +47,8 @@ internal class DeviceCapabilityRepository {
         var cbr = false
         val names = mutableListOf<String>()
         MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.forEach { info ->
-            if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, ignoreCase = true) } || !isHardware(info)) return@forEach
+            if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, ignoreCase = true) } ||
+                !info.isHardwareVideoEncoder()) return@forEach
             runCatching {
                 val caps = info.getCapabilitiesForType(mime)
                 names += info.name
@@ -66,13 +66,6 @@ internal class DeviceCapabilityRepository {
         }
         VideoEncoderCapability(normalized, names.distinct(), surface, widths, heights, frameRates, bitrates, cbr)
     }.getOrDefault(VideoEncoderCapability(codec.uppercase()))
-
-    private fun isHardware(info: MediaCodecInfo): Boolean {
-        if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
-        val name = info.name.lowercase()
-        return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") &&
-            "ffmpeg" !in name && "sw.encoder" !in name && ".sw." !in name
-    }
 
     private fun merge(current: Range<Int>?, next: Range<Int>): Range<Int> = if (current == null) next else
         Range(minOf(current.lower, next.lower), maxOf(current.upper, next.upper))

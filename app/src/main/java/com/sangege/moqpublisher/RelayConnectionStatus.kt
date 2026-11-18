@@ -1,5 +1,11 @@
 package com.sangege.moqpublisher
 
+import dev.moq.isAuth
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import kotlinx.coroutines.TimeoutCancellationException
+import uniffi.moq.MoqException
+
 /** Publishing means a requested video track accepted frames, not that a viewer decoded them. */
 enum class RelayConnectionPhase { CONNECTED, PUBLISHING, RECONNECTING, RECOVERING }
 
@@ -31,6 +37,35 @@ internal class RelayReconnectDeadline(private val retryMs: Long = RelayConnectio
         }
         val start = disconnectedAtMs ?: nowMs.also { disconnectedAtMs = it }
         return nowMs - start >= retryMs
+    }
+}
+
+/** Bounds dial retries across default-network changes until a session is established. */
+internal class RelayDialRetry(
+    private val windowMs: Long = RelayConnectionPolicy.RETRY_WINDOW_US.toLong() / 1_000L
+) {
+    private var startedAtMs: Long? = null
+    private var retries = 0
+
+    fun timeoutMs(nowMs: Long): Long {
+        val start = startedAtMs ?: nowMs.also { startedAtMs = it }
+        val remaining = (windowMs - (nowMs - start)).coerceAtLeast(0)
+        return minOf(RelayConnectionPolicy.CONNECT_TIMEOUT_MS, remaining)
+    }
+
+    fun delayAfterFailure(error: Exception, nowMs: Long): Long? {
+        val transient = error is TimeoutCancellationException || error is UnknownHostException ||
+            error is SocketTimeoutException || (error is MoqException.Transport && !error.isAuth)
+        if (!transient || retries >= 3) return null
+        val delayMs = 1_000L shl retries
+        if (timeoutMs(nowMs) <= delayMs) return null
+        retries++
+        return delayMs
+    }
+
+    fun connected() {
+        startedAtMs = null
+        retries = 0
     }
 }
 

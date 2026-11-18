@@ -85,7 +85,7 @@
     <string name="broadcast_path">直播路徑</string>
     <string name="video_configuration">視訊設定</string>
     <string name="video_preset">直播畫質 Preset</string>
-    <string name="video_preset_description">儲存並重複使用視訊與音訊設定。套用前會檢查裝置的硬體編碼器。</string>
+    <string name="video_preset_description">儲存並重複使用視訊與音訊設定。</string>
     <string name="preset_custom">自訂</string>
     <string name="preset_data_saver">省流量</string>
     <string name="preset_mobile_streaming">行動直播</string>
@@ -103,7 +103,7 @@
     <string name="error_preset_save">無法儲存 Preset，請重試。</string>
     <string name="error_preset_invalid">此畫質預設包含無效的視訊或音訊設定。</string>
     <string name="encoder_capability_summary">硬體編碼器：%1$s・寬度 %2$s・高度 %3$s・FPS %4$s・碼率 %5$s・CBR %6$s。動態碼率能力會在編碼器實際啟動後確認。</string>
-    <string name="encoder_capability_unavailable">裝置沒有回報此編碼格式的硬體 surface encoder。最終結果仍會在 MediaCodec 配置時確認。</string>
+    <string name="encoder_capability_unavailable">Android 沒有回報此格式的硬體 Surface 編碼器。開播時會嘗試可用的 MediaCodec 編碼器。</string>
     <string name="supported">支援</string>
     <string name="unsupported">不可用</string>
     <string name="video_codec">視訊編碼</string>
@@ -181,7 +181,7 @@
     <string name="error_broadcast">無法連線或發布至中繼伺服器。請檢查網址、路徑、驗證、TLS 與網路。詳細資訊已記錄於診斷資料。</string>
     <string name="error_video">視訊編碼或傳輸失敗。請嘗試降低解析度或幀率。詳細資訊已記錄於診斷資料。</string>
     <string name="error_audio_capture">無法擷取或編碼麥克風音訊。請檢查麥克風權限，或改用單聲道。詳細資訊已記錄於診斷資料。</string>
-    <string name="error_encoder_unsupported">無法以 %2$d×%3$d、%4$d FPS 啟動 %1$s 硬體編碼器。請查看診斷資訊中的啟動錯誤。</string>
+    <string name="error_encoder_unsupported">無法以 %2$d×%3$d、%4$d FPS 啟動 %1$s 編碼器。請查看診斷資訊中的啟動錯誤。</string>
     <string name="diagnostics_export">匯出診斷</string>
     <string name="diagnostics_preparing">準備診斷檔…</string>
     <string name="diagnostics_ready">診斷檔已就緒</string>

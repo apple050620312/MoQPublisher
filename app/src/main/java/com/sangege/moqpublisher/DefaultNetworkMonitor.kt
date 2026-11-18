@@ -13,15 +13,14 @@ internal class DefaultNetworkMonitor(context: Context, private val changed: () -
     private val manager = context.getSystemService(ConnectivityManager::class.java)
     private val active = AtomicBoolean(true)
     private var previous: Network? = manager.activeNetwork
-    private var seenNetwork = previous != null
     private var addresses: Set<InetAddress> = emptySet()
     private var registered = false
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             val notify = synchronized(this@DefaultNetworkMonitor) {
-                val different = seenNetwork && network != previous
+                val different = network != previous
                 if (network != previous) addresses = emptySet()
-                previous = network; seenNetwork = true
+                previous = network
                 active.get() && different
             }
             if (notify) changed()

@@ -79,7 +79,7 @@ internal class SurfaceVideoEncoder private constructor(
     }
 
     fun checkProgress() {
-        check(pending.get() == 0 || System.nanoTime() - lastProgressNs < 3_000_000_000L) { "Hardware surface encoder stopped producing frames" }
+        check(pending.get() == 0 || System.nanoTime() - lastProgressNs < 3_000_000_000L) { "Surface encoder stopped producing frames" }
     }
 
     override fun setBitrate(bitrateBps: Long) = synchronized(lock) {
@@ -116,11 +116,11 @@ internal class SurfaceVideoEncoder private constructor(
         ): SurfaceVideoEncoder {
             val hevc = type == VideoCodec.H265
             val mime = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+            val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { info -> info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } }
+                .sortedByDescending { it.isHardwareVideoEncoder() }
             var lastFailure: Exception? = null
-            for (info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
-                if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, true) }) continue
-                if (Build.VERSION.SDK_INT >= 29 && !info.isHardwareAccelerated) continue
-                if (info.name.startsWith("OMX.google.", true) || info.name.startsWith("c2.android.", true)) continue
+            for (info in candidates) {
                 // A vendor may advertise an optional setting and still reject it at some modes.
                 val caps = runCatching { info.getCapabilitiesForType(mime) }
                     .onFailure { diagnostics.error("surface_encoder_capabilities_unavailable", it) }
@@ -146,7 +146,8 @@ internal class SurfaceVideoEncoder private constructor(
                         )
                         encoder.start()
                         diagnostics.event("encoder_open", mapOf(
-                            "name" to info.name, "input" to "surface", "format" to format, "low_latency_keys" to lowLatency
+                            "name" to info.name, "input" to "surface", "format" to format,
+                            "hardware_accelerated" to info.isHardwareVideoEncoder(), "low_latency_keys" to lowLatency
                         ))
                         return encoder
                     } catch (error: Exception) {

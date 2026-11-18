@@ -91,7 +91,7 @@
     <string name="broadcast_path_example" translatable="false">live/camera</string>
     <string name="video_configuration">Video</string>
     <string name="video_preset">Stream quality preset</string>
-    <string name="video_preset_description">Save and reuse video and audio settings. Presets are checked against the available hardware encoder before applying.</string>
+    <string name="video_preset_description">Save and reuse video and audio settings.</string>
     <string name="preset_custom">Custom</string>
     <string name="preset_data_saver">Data Saver</string>
     <string name="preset_mobile_streaming">Mobile Streaming</string>
@@ -109,7 +109,7 @@
     <string name="error_preset_save">The preset could not be saved. Try again.</string>
     <string name="error_preset_invalid">This quality preset contains invalid video or audio settings.</string>
     <string name="encoder_capability_summary">Hardware encoder: %1$s · width %2$s · height %3$s · FPS %4$s · bitrate %5$s · CBR %6$s. Runtime bitrate changes are confirmed when the encoder is running.</string>
-    <string name="encoder_capability_unavailable">No hardware surface encoder was reported for this codec. The final result is still confirmed when MediaCodec is configured.</string>
+    <string name="encoder_capability_unavailable">Android reported no hardware surface encoder for this codec. The app will try the available MediaCodec encoders when starting.</string>
     <string name="supported">supported</string>
     <string name="unsupported">unavailable</string>
     <string name="video_codec">Video codec</string>
@@ -196,7 +196,7 @@
     <string name="error_broadcast">Could not connect or publish to the relay. Check the server URL, path, authentication, TLS and network. Details are saved in diagnostics.</string>
     <string name="error_video">Video encoding or transmission failed. Try a lower resolution or frame rate. Details are saved in diagnostics.</string>
     <string name="error_audio_capture">Could not capture or encode microphone audio. Check microphone access or try mono. Details are saved in diagnostics.</string>
-    <string name="error_encoder_unsupported">Could not start the %1$s hardware encoder at %2$d&#215;%3$d, %4$d FPS. See Diagnostics for the startup error.</string>
+    <string name="error_encoder_unsupported">Could not start a %1$s encoder at %2$d&#215;%3$d, %4$d FPS. See Diagnostics for the startup error.</string>
     <string name="diagnostics_export">Export diagnostics</string>
     <string name="diagnostics_preparing">Preparing diagnostics</string>
     <string name="diagnostics_ready">Diagnostics ready</string>

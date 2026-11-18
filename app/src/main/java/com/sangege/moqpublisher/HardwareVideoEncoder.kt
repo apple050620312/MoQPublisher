@@ -246,7 +246,7 @@ internal class HardwareVideoEncoder private constructor(
             val mime = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
             val failures = mutableListOf<String>()
             val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter {
-                it.isEncoder && it.supportedTypes.any { type -> type.equals(mime, ignoreCase = true) } && isHardware(it)
+                it.isEncoder && it.supportedTypes.any { type -> type.equals(mime, ignoreCase = true) } && it.isHardwareVideoEncoder()
             }
             for (candidate in candidates) {
                 var encoder: MediaCodec? = null
@@ -288,13 +288,6 @@ internal class HardwareVideoEncoder private constructor(
                 UiMessage(R.string.error_encoder_unsupported, listOf(if (hevc) "H.265" else "H.264", width, height, framerate)),
                 IllegalStateException(failures.joinToString())
             )
-        }
-
-        private fun isHardware(info: MediaCodecInfo): Boolean {
-            if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
-            val name = info.name.lowercase()
-            return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") &&
-                "ffmpeg" !in name && "sw.encoder" !in name && ".sw." !in name
         }
 
         private fun ByteBuffer.bytes(): ByteArray = ByteArray(remaining()).also { duplicate().get(it) }

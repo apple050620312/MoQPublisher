@@ -4,10 +4,19 @@ import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.EGLExt
 import android.opengl.GLES20
+import android.util.Size
 import android.view.Surface
+import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.moq.VideoCodec
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -18,20 +27,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class SurfaceEncoderModeTest {
+    private data class Mode(val codec: VideoCodec, val size: Size, val fps: Int)
+
     @Test
     fun selectedModeProducesAnIndependentKeyframe() {
-        val args = InstrumentationRegistry.getArguments()
-        val requested = args.getString("moqCodec")
-        assumeTrue("Pass moqCodec, moqWidth, moqHeight and moqFps for a mode supported by this device", requested != null)
-        val codec = when (requested) {
-            "H264" -> VideoCodec.H264
-            "H265" -> VideoCodec.H265
-            else -> error("moqCodec must be H264 or H265")
-        }
-        val width = checkNotNull(args.getString("moqWidth")).toInt()
-        val height = checkNotNull(args.getString("moqHeight")).toInt()
-        val fps = checkNotNull(args.getString("moqFps")).toInt()
-        val bitrate = args.getString("moqBitrate")?.toLong() ?: 3_000_000L
+        val (codec, size, fps) = requestedMode()
+        val width = size.width
+        val height = size.height
+        val bitrate = InstrumentationRegistry.getArguments().getString("moqBitrate")?.toLong() ?: 3_000_000L
         val diagnostics = AppDiagnostics(InstrumentationRegistry.getInstrumentation().targetContext)
         val outputReady = CountDownLatch(1)
         val failure = AtomicReference<Throwable>()
@@ -48,6 +51,65 @@ class SurfaceEncoderModeTest {
         } finally {
             encoder.close()
         }
+    }
+
+    @Test
+    fun cameraModePublishesToRelay() = runBlocking {
+        val relayUrl = InstrumentationRegistry.getArguments().getString("moqTestCameraRelayUrl")
+        assumeTrue("Provide a local Draft 18 relay and subscribe to the empty broadcast name", relayUrl != null)
+        val (codec, size, fps) = requestedMode()
+        val app = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as MoqApplication
+        withTimeout(15_000L) { app.core.state.first { it.ready } }
+        ActivityScenario.launch(MainActivity::class.java).use {
+            val session = app.session
+            withContext(Dispatchers.Main) {
+                session.configureCamera(false, VideoMode(size, fps, CameraVideoSettings(direction = VideoDirection.LANDSCAPE)))
+                session.requestStart(BroadcastConfiguration(
+                    relayUrl = checkNotNull(relayUrl),
+                    streamPath = "",
+                    tlsVerify = true,
+                    enableAudio = false,
+                    audioChannel = AudioChannel.MONO,
+                    audioQuality = AudioQuality.STANDARD,
+                    audioGainPercent = AudioSettings.DEFAULT_GAIN,
+                    codec = codec,
+                    framerate = fps,
+                    videoBitrate = VideoBitrateConfiguration(1_500_000L, 3_000_000L, 4_000_000L, false),
+                    provider = RelayProvider.CLOUDFLARE,
+                    protocolDraft = 18
+                ))
+            }
+            try {
+                val phase = withTimeout(25_000L) {
+                    session.streamer.lifecycleState.first {
+                        it.phase == BroadcastPhase.PUBLISHING || it.phase == BroadcastPhase.FAILED
+                    }
+                }
+                assertEquals(phase.error.toString(), BroadcastPhase.PUBLISHING, phase.phase)
+                val live = session.streamer.streamState.value as StreamState.Live
+                assertEquals(size.width, live.encodedWidth)
+                assertEquals(size.height, live.encodedHeight)
+                assertEquals(fps, live.targetFps)
+                delay(6_000L)
+            } finally {
+                withContext(Dispatchers.Main) { session.stop() }
+                withTimeout(10_000L) { session.streamer.streamState.first { !it.isActive() } }
+            }
+        }
+    }
+
+    private fun requestedMode(): Mode {
+        val args = InstrumentationRegistry.getArguments()
+        val requested = args.getString("moqCodec")
+        assumeTrue("Pass moqCodec, moqWidth, moqHeight and moqFps for a mode supported by this device", requested != null)
+        val codec = when (requested) {
+            "H264" -> VideoCodec.H264
+            "H265" -> VideoCodec.H265
+            else -> error("moqCodec must be H264 or H265")
+        }
+        val width = checkNotNull(args.getString("moqWidth")).toInt()
+        val height = checkNotNull(args.getString("moqHeight")).toInt()
+        return Mode(codec, Size(width, height), checkNotNull(args.getString("moqFps")).toInt())
     }
 
     private fun drawTestFrames(surface: Surface, width: Int, height: Int, fps: Int) {

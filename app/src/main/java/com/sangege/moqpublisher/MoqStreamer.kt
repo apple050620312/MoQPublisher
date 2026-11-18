@@ -54,6 +54,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.TimeoutCancellationException
 import uniffi.moq.MoqException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -346,23 +347,44 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         try {
             monitor = DefaultNetworkMonitor(context) { handovers.trySend(Unit) }
             var reconnectBase = 0L
+            val retry = RelayDialRetry()
             while (currentCoroutineContext().isActive) {
+                val timeoutMs = retry.timeoutMs(SystemClock.elapsedRealtime())
+                if (timeoutMs == 0L) throw UiException(UiMessage(R.string.error_relay_timeout))
                 transitionLifecycle(BroadcastLifecycleEvent.Connecting)
-                coroutineScope {
+                val failure = coroutineScope {
                     val connection = async {
-                        runConnectedBroadcast(relayUrl, streamPath, tlsVerify, enableAudio, reconnectBase)
-                    }
-                    select<Unit> {
-                        connection.onAwait { }
-                        handovers.onReceive {
-                            diagnostics.event("default_network_changed", mapOf("network" to diagnostics.networkDescription()))
+                        try {
+                            runConnectedBroadcast(relayUrl, streamPath, tlsVerify, enableAudio, reconnectBase, timeoutMs)
+                            null
+                        } catch (error: Exception) {
+                            currentCoroutineContext().ensureActive()
+                            if (error is CancellationException && error !is TimeoutCancellationException) throw error
+                            error
                         }
                     }
-                    markRelayReconnecting()
-                    connection.cancelAndJoin()
+                    select<Exception?> {
+                        connection.onAwait { it }
+                        handovers.onReceive {
+                            diagnostics.event("default_network_changed", mapOf("network" to diagnostics.networkDescription()))
+                            markRelayReconnecting()
+                            connection.cancelAndJoin()
+                            null
+                        }
+                    }
                 }
+                val connected = synchronized(streamLock) { moqSession != null }
+                val delayMs = if (failure != null) {
+                    if (connected) throw failure
+                    val delay = retry.delayAfterFailure(failure, SystemClock.elapsedRealtime()) ?: throw failure
+                    diagnostics.event("relay_dial_retry", mapOf("delay_ms" to delay, "failure" to failure.javaClass.simpleName))
+                    markRelayReconnecting()
+                    delay
+                } else null
+                if (connected) retry.connected()
                 reconnectBase = ((_streamState.value as? StreamState.Live)?.reconnectCount ?: reconnectBase) + 1
                 cleanup(stopRecording = false)
+                if (delayMs != null) withTimeoutOrNull(delayMs) { handovers.receive() }
             }
         } finally {
             monitor?.close()
@@ -406,12 +428,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private suspend fun runConnectedBroadcast(
-        relayUrl: String, streamPath: String, tlsVerify: Boolean, enableAudio: Boolean, reconnectBase: Long
+        relayUrl: String, streamPath: String, tlsVerify: Boolean, enableAudio: Boolean, reconnectBase: Long, timeoutMs: Long
     ): Unit = coroutineScope {
             Log.d(TAG, "Connecting to relay: ${RelayUrl.maskJwt(relayUrl)} (tlsVerify=$tlsVerify)...")
             currentCoroutineContext().ensureActive()
 
-            val moq = withTimeout(RelayConnectionPolicy.CONNECT_TIMEOUT_MS) { Moq.connect(
+            val moq = withTimeout(timeoutMs) { Moq.connect(
                 url = relayUrl,
                 tlsVerify = tlsVerify,
                 // Cloudflare serves WebTransport/QUIC. Keep the existing moq.pro fallback.
