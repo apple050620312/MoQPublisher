@@ -11,6 +11,7 @@
 5. **OBS 原生 MoQ Source** 使用已安裝、支援實際 Relay Draft 及媒體格式的 Source。依外掛文件填入訂閱端點、路徑及訂閱憑證。若沒有相容外掛，該列記為未驗證並記下外掛名稱、版本或搜尋結果。
 6. 每個可用 Relay 測試 H.264＋Opus、H.265＋Opus，以及原回報可用的解析度與 FPS。至少測試 720p30、1080p30 和裝置支援的 1080p60。確認 Android 設定、診斷中的 `encoder_open`／`video_track_published`、OBS 實際畫面和混音器。記錄選定解析度與 CameraX 實際尺寸。
 7. 暫時在測試 Profile 使用過期或權限不符的測試 JWT／Token，分別驗證發布失敗與訂閱失敗。核對 App 的錯誤分類及重試是否終止，隨後恢復有效憑證重測。Cloudflare 的 Subscribe 權限失敗時也檢查既有 Publisher 能否繼續推流。
+8. 直播中從 720p30 切到相機支援的 1080p 模式，確認 OBS 解碼尺寸、實際 FPS、音訊時間線和 Relay session。另用已知被該手機 MediaCodec 拒絕的組合驗證回復舊畫質，保留 `live_video_mode_result` 與 OBS 錄影。
 
 ## 量測
 

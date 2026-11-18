@@ -7,7 +7,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Application-owned session; ViewModels observe it and never close an active broadcast. */
 internal class BroadcastSession(private val application: MoqApplication) {
@@ -28,6 +31,9 @@ internal class BroadcastSession(private val application: MoqApplication) {
         private set
     var generation: Long = 0L
         private set
+    private var pendingVideoMode: LiveVideoModeChange? = null
+    private val mutableChangingVideoMode = MutableStateFlow(false)
+    val changingVideoMode = mutableChangingVideoMode.asStateFlow()
 
     init {
         streamer.beforeVideoEncoderClose = camera::detachEncoder
@@ -55,7 +61,33 @@ internal class BroadcastSession(private val application: MoqApplication) {
         }
     }
 
-    fun configureCamera(front: Boolean, size: Size, fps: Int) = camera.configure(front, size, fps)
+    fun configureCamera(front: Boolean, size: Size, fps: Int) {
+        if (pendingVideoMode == null) camera.configure(front, size, fps)
+    }
+
+    suspend fun changeVideoMode(front: Boolean, previous: VideoMode, requested: VideoMode): Boolean {
+        if (pendingVideoMode != null || !streamer.streamState.value.canVerifyRemoteMedia()) return false
+        val change = LiveVideoModeChange()
+        pendingVideoMode = change
+        mutableChangingVideoMode.value = true
+        var applied = false
+        try {
+            diagnostics.event("live_video_mode_requested", mapOf("size" to requested.size, "fps" to requested.fps))
+            camera.configure(front, requested.size, requested.fps, change)
+            applied = withTimeoutOrNull(8_000L) {
+                change.result.first { it != LiveVideoModeChange.Result.PENDING }
+            } == LiveVideoModeChange.Result.APPLIED
+            return applied
+        } finally {
+            if (!applied) {
+                change.finish(false)
+                camera.configure(front, previous.size, previous.fps)
+            }
+            pendingVideoMode = null
+            mutableChangingVideoMode.value = false
+            diagnostics.event("live_video_mode_result", mapOf("applied" to applied, "size" to requested.size, "fps" to requested.fps))
+        }
+    }
 
     fun setUiActive(active: Boolean) {
         camera.setUiActive(active)
@@ -84,7 +116,12 @@ internal class BroadcastSession(private val application: MoqApplication) {
         return config
     }
 
-    fun stop() { pendingStart = null; verifier.reset(); streamer.stopBroadcast() }
+    fun stop() {
+        pendingStart = null
+        pendingVideoMode?.finish(false)
+        verifier.reset()
+        streamer.stopBroadcast()
+    }
 
     fun stopOwned(expectedGeneration: Long): Boolean {
         if (expectedGeneration != generation) return false

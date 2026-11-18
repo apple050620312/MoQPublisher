@@ -219,7 +219,7 @@ class BroadcastService : Service() {
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))
             .setContentText(if (recovering) baseText else healthText ?: issueText ?: audioText ?: baseText)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .addAction(0, localized.getString(R.string.stop_broadcast), stop).build()
+            .addAction(0, localized.getString(R.string.stop_broadcast_now), stop).build()
     }
 
     companion object {

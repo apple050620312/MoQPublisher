@@ -15,7 +15,8 @@ enum class StreamHealthReason {
     QUEUE_PRESSURE,
     LOW_BATTERY,
     THERMAL,
-    MEMORY_PRESSURE
+    MEMORY_PRESSURE,
+    CPU_PRESSURE
 }
 
 data class StreamHealthSnapshot(
@@ -120,6 +121,7 @@ internal class StreamHealthEvaluator(
         if (DeviceHealthIssue.LOW_BATTERY in input.deviceHealthIssues) reasons += StreamHealthReason.LOW_BATTERY
         if (DeviceHealthIssue.THERMAL in input.deviceHealthIssues) reasons += StreamHealthReason.THERMAL
         if (DeviceHealthIssue.MEMORY_PRESSURE in input.deviceHealthIssues) reasons += StreamHealthReason.MEMORY_PRESSURE
+        if (DeviceHealthIssue.CPU_PRESSURE in input.deviceHealthIssues) reasons += StreamHealthReason.CPU_PRESSURE
 
         val critical = reasons.any {
             it == StreamHealthReason.GPU_STALLED || it == StreamHealthReason.ENCODER_STALLED ||

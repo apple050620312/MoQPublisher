@@ -125,6 +125,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val audioInputDeviceId by viewModel.audioInputDeviceId.collectAsState()
     val lockLandscape by viewModel.lockLandscape.collectAsState()
     val backgroundStreaming by viewModel.backgroundStreaming.collectAsState()
+    val confirmStop by viewModel.confirmStop.collectAsState()
     val audioCaptureStatus by viewModel.audioCaptureStatus.collectAsState()
     val cameraControlState by viewModel.cameraControlState.collectAsState()
     val language by viewModel.language.collectAsState()
@@ -139,11 +140,13 @@ fun MainScreen(viewModel: MainViewModel) {
     val selectedPresetId by viewModel.selectedPresetId.collectAsState()
     val availableResolutions by viewModel.availableResolutions.collectAsState()
     val streamState by viewModel.streamState.collectAsState()
+    val broadcastLifecycle by viewModel.broadcastLifecycle.collectAsState()
     val configurationError by viewModel.configurationError.collectAsState()
     val coreState by viewModel.coreState.collectAsState()
     val appUpdateState by viewModel.appUpdateState.collectAsState()
     val streamHealth by viewModel.streamHealth.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
+    var stopConfirmationGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by rememberSaveable {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -258,6 +261,9 @@ fun MainScreen(viewModel: MainViewModel) {
     }
     val onToggleBroadcast: () -> Unit = {
         when {
+            streamState is StreamState.Live && confirmStop -> {
+                stopConfirmationGeneration = viewModel.broadcastLifecycle.value.generation
+            }
             active -> viewModel.stopBroadcast()
             enableAudio && !hasAudioPermission -> {
                 pendingAudioStart = true
@@ -313,6 +319,7 @@ fun MainScreen(viewModel: MainViewModel) {
         if (showSettings) {
             val videoBitrate by viewModel.videoBitrate.collectAsState()
             val applyingVideoBitrate by viewModel.applyingVideoBitrate.collectAsState()
+            val changingVideoMode by viewModel.changingVideoMode.collectAsState()
             val streamAlertMode by viewModel.streamAlertMode.collectAsState()
             val streamAlerts by viewModel.streamAlerts.collectAsState()
             SettingsScreen(
@@ -328,10 +335,13 @@ fun MainScreen(viewModel: MainViewModel) {
                 videoResolution = videoResolution, onVideoResolutionChange = viewModel::setVideoResolution,
                 availableResolutions = availableResolutions,
                 videoFps = videoFps, onVideoFpsChange = viewModel::setVideoFps,
+                changingVideoMode = changingVideoMode,
+                onApplyVideoMode = viewModel::applyVideoMode,
                 videoBitrate = videoBitrate, applyingVideoBitrate = applyingVideoBitrate,
                 onApplyVideoBitrate = viewModel::applyVideoBitrate,
                 presets = presets, selectedPresetId = selectedPresetId,
                 onApplyPreset = viewModel::applyPreset, onSavePreset = viewModel::saveCurrentPreset,
+                onDuplicatePreset = viewModel::duplicatePreset,
                 onDeletePreset = viewModel::deletePreset, onResetPresets = viewModel::resetCustomPresets,
                 encoderCapabilities = encoderCapabilities,
                 enableAudio = enableAudio, onEnableAudioChange = viewModel::setEnableAudio,
@@ -346,12 +356,30 @@ fun MainScreen(viewModel: MainViewModel) {
                 theme = theme, onThemeChange = viewModel::setTheme,
                 lockLandscape = lockLandscape, onLockLandscapeChange = viewModel::setLockLandscape,
                 backgroundStreaming = backgroundStreaming, onBackgroundStreamingChange = viewModel::setBackgroundStreaming,
+                confirmStop = confirmStop, onConfirmStopChange = viewModel::setConfirmStop,
                 streamAlertMode = streamAlertMode, onStreamAlertModeChange = viewModel::setStreamAlertMode,
                 streamAlerts = streamAlerts,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
                 isStreaming = active, onBack = { showSettings = false }, openAboutOnEntry = openAboutOnEntry
+            )
+        }
+        val stopGeneration = stopConfirmationGeneration
+        if (stopGeneration != null && streamState is StreamState.Live &&
+            stopGeneration == broadcastLifecycle.generation) {
+            AlertDialog(
+                onDismissRequest = { stopConfirmationGeneration = null },
+                title = { Text(stringResource(R.string.confirm_stop_title)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        stopConfirmationGeneration = null
+                        if (stopGeneration == viewModel.broadcastLifecycle.value.generation) viewModel.stopBroadcast()
+                    }) { Text(stringResource(R.string.stop_broadcast)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { stopConfirmationGeneration = null }) { Text(stringResource(R.string.cancel)) }
+                }
             )
         }
         if (!showSettings && streamHealth.level != StreamHealthLevel.IDLE && streamHealth.level != StreamHealthLevel.HEALTHY) {
@@ -408,6 +436,7 @@ private fun StreamHealthNotice(snapshot: StreamHealthSnapshot, modifier: Modifie
         StreamHealthReason.THERMAL in snapshot.reasons -> R.string.health_thermal
         StreamHealthReason.LOW_BATTERY in snapshot.reasons -> R.string.health_low_battery
         StreamHealthReason.MEMORY_PRESSURE in snapshot.reasons -> R.string.health_memory_pressure
+        StreamHealthReason.CPU_PRESSURE in snapshot.reasons -> R.string.health_cpu_pressure
         snapshot.level == StreamHealthLevel.RECOVERING -> R.string.health_recovering
         snapshot.level == StreamHealthLevel.CRITICAL -> R.string.health_critical
         else -> R.string.health_warning
@@ -916,7 +945,8 @@ private fun StreamControls(
             else if (state.phase == RelayConnectionPhase.CONNECTED)
                 StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
             val deviceHealth by viewModel.deviceHealth.collectAsState()
-            LiveStats(state, codec, fps, deviceHealth, viewModel::applyDeviceHealthRecommendation)
+            val verification by viewModel.subscriberVerification.collectAsState()
+            LiveStats(state, codec, fps, deviceHealth, verification, viewModel::applyDeviceHealthRecommendation)
         }
         else -> SettingCard(stringResource(R.string.effective_url)) {
             Text(relay, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -972,48 +1002,84 @@ private fun AudioLevelMeter(viewModel: MainViewModel) {
 @Composable
 private fun LiveStats(
     stats: StreamState.Live, codec: String, fps: Int, deviceHealth: DeviceHealthSnapshot,
+    verification: SubscriberVerification,
     onApplyHealthRecommendation: () -> Unit
 ) {
+    var professional by rememberSaveable { mutableStateOf(false) }
+    val unavailable = stringResource(R.string.stat_unavailable)
+    val duration = remember(stats.elapsedSeconds) {
+        android.text.format.DateUtils.formatElapsedTime(stats.elapsedSeconds)
+    }
+    val throughput = stats.sendRateKbps?.let { stringResource(R.string.value_mbps, it / 1000.0) } ?: unavailable
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.live_stats), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatItem(stringResource(R.string.stat_rtt), stats.rttMs?.let { stringResource(R.string.value_ms, it) }
-                    ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
-                StatItem(stringResource(R.string.stat_bitrate), stats.sendRateKbps?.let { stringResource(R.string.value_mbps, it / 1000.0) }
-                    ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.live_stats), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = { professional = !professional }) {
+                    Text(stringResource(if (professional) R.string.dashboard_simple else R.string.dashboard_professional))
+                }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatItem(stringResource(R.string.stat_sent), stats.bytesSentMb?.let { stringResource(R.string.value_mb, it) }
-                    ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
-                StatItem(stringResource(R.string.stat_codec), stringResource(R.string.value_codec_fps, codecDisplayName(codec), fps), Modifier.weight(1f))
-            }
-            stats.encoderName?.let { name ->
-                StatItem(stringResource(R.string.stat_encoder), name, Modifier.fillMaxWidth())
-            }
-            stats.videoBitrateBps?.let { bitrate ->
-                StatItem(stringResource(R.string.stat_encoder_bitrate), stringResource(R.string.value_mbps, bitrate / 1_000_000.0), Modifier.fillMaxWidth())
-            }
-            if (stats.runtimeBitrateSupport == RuntimeBitrateSupport.REJECTED) {
-                SupportingText(stringResource(R.string.error_bitrate_codec_change))
+                StatItem(stringResource(R.string.stat_duration), duration, Modifier.weight(1f))
+                StatItem(stringResource(R.string.stat_bitrate), throughput, Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatItem(stringResource(R.string.stat_queue), stringResource(R.string.value_queue_age,
-                    stats.videoQueueDepth, stats.videoQueueAgeMs ?: 0L), Modifier.weight(1f))
-                StatItem(stringResource(R.string.stat_lost), stats.packetsLost?.toString() ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
+                StatItem(stringResource(R.string.stat_published_fps), stats.publishedFps?.let {
+                    stringResource(R.string.value_fps_decimal, it)
+                } ?: unavailable, Modifier.weight(1f))
+                StatItem(stringResource(R.string.stat_network), stringResource(stats.network.label), Modifier.weight(1f))
             }
-            Text(stringResource(R.string.stat_device_health,
-                deviceHealth.batteryPercent ?: -1, deviceHealth.memoryAvailablePercent ?: -1,
-                deviceHealth.thermalStatus ?: 0), style = MaterialTheme.typography.bodySmall)
+            if (professional) {
+                val width = stats.encodedWidth
+                val height = stats.encodedHeight
+                val mode = if (width != null && height != null) {
+                    stringResource(R.string.video_summary, codecDisplayName(codec), width, height, stats.targetFps ?: fps)
+                } else stringResource(R.string.value_codec_fps, codecDisplayName(codec), stats.targetFps ?: fps)
+                StatItem(stringResource(R.string.stat_codec), mode, Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    StatItem(stringResource(R.string.stat_rtt), stats.rttMs?.let { stringResource(R.string.value_ms, it) }
+                        ?: unavailable, Modifier.weight(1f))
+                    StatItem(stringResource(R.string.stat_sent), stats.bytesSentMb?.let { stringResource(R.string.value_mb, it) }
+                        ?: unavailable, Modifier.weight(1f))
+                }
+                stats.encoderName?.let { StatItem(stringResource(R.string.stat_encoder), it, Modifier.fillMaxWidth()) }
+                stats.videoBitrateBps?.let { bitrate ->
+                    StatItem(stringResource(R.string.stat_encoder_bitrate),
+                        stringResource(R.string.value_mbps, bitrate / 1_000_000.0), Modifier.fillMaxWidth())
+                }
+                if (stats.runtimeBitrateSupport == RuntimeBitrateSupport.REJECTED) {
+                    SupportingText(stringResource(R.string.error_bitrate_codec_change))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val queueAge = stats.videoQueueAgeMs?.let { stringResource(R.string.value_ms, it) } ?: unavailable
+                    StatItem(stringResource(R.string.stat_queue),
+                        stringResource(R.string.value_queue_status, stats.videoQueueDepth, queueAge), Modifier.weight(1f))
+                    StatItem(stringResource(R.string.stat_lost), stats.packetsLost?.toString() ?: unavailable, Modifier.weight(1f))
+                }
+                Text(stringResource(R.string.stat_video_drops, stats.recentVideoDrops), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.stat_device_readings,
+                    deviceHealth.batteryPercent?.let { "$it%" } ?: unavailable,
+                    deviceHealth.memoryAvailablePercent?.let { "$it%" } ?: unavailable,
+                    deviceHealth.thermalStatus?.toString() ?: unavailable), style = MaterialTheme.typography.bodySmall)
+                if (deviceHealth.charging == true) SupportingText(stringResource(R.string.device_charging))
+                if (deviceHealth.powerSaveMode) SupportingText(stringResource(R.string.device_power_saver))
+                deviceHealth.processCpuPercent?.let { SupportingText(stringResource(R.string.stat_process_cpu, it)) }
+                Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
+                stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
+                val verificationText = when (verification) {
+                    SubscriberVerification.Idle -> stringResource(R.string.dashboard_verification_idle)
+                    is SubscriberVerification.Running -> verification.stage.text()
+                    is SubscriberVerification.Passed -> stringResource(R.string.dashboard_verification_passed, verification.frames)
+                    is SubscriberVerification.Failed -> verification.message.text()
+                }
+                StatItem(stringResource(R.string.dashboard_verification), verificationText, Modifier.fillMaxWidth())
+            }
             if (deviceHealth.recommendation == DeviceQualityRecommendation.REDUCE_BITRATE) {
                 SupportingText(stringResource(R.string.health_quality_recommendation))
                 OutlinedButton(onClick = onApplyHealthRecommendation, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
                     Text(stringResource(R.string.health_apply_recommendation))
                 }
             }
-            Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
-            stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
-            Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1100,9 +1166,11 @@ internal fun SettingsScreen(
     videoCodec: String, onVideoCodecChange: (String) -> Unit,
     videoResolution: Size, onVideoResolutionChange: (Size) -> Unit,
     availableResolutions: List<Size>, videoFps: Int, onVideoFpsChange: (Int) -> Unit,
+    changingVideoMode: Boolean, onApplyVideoMode: (Size, Int) -> Unit,
     videoBitrate: VideoBitrateInput, applyingVideoBitrate: Boolean, onApplyVideoBitrate: (VideoBitrateInput) -> Unit,
     presets: List<StreamPreset>, selectedPresetId: String?, onApplyPreset: (String) -> Boolean,
     onSavePreset: (String) -> Boolean, onDeletePreset: (String) -> Boolean, onResetPresets: () -> Unit,
+    onDuplicatePreset: (String, String) -> Boolean,
     encoderCapabilities: List<VideoEncoderCapability>,
     enableAudio: Boolean, onEnableAudioChange: (Boolean) -> Unit,
     audioChannel: AudioChannel, onAudioChannelChange: (AudioChannel) -> Unit,
@@ -1114,6 +1182,7 @@ internal fun SettingsScreen(
     theme: AppTheme, onThemeChange: (AppTheme) -> Unit,
     lockLandscape: Boolean, onLockLandscapeChange: (Boolean) -> Unit,
     backgroundStreaming: Boolean, onBackgroundStreamingChange: (Boolean) -> Unit,
+    confirmStop: Boolean, onConfirmStopChange: (Boolean) -> Unit,
     streamAlertMode: StreamAlertMode, onStreamAlertModeChange: (StreamAlertMode) -> Unit,
     streamAlerts: StreamAlertState,
     coreState: CoreState, onCoreCheck: () -> Unit,
@@ -1138,6 +1207,8 @@ internal fun SettingsScreen(
         SettingCard(stringResource(R.string.broadcast_behavior)) {
             SettingSwitch(stringResource(R.string.background_streaming), stringResource(R.string.background_streaming_hint),
                 backgroundStreaming, onBackgroundStreamingChange, editable)
+            SettingSwitch(stringResource(R.string.confirm_stop_setting), stringResource(R.string.confirm_stop_hint),
+                confirmStop, onConfirmStopChange, true)
             SettingSwitch(stringResource(R.string.lock_landscape), stringResource(R.string.lock_landscape_hint),
                 lockLandscape, onLockLandscapeChange, true)
         }
@@ -1168,15 +1239,30 @@ internal fun SettingsScreen(
             }
         }
         SettingCard(stringResource(R.string.video_configuration)) {
-            StreamPresetCard(presets, selectedPresetId, editable, onApplyPreset, onSavePreset, onDeletePreset, onResetPresets)
+            StreamPresetCard(presets, selectedPresetId, editable, onApplyPreset, onSavePreset,
+                onDuplicatePreset, onDeletePreset, onResetPresets)
             EncoderCapabilitySummary(encoderCapabilities.firstOrNull { it.codec == videoCodec })
             ChoiceOptions(stringResource(R.string.video_codec), videoCodec, listOf(
                 "H264" to stringResource(R.string.codec_h264), "H265" to stringResource(R.string.codec_h265)), onVideoCodecChange, editable)
-            SelectionDropdown(stringResource(R.string.camera_resolution), videoResolution,
-                (availableResolutions + videoResolution).distinct().map { it to formatResolutionLabel(it) },
-                onVideoResolutionChange, editable)
-            ChoiceOptions(stringResource(R.string.target_framerate), videoFps,
-                listOf(15, 24, 30, 60).map { it to stringResource(R.string.fps_value, it) }, onVideoFpsChange, editable)
+            val resolutions = (availableResolutions + videoResolution).distinct().map { it to formatResolutionLabel(it) }
+            val rates = listOf(15, 24, 30, 60).map { it to stringResource(R.string.fps_value, it) }
+            if (isStreaming) {
+                var requestedSize by remember(videoResolution) { mutableStateOf(videoResolution) }
+                var requestedFps by remember(videoFps) { mutableIntStateOf(videoFps) }
+                val canChange = !changingVideoMode && canVerifySubscription
+                SelectionDropdown(stringResource(R.string.camera_resolution), requestedSize, resolutions,
+                    { requestedSize = it }, enabled = canChange)
+                ChoiceOptions(stringResource(R.string.target_framerate), requestedFps, rates,
+                    { requestedFps = it }, enabled = canChange)
+                if (changingVideoMode) LinearProgressIndicator(Modifier.fillMaxWidth())
+                Button(onClick = { onApplyVideoMode(requestedSize, requestedFps) },
+                    enabled = canChange && (requestedSize != videoResolution || requestedFps != videoFps)) {
+                    Text(stringResource(R.string.apply_live_video_mode))
+                }
+            } else {
+                SelectionDropdown(stringResource(R.string.camera_resolution), videoResolution, resolutions, onVideoResolutionChange)
+                ChoiceOptions(stringResource(R.string.target_framerate), videoFps, rates, onVideoFpsChange, true)
+            }
             VideoBitrateControls(videoBitrate, applyingVideoBitrate, onApplyVideoBitrate)
         }
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
@@ -1306,10 +1392,12 @@ private fun BitrateField(label: Int, value: String, enabled: Boolean, onChange: 
 private fun StreamPresetCard(
     presets: List<StreamPreset>, selectedPresetId: String?, enabled: Boolean,
     onApply: (String) -> Boolean, onSave: (String) -> Boolean,
+    onDuplicate: (String, String) -> Boolean,
     onDelete: (String) -> Boolean, onReset: () -> Unit
 ) {
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
     var presetName by rememberSaveable { mutableStateOf("") }
+    var duplicateOf by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = presets.firstOrNull { it.id == selectedPresetId }
     val options = listOf(StreamPresetPolicy.CUSTOM_ID to stringResource(R.string.preset_custom)) +
         presets.map { it.id to presetDisplayName(it) }
@@ -1323,10 +1411,16 @@ private fun StreamPresetCard(
                 R.string.preset_summary, preset.videoCodec, preset.width, preset.height, preset.fps,
                 preset.videoBitrateKbps
             ))
+            val copyName = stringResource(R.string.preset_duplicate_name, presetDisplayName(preset)).take(64)
+            TextButton(onClick = {
+                duplicateOf = preset.id
+                presetName = copyName
+                showSaveDialog = true
+            }, enabled = enabled) { Text(stringResource(R.string.preset_duplicate)) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(
-                onClick = { presetName = selected?.name ?: ""; showSaveDialog = true },
+                onClick = { duplicateOf = null; presetName = selected?.name ?: ""; showSaveDialog = true },
                 enabled = enabled, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small
             ) { Text(stringResource(R.string.preset_save)) }
             OutlinedButton(
@@ -1342,7 +1436,7 @@ private fun StreamPresetCard(
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
-            title = { Text(stringResource(R.string.preset_save_title)) },
+            title = { Text(stringResource(if (duplicateOf != null) R.string.preset_duplicate else R.string.preset_save_title)) },
             text = {
                 OutlinedTextField(
                     value = presetName, onValueChange = { presetName = it.take(64) },
@@ -1351,7 +1445,11 @@ private fun StreamPresetCard(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { if (onSave(presetName)) showSaveDialog = false }) {
+                TextButton(onClick = {
+                    val copiedFrom = duplicateOf
+                    val saved = if (copiedFrom != null) onDuplicate(copiedFrom, presetName) else onSave(presetName)
+                    if (saved) showSaveDialog = false
+                }) {
                     Text(stringResource(R.string.save))
                 }
             },

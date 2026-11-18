@@ -1274,3 +1274,9 @@ P0 > P1 > P2
 - `v1.0.41` 補強第 08／09 項。Cloudflare 遠端檢查細分失敗階段，支援用獨立 Subscribe-only Token 檢查空名稱，並在重連或編碼器重建後清除舊結果。背景警報依優先級及冷卻時間送出，設定頁可選聲音、震動或靜音，並查看警報歷史。
 - 第 21 項的本機發佈腳本加入 Release lint、APK 版本／簽章／對齊和 GitHub 資產雜湊驗證。正式簽章仍需正式金鑰。
 - 驗證 `testDebugUnitTest` 209 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 errors）、UTF-8/XML 與 `publish-release.ps1 -ValidateOnly -SkipTests` 通過。實機聲音／震動、真實 Cloudflare 訂閱解碼和 OBS 播放尚未驗證。
+- `v1.0.41` 的 Release／Offline APK SHA-256 分別為 `3047025c88eb67724144664ba2f7d57564852035c7bdada1a047b878c25774d4`、`e018f6dd8c795d25f9259a2b1151aec94c82d5b271046f579d5ffb1841558ee8`，GitHub 資產雜湊均已核對。
+
+### 2026-11-19
+
+- `v1.0.42` 完善第 16～19／22 項。解析度和 FPS 可在直播中一起套用，重建後等影片 Track 寫入關鍵影格，失敗時重新套用原畫質。加入簡易／專業儀表板、充電與 CPU／編碼表現監控、複製畫質預設及可設定的停止確認。前景通知可立即停止。直播期間檢查相機及音訊使用權限。
+- 驗證 `testDebugUnitTest` 212 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest` 與 `lintRelease` 通過。原回報手機、OBS 畫質重建／回復、背景停止及權限撤銷尚待實機測試。

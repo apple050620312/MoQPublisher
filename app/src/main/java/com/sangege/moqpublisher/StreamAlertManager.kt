@@ -12,6 +12,7 @@ enum class StreamAlertType(val priority: Int, val label: Int) {
     QUEUE_PRESSURE(1, R.string.health_queue_pressure),
     LOW_BATTERY(1, R.string.health_low_battery),
     MEMORY_PRESSURE(1, R.string.health_memory_pressure),
+    CPU_PRESSURE(1, R.string.health_cpu_pressure),
     RECOVERY_SUCCEEDED(0, R.string.alert_recovery_succeeded)
 }
 
@@ -105,6 +106,7 @@ internal class StreamAlertManager(
         StreamHealthReason.THERMAL -> StreamAlertType.DEVICE_OVERHEATING
         StreamHealthReason.LOW_BATTERY -> StreamAlertType.LOW_BATTERY
         StreamHealthReason.MEMORY_PRESSURE -> StreamAlertType.MEMORY_PRESSURE
+        StreamHealthReason.CPU_PRESSURE -> StreamAlertType.CPU_PRESSURE
         StreamHealthReason.LOW_FPS -> if (level == StreamHealthLevel.CRITICAL) StreamAlertType.STREAM_STALLED else StreamAlertType.NETWORK_DEGRADED
     }
 }

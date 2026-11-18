@@ -47,6 +47,7 @@ internal class CameraCaptureEngine(
     private var front = false
     private var size = Size(1280, 720)
     private var fps = 30
+    private var videoModeChange: LiveVideoModeChange? = null
     private var viewWidth = 1
     private var viewHeight = 1
     private var sourceWidth = 1280
@@ -64,9 +65,10 @@ internal class CameraCaptureEngine(
 
     init { lifecycle.currentState = Lifecycle.State.CREATED }
 
-    fun configure(useFront: Boolean, resolution: Size, frameRate: Int) {
-        if (front == useFront && size == resolution && fps == frameRate) return
+    fun configure(useFront: Boolean, resolution: Size, frameRate: Int, change: LiveVideoModeChange? = null) {
+        if (front == useFront && size == resolution && fps == frameRate && change == null) return
         front = useFront; size = resolution; fps = frameRate
+        videoModeChange = change
         if (preview != null || uiActive || streaming) bind()
     }
 
@@ -156,6 +158,8 @@ internal class CameraCaptureEngine(
                 actuallyFront = if (selector === requested) front else !front
                 val info = cameraProvider.getCameraInfo(selector)
                 val requestedSize = size
+                val requestedFps = fps
+                val modeChange = videoModeChange
                 val ratio = requestedSize.width.toDouble() / requestedSize.height
                 val resolutions = ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy(
@@ -174,14 +178,18 @@ internal class CameraCaptureEngine(
                 val useCase = Preview.Builder().setMirrorMode(androidx.camera.core.MirrorMode.MIRROR_MODE_OFF)
                     .setTargetRotation(Surface.ROTATION_0).setResolutionSelector(resolutions).build()
                 useCase.setSurfaceProvider(executor) { request ->
+                    if (ticket != generation) {
+                        request.willNotProvideSurface()
+                        return@setSurfaceProvider
+                    }
                     sourceWidth = request.resolution.width; sourceHeight = request.resolution.height
-                    renderer.provide(request)
+                    renderer.provide(request, requestedFps, modeChange)
                 }
                 val sessionRates = runCatching {
                     info.getSupportedFrameRateRanges(SessionConfig.Builder(useCase).build())
                 }.getOrDefault(emptySet())
                 val rate = CameraCapturePolicy.frameRate(
-                    sessionRates.ifEmpty { info.supportedFrameRateRanges }.map { CameraCapturePolicy.FrameRate(it.lower, it.upper) }, fps
+                    sessionRates.ifEmpty { info.supportedFrameRateRanges }.map { CameraCapturePolicy.FrameRate(it.lower, it.upper) }, requestedFps
                 )
                 val session = SessionConfig.Builder(useCase).setFrameRateRange(Range(rate.lower, rate.upper)).build()
                 val bound = cameraProvider.bindToLifecycle(this, selector, session)
@@ -190,7 +198,10 @@ internal class CameraCaptureEngine(
                     if (camera === bound && state.error?.code in setOf(CameraState.ERROR_STREAM_CONFIG,
                             CameraState.ERROR_CAMERA_DISABLED, CameraState.ERROR_CAMERA_FATAL_ERROR)) {
                         val error = IllegalStateException("Camera state error: ${state.error?.code}")
-                        if (streaming) streamer.cameraFailed(error) else onError(error)
+                        if (modeChange?.result?.value == LiveVideoModeChange.Result.PENDING) {
+                            diagnostics.error("camera_mode_change_failed", error)
+                            modeChange.finish(false)
+                        } else if (streaming) streamer.cameraFailed(error) else onError(error)
                     }
                 }.also { bound.cameraInfo.cameraState.observe(this, it) }
                 controls.attach(bound, this, { x, y ->
@@ -207,7 +218,9 @@ internal class CameraCaptureEngine(
             } catch (error: Throwable) {
                 preview = null; camera = null; controls.detach(); mutableCapture.value = null
                 diagnostics.error("camera_bind_failed", error)
-                if (streaming) streamer.cameraFailed(error) else onError(error)
+                val pendingChange = videoModeChange
+                if (pendingChange?.result?.value == LiveVideoModeChange.Result.PENDING) pendingChange.finish(false)
+                else if (streaming) streamer.cameraFailed(error) else onError(error)
             }
         }, executor)
     }

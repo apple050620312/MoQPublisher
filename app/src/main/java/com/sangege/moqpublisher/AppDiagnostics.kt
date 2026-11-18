@@ -24,6 +24,15 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
+enum class BroadcastNetwork(val label: Int) {
+    WIFI(R.string.network_wifi),
+    CELLULAR(R.string.network_cellular),
+    ETHERNET(R.string.network_ethernet),
+    VPN(R.string.network_vpn),
+    OFFLINE(R.string.network_offline),
+    UNKNOWN(R.string.stat_unavailable)
+}
+
 /** App-owned diagnostics, usable on a phone without adb, root or storage permissions. */
 class AppDiagnostics(context: Context) {
     private val context = context.applicationContext
@@ -127,6 +136,20 @@ class AppDiagnostics(context: Context) {
         "$transports validated=${caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)} " +
             "uplink_kbps=${caps.linkUpstreamBandwidthKbps} downlink_kbps=${caps.linkDownstreamBandwidthKbps}"
     }.getOrElse { "unavailable (${it.javaClass.simpleName})" }
+
+    internal fun networkType(): BroadcastNetwork = runCatching {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+            ?: return@runCatching BroadcastNetwork.UNKNOWN
+        val caps = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+            ?: return@runCatching BroadcastNetwork.OFFLINE
+        when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> BroadcastNetwork.VPN
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> BroadcastNetwork.WIFI
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> BroadcastNetwork.CELLULAR
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> BroadcastNetwork.ETHERNET
+            else -> BroadcastNetwork.UNKNOWN
+        }
+    }.getOrDefault(BroadcastNetwork.UNKNOWN)
 
     @Suppress("DEPRECATION")
     private fun version(): String = runCatching {

@@ -62,6 +62,7 @@ private const val KEY_BACKGROUND_STREAMING = "background_streaming"
 private const val KEY_LANGUAGE = "app_language"
 private const val KEY_THEME = "app_theme"
 private const val KEY_SHOW_CAMERA_DETAILS = "show_camera_details"
+private const val KEY_CONFIRM_STOP = "confirm_broadcast_stop"
 
 private const val DEFAULT_RELAY_URL = "https://cdn.moq.pro/placeholder"
 private const val DEFAULT_STREAM_PATH = "live/camera"
@@ -96,6 +97,8 @@ class MainViewModel internal constructor(
         StreamAlertMode.fromPreference(prefs.getString(StreamAlertMode.PREFERENCE, null))
     )
     val streamAlertMode = _streamAlertMode.asStateFlow()
+    private val _confirmStop = MutableStateFlow(prefs.getBoolean(KEY_CONFIRM_STOP, true))
+    val confirmStop = _confirmStop.asStateFlow()
     val deviceHealth: StateFlow<DeviceHealthSnapshot> = streamer.deviceHealth
     private val _preflightReport = MutableStateFlow<BroadcastPreflightReport?>(null)
     val preflightReport: StateFlow<BroadcastPreflightReport?> = _preflightReport.asStateFlow()
@@ -193,6 +196,7 @@ class MainViewModel internal constructor(
         prefs.getInt(KEY_VIDEO_FPS, DEFAULT_VIDEO_FPS).takeIf { it in SUPPORTED_FPS } ?: DEFAULT_VIDEO_FPS
     )
     val videoFps: StateFlow<Int> = _videoFps.asStateFlow()
+    val changingVideoMode = session.changingVideoMode
 
     private val _videoBitrate = MutableStateFlow(
         VideoBitrateInput.restore(
@@ -406,6 +410,11 @@ class MainViewModel internal constructor(
         prefs.edit { putString(StreamAlertMode.PREFERENCE, mode.name) }
     }
 
+    fun setConfirmStop(confirm: Boolean) {
+        _confirmStop.value = confirm
+        prefs.edit { putBoolean(KEY_CONFIRM_STOP, confirm) }
+    }
+
     fun setVideoCodec(codec: String) {
         val normalized = codec.uppercase().takeIf { it == "H264" || it == "H265" } ?: return
         _videoCodec.value = normalized
@@ -415,24 +424,43 @@ class MainViewModel internal constructor(
     }
 
     fun setVideoResolution(size: Size) {
-        if (size.width < 2 || size.height < 2) return
-        _videoResolution.value = size
-        markPresetChanged()
-        clearConfigurationError()
-        prefs.edit {
-            putInt(KEY_VIDEO_WIDTH, size.width)
-            putInt(KEY_VIDEO_HEIGHT, size.height)
-        }
-        syncCamera()
+        applyVideoMode(size, _videoFps.value)
     }
 
     fun setVideoFps(fps: Int) {
-        if (fps !in SUPPORTED_FPS) return
-        _videoFps.value = fps
+        applyVideoMode(_videoResolution.value, fps)
+    }
+
+    fun applyVideoMode(size: Size, fps: Int) {
+        if (size.width < 2 || size.height < 2 || fps !in SUPPORTED_FPS ||
+            changingVideoMode.value || session.pendingStart != null) return
+        val previous = VideoMode(_videoResolution.value, _videoFps.value)
+        val requested = VideoMode(size, fps)
+        if (requested == previous) return
+        if (!streamState.value.isActive()) {
+            saveVideoMode(requested)
+            syncCamera()
+            return
+        }
+        val front = _useFrontCamera.value
+        viewModelScope.launch {
+            withContext(NonCancellable) {
+                if (session.changeVideoMode(front, previous, requested)) saveVideoMode(requested)
+                else if (streamState.value.isActive()) setConfigurationError(UiMessage(R.string.error_live_video_mode))
+            }
+        }
+    }
+
+    private fun saveVideoMode(mode: VideoMode) {
+        _videoResolution.value = mode.size
+        _videoFps.value = mode.fps
         markPresetChanged()
         clearConfigurationError()
-        prefs.edit { putInt(KEY_VIDEO_FPS, fps) }
-        syncCamera()
+        prefs.edit {
+            putInt(KEY_VIDEO_WIDTH, mode.size.width)
+            putInt(KEY_VIDEO_HEIGHT, mode.size.height)
+            putInt(KEY_VIDEO_FPS, mode.fps)
+        }
     }
 
     internal fun applyVideoBitrate(input: VideoBitrateInput) {
@@ -535,7 +563,14 @@ class MainViewModel internal constructor(
         }
     }
 
-    fun saveCurrentPreset(name: String): Boolean {
+    fun saveCurrentPreset(name: String): Boolean = savePreset(name, template = null)
+
+    fun duplicatePreset(id: String, name: String): Boolean {
+        val template = _presets.value.firstOrNull { it.id == id } ?: return false
+        return savePreset(name, template)
+    }
+
+    private fun savePreset(name: String, template: StreamPreset?): Boolean {
         if (streamState.value.isActive()) {
             setConfigurationError(UiMessage(R.string.streaming_settings_locked))
             return false
@@ -546,16 +581,20 @@ class MainViewModel internal constructor(
             return false
         }
         val saved = runCatching {
-            val existingId = _presets.value.firstOrNull { it.id == _selectedPresetId.value && !it.builtIn }?.id
-            presetRepository.saveCustom(currentPreset(cleanName), existingId)
+            val existingId = if (template == null)
+                _presets.value.firstOrNull { it.id == _selectedPresetId.value && !it.builtIn }?.id else null
+            val preset = template?.copy(name = cleanName) ?: currentPreset(cleanName)
+            presetRepository.saveCustom(preset, existingId)
         }.getOrElse {
             diagnostics.error("preset_save_failed", it)
             setConfigurationError(UiMessage(R.string.error_preset_save))
             return false
         }
         refreshPresets()
-        _selectedPresetId.value = saved.id
-        prefs.edit { putString(KEY_ACTIVE_PRESET, saved.id) }
+        if (template == null || _selectedPresetId.value == template.id) {
+            _selectedPresetId.value = saved.id
+            prefs.edit { putString(KEY_ACTIVE_PRESET, saved.id) }
+        }
         clearConfigurationError()
         diagnostics.event("preset_saved", mapOf("id" to saved.id, "name" to saved.name))
         return true
@@ -666,6 +705,7 @@ class MainViewModel internal constructor(
     }
 
     fun toggleCamera() {
+        if (changingVideoMode.value) return
         val next = !_useFrontCamera.value
         _useFrontCamera.value = next
         diagnostics.event("camera_selected", mapOf("front" to next))
@@ -733,7 +773,8 @@ class MainViewModel internal constructor(
 
     /** Starts a broadcast only when the current settings are usable. */
     fun startBroadcast(): Boolean {
-        if (streamState.value.isActive() || session.pendingStart != null || _applyingVideoBitrate.value) return false
+        if (streamState.value.isActive() || session.pendingStart != null ||
+            _applyingVideoBitrate.value || changingVideoMode.value) return false
         if (!streamer.canStart) {
             _configurationError.value = UiMessage(R.string.error_stream_stopping)
             return false

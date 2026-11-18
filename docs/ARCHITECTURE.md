@@ -31,6 +31,7 @@ flowchart LR
 - `StreamPresetRepository` 將自訂畫質 Preset 與 Relay Profile 分開持久化。`StreamPresetPolicy` 驗證視訊和音訊參數，`MainViewModel` 套用後同步 CameraX。
 - `BroadcastPreflight` 檢查權限、設備、Relay、網路、核心與裝置狀態。Android 未回報所選硬體 surface encoder 時，預檢記錄 WARNING 並允許啟動影片管線。
 - `BroadcastSession` 管理直播 generation、相機、MoQ streamer、遠端驗證與前景服務的生命週期。舊 generation 的停止事件不能停止新直播。
+- 直播中套用解析度與 FPS 時，`BroadcastSession` 先用 CameraX 建立候選來源。MediaCodec 重新設定後，新的影片 Track 首次寫入關鍵影格才完成變更。設定失敗或逾時時 CameraX 恢復先前選擇，音訊與 Relay 都維持其原本 Session。
 - `BroadcastService` 在 Android 前景服務中持有相機／麥克風直播與短期續期 WakeLock，通知提供停止操作。
 - `BroadcastService` 也觀察即時靜音狀態，背景通知會反映音訊是否已靜音。
 - `CameraCaptureEngine` 管理 CameraX。`CameraSurfaceRenderer` 將相機紋理送到預覽與 MediaCodec input surface，避免在正常路徑複製 YUV。
@@ -43,6 +44,7 @@ flowchart LR
 - `HardwareVideoEncoder` 與 `SurfaceVideoEncoder` 將實際 MediaCodec 名稱保存到 `StreamState.Live`，主畫面與每秒 diagnostics 都能區分實際硬體實作。動態碼率若被 codec 拒絕，ABR 會停用並保留最後有效碼率。
 - `DeviceCapabilityRepository` 在 IO dispatcher 查詢 H.264／H.265 的硬體 encoder 名稱、surface input、寬高／FPS／碼率範圍與 CBR 能力。直播以選定 codec 與 FPS 嘗試啟動 MediaCodec，輸入尺寸採 CameraX 實際取得的畫面幾何。
 - `DeviceHealthPolicy` 在熱度或記憶體壓力時產生降低碼率建議。主畫面的降低碼率按鈕套用約 25% 降幅，範圍限於當場直播且受最低碼率限制。
+- 裝置健康樣本包含充電狀態、省電模式、App CPU 使用率及編碼 FPS。CPU 壓力同時參考 App 使用率和編碼 FPS。
 - `BroadcastRecoveryCoordinator` 對元件採有限次數與指數退避。相同元件在 30 秒內重複失敗會延續重試額度。停止或網路切換時，`MoqStreamer` 先取消並等待恢復工作，再釋放編碼器與發布資源。
 - `StreamHealthEvaluator` 以每秒活動時間樣本區分相機、GPU、編碼、影片發布、音訊擷取與音訊發布。低 FPS 必須連續十秒才發出警告，影片發布停滯則在有訂閱需求時判斷。
 - `MoqCoreManager` 下載、驗證、選擇與快取官方相容的 native core。直播期間不替換正在使用的 native library。

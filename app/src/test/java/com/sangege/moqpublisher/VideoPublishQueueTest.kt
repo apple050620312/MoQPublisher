@@ -25,6 +25,18 @@ class VideoPublishQueueTest {
         assertEquals(VideoPublishQueue.OfferResult.ENQUEUED, queue.offer(packet(4, true)))
         assertEquals(4L, queue.take()?.timestampUs)
     }
+
+    @Test fun changingTheFrameRateDiscardsThePreviousTrackAndUsesTheNewCapacity() {
+        val queue = VideoPublishQueue(15)
+        queue.offer(packet(1, keyframe = true))
+        queue.offer(packet(2))
+        queue.resetForFramerate(15)
+        assertEquals(0, queue.depth())
+        assertEquals(VideoPublishQueue.OfferResult.DROPPED, queue.offer(packet(3)))
+        queue.offer(packet(4, keyframe = true))
+        repeat(5) { queue.offer(packet(5L + it)) }
+        assertEquals(VideoPublishQueue.OfferResult.RESYNC, queue.offer(packet(10)))
+    }
     private fun packet(timestamp: Long, keyframe: Boolean = false) = EncodedVideoPacket(
         generation = 1,
         trackName = "camera",

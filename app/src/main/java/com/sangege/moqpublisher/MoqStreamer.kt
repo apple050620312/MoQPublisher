@@ -1,5 +1,6 @@
 package com.sangege.moqpublisher
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
@@ -84,7 +85,13 @@ sealed interface StreamState {
         val endpointDraft: Int? = null,
         val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN,
         val reconnectedAtNs: Long? = null,
-        val videoTrackGeneration: Int? = null
+        val videoTrackGeneration: Int? = null,
+        val encodedWidth: Int? = null,
+        val encodedHeight: Int? = null,
+        val targetFps: Int? = null,
+        val elapsedSeconds: Long = 0L,
+        val recentVideoDrops: Long = 0L,
+        val network: BroadcastNetwork = BroadcastNetwork.UNKNOWN
     ) : StreamState
     data class Error(val message: UiMessage) : StreamState
 }
@@ -127,6 +134,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var videoFramePacer: VideoFramePacer? = null
     private var videoBitrateControl: VideoBitrateControl? = null
     private var hardwareEncoder: VideoEncoder? = null
+    private var encoderModeChange: LiveVideoModeChange? = null
+    @Volatile private var resettingVideo = false
     @Volatile
     private var videoDemand: TrackDemand? = null
     private var videoWasUsed = false
@@ -164,12 +173,13 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     @Volatile
     private var closed = false
     private var startNanoTime: Long = 0L
+    private var advertisedAtNs: Long? = null
 
     private var currentVideoWidth: Int = 0
     private var currentVideoHeight: Int = 0
     private var videoTrackCounter: Int = 0
     private var configuredCodec: VideoCodec = VideoCodec.H264
-    private var configuredFramerate: Int = 30
+    @Volatile private var configuredFramerate: Int = 30
     private var configuredAudioChannel = AudioChannel.MONO
     private var configuredAudioQuality = AudioQuality.STANDARD
     private var configuredAudioGain = AudioSettings.DEFAULT_GAIN
@@ -231,6 +241,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             _audioCaptureStatus.value = null
             _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
             startNanoTime = System.nanoTime()
+            advertisedAtNs = null
             videoBitrateControl = VideoBitrateControl(
                 videoBitrate, if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L
             )
@@ -365,6 +376,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             currentCoroutineContext().ensureActive()
             Log.d(TAG, "Announcing broadcast route...")
             broadcast.announce(Route())
+            if (advertisedAtNs == null) advertisedAtNs = System.nanoTime()
 
             // announce() updates the local origin. It is not a relay acceptance or decode ACK.
             Log.d(TAG, "Local broadcast advertised; waiting for media demand.")
@@ -442,6 +454,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 while (!Thread.currentThread().isInterrupted) {
                     val packet = queue.take() ?: break
                     if (!isBroadcasting.get() || queue !== videoPublishQueue || packet.generation != videoGeneration) continue
+                    if (packet.modeChange?.result?.value == LiveVideoModeChange.Result.FAILED) continue
                     val beforeWrite = _streamState.value as? StreamState.Live ?: continue
                     if (!beforeWrite.acceptsMedia(packet.enqueuedAtNs)) continue
                     if (beforeWrite.phase == RelayConnectionPhase.RECOVERING && !packet.accessUnit.keyframe) continue
@@ -508,6 +521,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         producer.flush(packet.timestampUs.toULong())
                     } finally {
                         diagnostics.metrics.timing(StreamMetrics.Stage.MOQ_WRITE, System.nanoTime() - writeStartedNs)
+                    }
+                    if (packet.accessUnit.keyframe && isBroadcasting.get() &&
+                        queue === videoPublishQueue && packet.generation == videoGeneration) {
+                        packet.modeChange?.finish(true)
                     }
                     diagnostics.metrics.published(packet.timestampUs, startNanoTime, packet.accessUnit.data.size)
                     val requested = videoDemand?.isUsed() == true
@@ -862,16 +879,32 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
     }
 
-    internal fun prepareVideoSurface(width: Int, height: Int): Surface? = synchronized(videoLock) {
-        if (!isBroadcasting.get()) return@synchronized null
-        if (hardwareEncoder !is SurfaceVideoEncoder || currentVideoWidth != width || currentVideoHeight != height)
-            createVideoProducerLocked(width, height, surfaceInput = true)
+    internal fun prepareVideoSurface(
+        width: Int, height: Int, framerate: Int, modeChange: LiveVideoModeChange?
+    ): Surface? = synchronized(videoLock) {
+        if (!isBroadcasting.get() || resettingVideo ||
+            modeChange?.result?.value == LiveVideoModeChange.Result.FAILED) return@synchronized null
+        if (hardwareEncoder !is SurfaceVideoEncoder || currentVideoWidth != width || currentVideoHeight != height ||
+            configuredFramerate != framerate) {
+            try {
+                createVideoProducerLocked(width, height, surfaceInput = true, framerate = framerate, modeChange = modeChange)
+            } catch (error: Exception) {
+                if (modeChange == null || modeChange.result.value == LiveVideoModeChange.Result.APPLIED) throw error
+                diagnostics.error("live_video_mode_rejected", error)
+                modeChange.finish(false)
+                return@synchronized null
+            }
+        } else if (modeChange !== encoderModeChange) {
+            // CameraX can resolve the new request to the same active encoder format.
+            modeChange?.finish(true)
+        }
         (hardwareEncoder as? SurfaceVideoEncoder)?.inputSurface
+            .takeUnless { modeChange?.result?.value == LiveVideoModeChange.Result.FAILED }
     }
 
     /** Called by the GPU thread before submitting a frame, using the sensor clock for pacing. */
     internal fun onSurfaceFrame(sensorTimestampNs: Long): Long? = synchronized(videoLock) {
-        if (!isBroadcasting.get()) return@synchronized null
+        if (!isBroadcasting.get() || resettingVideo) return@synchronized null
         diagnostics.metrics.count(StreamMetrics.Counter.CAMERA)
         val encoder = hardwareEncoder as? SurfaceVideoEncoder ?: return@synchronized null
         if (videoFramePacer?.shouldEncode(sensorTimestampNs) != true) {
@@ -1001,27 +1034,38 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private fun resetVideoPipeline(reason: String) {
-        synchronized(videoLock) {
-            if (!isBroadcasting.get()) return
+        if (!isBroadcasting.get()) return
+        resettingVideo = true
+        try {
             runCatching { beforeVideoEncoderClose() }
                 .onFailure { diagnostics.error("encoder_surface_detach_failed", it) }
-            runCatching { hardwareEncoder?.close() }
-            hardwareEncoder = null
-            runCatching { videoDemand?.close() }
-            videoDemand = null
-            videoProducer = null
-            videoWasUsed = false
-            videoGeneration++
-            currentVideoWidth = 0
-            currentVideoHeight = 0
-            _streamState.update { if (it is StreamState.Live) it.copy(videoTrackGeneration = null) else it }
-            videoPublishQueue?.waitForKeyframe()
-            diagnostics.event("video_pipeline_reset", mapOf("reason" to reason, "generation" to videoGeneration))
+            synchronized(videoLock) {
+                if (!isBroadcasting.get()) return
+                runCatching { hardwareEncoder?.close() }
+                hardwareEncoder = null
+                encoderModeChange = null
+                runCatching { videoDemand?.close() }
+                videoDemand = null
+                videoProducer = null
+                videoWasUsed = false
+                videoGeneration++
+                currentVideoWidth = 0
+                currentVideoHeight = 0
+                _streamState.update {
+                    if (it is StreamState.Live) it.copy(videoTrackGeneration = null, encodedWidth = null, encodedHeight = null)
+                    else it
+                }
+                videoPublishQueue?.waitForKeyframe()
+                diagnostics.event("video_pipeline_reset", mapOf("reason" to reason, "generation" to videoGeneration))
+            }
+        } finally {
+            resettingVideo = false
         }
     }
 
     private fun classifyRecovery(error: Throwable): RecoveryClassification = when {
         error is CancellationException -> RecoveryClassification.FATAL
+        error is SecurityException -> RecoveryClassification.FATAL
         error is MoqException && error.isAuth -> RecoveryClassification.FATAL
         error is UiException && error.uiMessage.resource in setOf(
             R.string.error_encoder_unsupported,
@@ -1030,11 +1074,16 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         else -> RecoveryClassification.TRANSIENT
     }
 
-    private fun createVideoProducerLocked(width: Int, height: Int, surfaceInput: Boolean = false) {
+    private fun createVideoProducerLocked(
+        width: Int, height: Int, surfaceInput: Boolean = false, framerate: Int = configuredFramerate,
+        modeChange: LiveVideoModeChange? = null
+    ) {
         require(width > 0 && height > 0) { "Invalid video dimensions: ${width}x$height" }
 
+        if (surfaceInput && hardwareEncoder is SurfaceVideoEncoder) beforeVideoEncoderClose()
         runCatching { hardwareEncoder?.close() }
         hardwareEncoder = null
+        encoderModeChange = null
         runCatching { videoDemand?.close() }
         videoDemand = null
         videoWasUsed = false
@@ -1052,7 +1101,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         val bitrateBps = bitrateControl.currentBps
         Log.d(
             TAG,
-            "Setting up Android hardware encoder: ${width}x${height} @ ${configuredFramerate}fps " +
+            "Setting up Android hardware encoder: ${width}x${height} @ ${framerate}fps " +
                 "$configuredCodec (${bitrateBps / 1000}kbps)"
         )
         val encoded: (AnnexB.AccessUnit, ByteArray, Long) -> Unit = encoded@{ unit, headers, timestampUs ->
@@ -1065,11 +1114,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 width = width,
                 height = height,
                 bitrateBps = bitrateBps,
-                framerate = configuredFramerate,
+                framerate = framerate,
                 codec = configuredCodec,
                 accessUnit = unit,
                 headers = headers,
-                timestampUs = timestampUs
+                timestampUs = timestampUs,
+                modeChange = modeChange
             ))
             diagnostics.metrics.videoQueueDepth(queue.depth())
             if (result == VideoPublishQueue.OfferResult.DROPPED || result == VideoPublishQueue.OfferResult.RESYNC) {
@@ -1080,28 +1130,56 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             }
         }
         hardwareEncoder = if (surfaceInput) SurfaceVideoEncoder.open(
-            width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics,
+            width, height, framerate, bitrateBps, configuredCodec, diagnostics,
             onFailure = { error ->
-                if (generation == videoGeneration) scheduleMediaRecovery(RecoveryComponent.VIDEO_ENCODER, error, R.string.error_video)
+                if (generation == videoGeneration) {
+                    when (modeChange?.result?.value) {
+                        LiveVideoModeChange.Result.PENDING -> {
+                            diagnostics.error("live_video_mode_rejected", error)
+                            modeChange.finish(false)
+                        }
+                        LiveVideoModeChange.Result.FAILED -> Unit
+                        else -> scheduleMediaRecovery(RecoveryComponent.VIDEO_ENCODER, error, R.string.error_video)
+                    }
+                }
             },
             onEncoded = encoded
-        ) else HardwareVideoEncoder.open(width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics, encoded)
+        ) else HardwareVideoEncoder.open(width, height, framerate, bitrateBps, configuredCodec, diagnostics, encoded)
         bitrateControl.encoderOpened()
-        videoPublishQueue?.clear()
+        encoderModeChange = modeChange
+        if (configuredFramerate != framerate) videoFramePacer = VideoFramePacer(framerate)
+        configuredFramerate = framerate
+        videoPublishQueue?.resetForFramerate(framerate)
         videoTrackCounter++
         currentVideoWidth = width
         currentVideoHeight = height
-        _streamState.update { if (it is StreamState.Live) it.copy(videoTrackGeneration = generation) else it }
+        _streamState.update {
+            if (it is StreamState.Live) {
+                it.copy(videoTrackGeneration = generation, encodedWidth = width, encodedHeight = height, targetFps = framerate)
+            } else it
+        }
     }
 
     private fun startStatsMonitoring(moq: Moq) {
         statsJob?.cancel()
         val startedAtNs = System.nanoTime()
+        val durationStartNs = advertisedAtNs ?: startedAtNs
         statsJob = scope.launch {
             val sendRate = SendRateEstimator()
             var lastEpoch: ULong? = null
             while (isActive && isBroadcasting.get()) {
                 try {
+                    val revokedPermission = when {
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ->
+                            R.string.error_camera
+                        configuredAudioEnabled && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+                            PackageManager.PERMISSION_GRANTED -> R.string.error_microphone_permission
+                        else -> null
+                    }
+                    if (revokedPermission != null) {
+                        failBroadcast(UiException(UiMessage(revokedPermission)))
+                        return@launch
+                    }
                     val epochBefore = moq.epoch()
                     val stats = moq.session.stats()
                     val sampleTimeNanos = System.nanoTime()
@@ -1109,8 +1187,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     val rttMs = stats.rttUs?.let { (it / 1000uL).toLong() }
                     val videoQueueDepth = videoPublishQueue?.depth() ?: 0
                     val videoQueueAgeMs = videoPublishQueue?.mediaAgeMs()
-                    val deviceHealth = deviceHealthMonitor.sample()
-                    _deviceHealth.value = deviceHealth
+                    val network = diagnostics.networkType()
                     var bitrateChanged: Long? = null
                     var bitrateError: Throwable? = null
                     if (isActive && isBroadcasting.get() && moqSession === moq) {
@@ -1162,6 +1239,13 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         }
                         val frameMetrics = diagnostics.metrics.sample()
                         val audioMetrics = audioHealth.sample()
+                        val performance = diagnostics.performance()
+                        val deviceHealth = deviceHealthMonitor.sample(
+                            performance["process_cpu_pct"]?.toString()?.toDoubleOrNull(),
+                            frameMetrics["encoded_fps"]?.toString()?.toDoubleOrNull(),
+                            configuredFramerate
+                        )
+                        _deviceHealth.value = deviceHealth
                         val health = healthEvaluator.evaluate(StreamHealthInput(
                             active = true,
                             relayPhase = (_streamState.value as? StreamState.Live)?.phase,
@@ -1197,10 +1281,13 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 "reasons" to health.reasons.map { it.name }
                             ))
                         }
-                        diagnostics.event("metrics", frameMetrics + audioMetrics + encoderStatus + diagnostics.performance() + mapOf(
+                        diagnostics.event("metrics", frameMetrics + audioMetrics + encoderStatus + performance + mapOf(
                             "health" to health.level,
                             "health_reasons" to health.reasons.map { it.name },
                             "video_queue_media_age_ms" to videoQueueAgeMs,
+                            "battery_charging" to deviceHealth.charging,
+                            "battery_percent" to deviceHealth.batteryPercent,
+                            "network_type" to network,
                             "epoch" to epoch, "rtt_ms" to rttMs, "send_kbps" to sendKbps,
                             "network_capacity_bps" to stats.estimatedSendRateBps, "transport_bytes_sent" to stats.bytesSent,
                             "transport_bytes_received" to stats.bytesReceived, "transport_bytes_lost" to stats.bytesLost,
@@ -1220,6 +1307,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 videoQueueDepth = videoQueueDepth,
                                 videoQueueAgeMs = videoQueueAgeMs,
                                 packetsLost = stats.packetsLost,
+                                elapsedSeconds = ((sampleTimeNanos - durationStartNs) / 1_000_000_000L).coerceAtLeast(0),
+                                recentVideoDrops = (metricLong(frameMetrics["video_queue_drops"]) ?: 0L) +
+                                    (metricLong(frameMetrics["encoder_busy_drops"]) ?: 0L),
+                                network = network,
                                 epoch = epoch
                             )
                         }
@@ -1409,6 +1500,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         synchronized(videoLock) {
             runCatching { hardwareEncoder?.close() }
             hardwareEncoder = null
+            encoderModeChange = null
             runCatching { videoDemand?.close() }
             videoDemand = null
             runCatching { videoProducer?.finish() }

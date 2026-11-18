@@ -14,11 +14,11 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 - Switchable moq.pro and Cloudflare MoQ Draft 18 profiles, with encrypted connection tokens,
   separate Subscribe-only viewing/OBS links, connection phases and an opt-in remote decoder check.
 - Cloudflare viewing tools include a Subscribe-token QR code, Browser Source instructions and native MoQ source instructions. The app keeps Publish and Subscribe credentials separate.
-- Live RTT, measured send rate, bytes-sent statistics, actual published FPS, encoder bitrate, queue depth/media age, packet loss, battery, memory and thermal status are shown during a broadcast. Low battery, thermal pressure and memory pressure produce health warnings and background notification updates.
+- The simple dashboard shows live duration, published FPS, uplink throughput, network and audio level. The professional dashboard adds the active encoder and dimensions, RTT, dropped frames, queue depth and age, lost packets, reconnects, device health and remote decoding status.
 - Thermal or memory pressure also offers an explicit lower-bitrate action for the current stream. The app waits for the user to apply it and preserves the configured quality when no action is chosen.
 - On-device diagnostic ZIP export with sharing and saving to the phone, without USB or adb.
 - Configurable video bitrate in Kbps (default 8000 Kbps), independent minimum and maximum ABR bounds, optional congestion-aware bitrate adaptation and sensor-timestamp frame pacing. Minimum, target and maximum bitrate can be adjusted while broadcasting.
-- Built-in Data Saver, Mobile Streaming, High Quality and High FPS presets, plus named custom presets for reusable video and audio settings. Applying a preset validates the settings. Starting the broadcast configures the selected encoder.
+- Built-in Data Saver, Mobile Streaming, High Quality and High FPS presets, plus named custom presets for reusable video and audio settings. You can duplicate a built-in or custom preset, then edit and save the copy.
 - Settings and the last selected camera/video options are persisted locally.
 - Traditional Chinese and dark mode by default, with instant English/system-language and dark/light theme selection.
 - The screen stays awake during connection and streaming.
@@ -36,7 +36,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
    do not use a Management API token, Project ID, Relay ID or `?jwt=`.
 4. Select a stream quality preset or configure the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. Save a named custom preset when you want to reuse the video and audio choices. **Adaptive bitrate** enables network adaptation; disable it to retain the configured encoder target.
 5. Press **Start broadcast** while the app is visible. The app runs a preflight over permissions, camera and audio availability, selected encoder mode, resolution/FPS, Relay settings, network, MoQ core, battery and thermal state. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
-6. The core must be ready before streaming. Later APK updates reuse the saved core and compatible core updates apply on the next cold app launch. Downloads defer while broadcasting. Stop broadcasting before changing the codec, resolution or FPS. Bitrate, language, theme and landscape lock can change while live. A new broadcast fixes its encoding orientation at start, while the preview follows the display.
+6. The core must be ready before streaming. Compatible core updates apply on the next cold launch. During a broadcast, select a resolution and FPS together and tap **Apply resolution and frame rate**. The app saves the new mode when the rebuilt video track writes its first keyframe. If configuration fails or times out, it restores the previous settings. Stop before changing the codec. To stop a live broadcast, confirm in the app or use **Stop immediately** in the notification. You can turn off the app confirmation in Broadcast behavior.
 
 In landscape, the narrow left rail contains camera switching, center focus, torch, Settings and the details toggle. The narrow right rail contains a vertical zoom slider and the broadcast button. Drag upward to zoom in or downward to zoom out; tap the displayed zoom ratio to reset to 1.0x. Statistics and diagnostic export open in a separate panel beside the right rail. The actions and details can scroll on short screens; the zoom rail accepts vertical drags directly. Portrait keeps one set of focus/torch controls and a separate zoom row.
 
@@ -97,7 +97,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.41)
+## APK variants (v1.0.42)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease assembleOffline testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. Release, compact and debug omit `libmoq_ffi.so`, while offline packages the official core as verified assets for the three supported Android ABIs. The local APKs are signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

@@ -19,13 +19,13 @@
 | 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 聲道與削波顯示需要不同硬體麥克風實測 |
 | 14 | 音訊輸入設備 | AudioRecord 使用預設裝置 | AudioManager 列表、偏好與拔除處理 | IMPLEMENTED | `AudioInputDeviceTest` 與 AudioRecord 編譯驗證 | 未驗證 | 需要多種實體音訊裝置實測路由與拔除回退 |
 | 15 | 硬體編碼相容性 | DeviceCapabilityRepository 提供能力摘要，開播保留選定 codec、解析度與 FPS，MediaCodec 啟動失敗時保存候選編碼器錯誤 | 驗證廠商能力回報、實際開播與同 codec 的降級選項 | IMPLEMENTED | `BroadcastPreflightTest`、`SettingsPersistenceTest` 已編譯、release compile、lint | BLOCKED | 原回報手機未連接，CameraX 會依相機模式取得實際解析度 |
-| 16 | 直播中調整畫質 | 可一次套用最低／目標／最高碼率與 ABR。編碼器接受才保存設定，拒絕時保留舊設定並提示 | 解析度／FPS 安全重建 | IN_PROGRESS | `VideoBitrateControlTest`、`VideoBitrateSettingsTest` | 未驗證 | 動態碼率以各裝置的 MediaCodec 為準 |
-| 17 | 直播儀表板 | LiveStats 有 RTT、bitrate、bytes、FPS、codec | health、audio、queue、thermal 的簡易／專業模式 | PARTIAL | metrics tests、release compile | 未驗證 | 沒有 OBS 接收數據；目前已顯示 publisher queue、encoder bitrate 與 packet loss |
-| 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | 部分 Android 無 thermal API；熱度／記憶體壓力提供使用者觸發的降低碼率操作，不自動改動品質 |
-| 19 | 畫質 Preset | 內建與自訂 Preset、視訊與音訊設定驗證，套用後使用 CameraX 與實際編碼器檢查 | 明確的複製操作、實機模式驗證 | IN_PROGRESS | `StreamPresetTest`、release compile | 未驗證 | CameraX 依實際支援模式擷取 |
+| 16 | 直播中調整畫質 | 最低／目標／最高碼率與 ABR 可整組套用。解析度／FPS 重建 CameraX 與影片 Track，收到新的關鍵影格才保存 | 驗證成功套用、編碼器拒絕、逾時復原及接收端解碼 | IMPLEMENTED | `VideoBitrateControlTest`、`LiveVideoModeChangeTest`、`VideoPublishQueueTest` | BLOCKED | 動態碼率與畫質組合由 MediaCodec 啟動及實際輸出確認 |
+| 17 | 直播儀表板 | 簡易模式顯示直播時間、幀率、傳輸碼率與網路，專業模式顯示實際編碼器、尺寸、丟幀、佇列、RTT、電量、熱度與解碼結果 | 實機驗證版面與連續資料 | IMPLEMENTED | metrics tests、release compile | 未驗證 | 遠端解碼資料來自 App 的獨立訂閱連線 |
+| 18 | 裝置健康／溫度 | 電量、充電、熱度、記憶體、省電、App CPU 用量與編碼表現進入監控。使用者可採用降碼率建議 | 真實溫度及負載驗收 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | CPU 壓力由 App 使用率及實際編碼 FPS 判斷 |
+| 19 | 畫質 Preset | 內建與自訂 Preset 可套用、建立、編輯、刪除、複製及重設 | 實機模式驗證 | IMPLEMENTED | `StreamPresetTest`、release compile | 未驗證 | CameraX 依支援模式擷取 |
 | 20 | 完整離線 APK | core 快取、checksum、ABI／FFI 驗證與 fallback | 真正內含 compatible core 的離線 variant | IMPLEMENTED | `assembleOffline`、APK v2／zipalign、CoreLibraryFiles tests | 未驗證 | offline APK 約 35 MB，啟動時仍會將 asset 安全安裝到 app-private 目錄；需要 Android 實機確認 native loading |
 | 21 | Release pipeline | 本機簽章、JVM、lint、APK 包名／版本／對齊／簽章檢查、GitHub tag／SHA-256 核對 | 正式簽章與遷移 | IN_PROGRESS | publish script、APK checks | BLOCKED | 目前公開 APK 沿用既有開發簽章 |
-| 22 | 停止／Android lifecycle | Service、generation、wake lock、screen off 已有處理 | stop confirmation、emergency stop、更多 race tests | TESTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
+| 22 | 停止／Android lifecycle | App 可設定停止確認，通知有立即停止，直播取樣監控相機及音訊權限，Service 以 generation 辨識直播 | Android 背景、急停、權限撤銷及快速啟停實測 | IMPLEMENTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
 | 23 | 認證／安全 | Keystore、token 分離、redaction、signature check | token permission probing、clear UI、錯誤分類擴充 | IMPLEMENTED | repository／redaction tests、release compile、lint | 未驗證 | Token 權限由 Relay 回應決定；設定頁可清除加密 JWT 與 Cloudflare Token |
 | 24 | OBS 連接體驗 | Cloudflare watch／OBS text、remote verification | QR、Browser Source、native source guide、moq.pro guidance | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | 真實 OBS／瀏覽器／moq.pro 接收能力仍需實測；QR 僅在獨立 Subscribe Token 與 `.hang` 名稱可用時提供 |
 | 25 | 本機備援錄影 | — | MediaMuxer、分段、儲存監測、獨立錯誤處理 | NOT_STARTED | — | 未驗證 | — |
@@ -40,4 +40,4 @@
 
 - `assembleRelease` 與 `testDebugUnitTest` 在 v1.0.20 基線通過。
 - 目前沒有連接 Android 裝置。端對端及長時間直播依 `docs/testing/END_TO_END.md` 的流程逐案例驗證。
-- v1.0.40 補上 01～05／07／10 的重連、Watchdog 與驗收工具。第 08／09 項仍在開發。
+- 01 與 10 已有操作流程及資料彙整工具，需取得實際裝置、Relay 與接收端的驗收資料。

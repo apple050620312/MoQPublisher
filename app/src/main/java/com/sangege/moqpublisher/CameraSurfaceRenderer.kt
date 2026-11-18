@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 
 /** One persistent camera input, independent preview and codec outputs, no CPU pixel readback. */
 internal class CameraSurfaceRenderer(
-    private val encoderSurface: (Int, Int) -> Surface?,
+    private val encoderSurface: (Int, Int, Int, LiveVideoModeChange?) -> Surface?,
     private val frameTimestamp: (Long) -> Long?,
     private val onFailure: (Throwable) -> Unit,
     private val onSubmitted: (Long) -> Unit = {},
@@ -52,15 +52,18 @@ internal class CameraSurfaceRenderer(
         .apply { put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0) }
     private val coordinates = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         .apply { put(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)); position(0) }
-    private data class Input(val texture: SurfaceTexture, val surface: Surface, val id: Int, val width: Int, val height: Int,
-        var lastTimestamp: Long = -1, var transformReported: Boolean = false)
+    private data class Input(
+        val texture: SurfaceTexture, val surface: Surface, val id: Int, val width: Int, val height: Int,
+        val fps: Int, val modeChange: LiveVideoModeChange?,
+        var lastTimestamp: Long = -1, var transformReported: Boolean = false
+    )
     private data class Output(val surface: Surface, val egl: EGLSurface, var width: Int, var height: Int, val ownsSurface: Boolean) {
         var mapping: FloatArray? = null
         var mappedWidth = 0; var mappedHeight = 0; var sourceWidth = 0; var sourceHeight = 0
         var rotation = -1; var mirror = false
     }
 
-    fun provide(request: SurfaceRequest) { handler.post {
+    fun provide(request: SurfaceRequest, fps: Int, modeChange: LiveVideoModeChange?) { handler.post {
         try {
             initialize()
             releaseCodec()
@@ -74,7 +77,7 @@ internal class CameraSurfaceRenderer(
             GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
             val size = request.resolution
             val texture = SurfaceTexture(ids[0]).apply { setDefaultBufferSize(size.width, size.height) }
-            val next = Input(texture, Surface(texture), ids[0], size.width, size.height)
+            val next = Input(texture, Surface(texture), ids[0], size.width, size.height, fps, modeChange)
             input = next
             lastPreviewNs = 0L
             texture.setOnFrameAvailableListener({ render(next) }, handler)
@@ -85,7 +88,11 @@ internal class CameraSurfaceRenderer(
                 makeCurrent(pbuffer)
                 GLES20.glDeleteTextures(1, intArrayOf(next.id), 0)
             }
-        } catch (error: Throwable) { request.willNotProvideSurface(); onFailure(error) }
+        } catch (error: Throwable) {
+            request.willNotProvideSurface()
+            if (modeChange?.result?.value == LiveVideoModeChange.Result.PENDING) modeChange.finish(false)
+            else onFailure(error)
+        }
     } }
 
     fun attachPreview(texture: SurfaceTexture, width: Int, height: Int) { handler.post {
@@ -142,7 +149,7 @@ internal class CameraSurfaceRenderer(
                 val width = if (rotated) source.height else source.width
                 val height = if (rotated) source.width else source.height
                 // A network handover can replace the encoder without replacing the camera input.
-                val surface = encoderSurface(width, height)
+                val surface = encoderSurface(width, height, source.fps, source.modeChange)
                 if (codec?.surface !== surface) {
                     releaseCodec()
                     surface?.let { codec = output(it, width, height, false) }
@@ -164,7 +171,13 @@ internal class CameraSurfaceRenderer(
                 }
                 lastPreviewNs = timestamp
             }
-        } catch (error: Throwable) { onFailure(error) }
+        } catch (error: Throwable) {
+            when (source.modeChange?.result?.value) {
+                LiveVideoModeChange.Result.PENDING -> source.modeChange.finish(false)
+                LiveVideoModeChange.Result.FAILED -> Unit
+                else -> onFailure(error)
+            }
+        }
     }
 
     private fun draw(source: Input, target: Output, rotation: Int, mirror: Boolean) {

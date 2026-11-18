@@ -15,7 +15,8 @@ internal data class EncodedVideoPacket(
     val accessUnit: AnnexB.AccessUnit,
     val headers: ByteArray,
     val timestampUs: Long,
-    val enqueuedAtNs: Long = System.nanoTime()
+    val enqueuedAtNs: Long = System.nanoTime(),
+    val modeChange: LiveVideoModeChange? = null
 )
 
 /**
@@ -25,7 +26,7 @@ internal data class EncodedVideoPacket(
  * full, discard the stale GOP and wait for a fresh keyframe. Forwarding deltas
  * after dropping their reference frame would corrupt H.264/H.265 playback.
  */
-internal class VideoPublishQueue(private val capacity: Int = 6) : AutoCloseable {
+internal class VideoPublishQueue(capacity: Int = 6) : AutoCloseable {
     init {
         require(capacity >= 2)
     }
@@ -33,6 +34,7 @@ internal class VideoPublishQueue(private val capacity: Int = 6) : AutoCloseable 
     enum class OfferResult { ENQUEUED, DROPPED, RESYNC, CLOSED }
 
     private val monitor = Object()
+    private var capacity = capacity
     private val queue = ArrayDeque<EncodedVideoPacket>(capacity)
     private var closed = false
     private var waitingForKeyframe = false
@@ -71,7 +73,11 @@ internal class VideoPublishQueue(private val capacity: Int = 6) : AutoCloseable 
         }
     }
 
-    fun clear() = synchronized(monitor) { queue.clear() }
+    fun resetForFramerate(framerate: Int) = synchronized(monitor) {
+        capacity = capacityFor(framerate)
+        queue.clear()
+        waitingForKeyframe = true
+    }
 
     fun waitForKeyframe() = synchronized(monitor) { queue.clear(); waitingForKeyframe = true }
 
