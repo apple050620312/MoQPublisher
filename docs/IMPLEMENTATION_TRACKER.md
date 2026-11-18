@@ -33,7 +33,7 @@
 | 27 | 遠端監控／控制 | 區域網路 TLS 配對、僅查看或控制、會話內撤銷、靜音／碼率／驗證／停止 | 實機配對及 Android 區域網路授權驗收 | IMPLEMENTED | 桌面 TLS 本機驗證、Android build、lint | 未驗證 | 需 Wi-Fi／乙太網路 IPv4；桌面使用隨專案的 Python 用戶端 |
 | 28 | Android 螢幕直播 | 開播前選擇相機或螢幕，直播中可切換，MediaProjection／共用 EGL、旋轉、Android 10+ 播放音訊 | 實測授權、旋轉、視窗大小與投影撤銷 | IMPLEMENTED | `ScreenCaptureSizeTest`、`BroadcastPreflightTest`、Android build、lint | 未驗證 | 播放音訊受來源 App 的擷取政策限制 |
 | 29 | 直播疊圖 | 共用 EGL 合成標誌、文字、浮水印、時鐘、計時；可調角落、縮放及不透明度 | 比對手機預覽、錄影與 OBS 畫面及 GPU 成本 | IMPLEMENTED | `OverlayGeometryTest`、Release build、lint | 未驗證 | 文字與圖片只在內容更新時產生新紋理，動態內容每秒更新 |
-| 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道獨立輸出 Enhanced RTMP 與 SRT，支援具名及空名稱 | 外部 Relay 與長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 9.0.2 的雙路影音解碼 | OBS 32.1.2 SRT 影音已驗證 | OBS 32.1.2 的 RTMP 握手拒絕 Opus FourCC |
+| 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道獨立輸出 Enhanced RTMP 與 SRT，支援具名及空名稱 | 外部 Relay 與長時重連 | TESTED | `verify_backup_gateway.py` 以本機 Draft 18 Relay 和 FFmpeg 9.0.2 驗證八組解碼 | OBS 32.1.2 SRT 影音已驗證 | OBS 32.1.2 的 RTMP 握手拒絕 Opus FourCC |
 | 31 | 輸出方向／進階相機 | 固定方向、手動直向／橫向、前置輸出鏡像，直播中更新 GPU 與影片 Track | Android 旋轉、輸出切換與 OBS 解碼 | IMPLEMENTED | geometry、camera policy、mode change tests | 未驗證 | 需確認兩種 codec 在 OBS 的新畫質 Track |
 
 ## 本輪基線

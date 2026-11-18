@@ -13,6 +13,8 @@
 7. 暫時在測試 Profile 使用過期或權限不符的測試 JWT／Token，分別驗證發布失敗與訂閱失敗。核對 App 的錯誤分類及重試是否終止，隨後恢復有效憑證重測。Cloudflare 的 Subscribe 權限失敗時也檢查既有 Publisher 能否繼續推流。
 8. 直播中從 720p30 切到相機支援的 1080p 模式，確認 OBS 解碼尺寸、實際 FPS、音訊時間線和 Relay session。另用已知被該手機 MediaCodec 拒絕的組合驗證回復舊畫質，保留 `live_video_mode_result` 與 OBS 錄影。
 
+本機可先重跑 Draft 18 備援閘道的雙 codec、雙協定和空名稱驗證。[桌面閘道驗收](BACKUP_GATEWAY.md)
+
 ### 指定編碼組合的實機測試
 
 使用與測試 APK 簽章一致的 Debug APK。依診斷中的編碼輸出方向與尺寸替換參數，在同一手機上各執行 H.264 和 H.265，並為每個回報過的尺寸及幀率留一筆結果。這項測試會用 GPU 送測試影格至 App 的實際 MediaCodec 路徑，確認所選模式能產生包含必要參數集的關鍵影格。

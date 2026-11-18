@@ -1334,3 +1334,4 @@ P0 > P1 > P2
 - 本機 Draft 18 Relay 與 FFmpeg 9.0.2 驗證具名及空名稱的 Enhanced RTMP／SRT 可解碼 H.264、H.265 和 Opus。OBS 32.1.2 的 SRT Media Source 確認活動影像與音訊；OBS 內建 FFmpeg 7.1.1 拒絕 Enhanced RTMP 協商中的 Opus FourCC。
 - 230 項 JVM 測試、Release／Offline／Android Test APK、lint（0 errors）、UTF-8／XML、簽章、ABI 和 ZIP 對齊通過。原回報手機的編碼模式、外部 Relay 與 OBS、2／4 小時測試，以及 production 簽章尚待外部驗收。
 - Release APK SHA-256 為 `36a42394a85f97ad217c2d7c2ccf4f757b32b09d24d687265751df013108c9b0`，Offline APK 為 `3c56bc7ccdcb68e3b2a64dde4f557f5bf781e42c44329c72bb4f95bb90ee6251`。
+- 加入可重跑的本機備援閘道測試，八組 codec／名稱／輸出均解碼 60 個畫格和音訊。實機待驗事項列於 `docs/testing/END_TO_END.md`。

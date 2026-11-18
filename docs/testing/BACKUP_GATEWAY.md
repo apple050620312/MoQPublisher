@@ -32,6 +32,12 @@ ffmpeg -i 'srt://127.0.0.1:9000?mode=caller' -map 0:v:0 -map 0:a:0 -t 2 -f null 
 
 Windows 上使用 MoQ CLI 0.14.17、MoQ Relay 0.17.17 與 FFmpeg 9.0.2。以本機 Draft 18 Relay、FFmpeg 測試影像與 Opus 音訊完成以下解碼，每組均驗證 320×180、30 FPS 的 60 個畫格和音軌。
 
+下列命令可重跑四組本機用例。將三個執行檔加入 PATH，或透過 `--relay`、`--moq`、`--ffmpeg` 指定路徑。結果寫入 `build/gateway-regression`。
+
+```powershell
+python docs/testing/verify_backup_gateway.py
+```
+
 | 電腦輸出 | H.264＋Opus | H.265＋Opus |
 |---|---|---|
 | Enhanced RTMP | 通過 | 通過 |
