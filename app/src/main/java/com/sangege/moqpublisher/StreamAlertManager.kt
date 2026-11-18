@@ -68,7 +68,8 @@ internal class StreamAlertManager(
 
     private fun StreamHealthReason.alertType(level: StreamHealthLevel): StreamAlertType? = when (this) {
         StreamHealthReason.RECONNECTING -> StreamAlertType.NETWORK_DEGRADED
-        StreamHealthReason.CAMERA_STALLED, StreamHealthReason.PUBLISH_STALLED -> StreamAlertType.STREAM_STALLED
+        StreamHealthReason.CAMERA_STALLED, StreamHealthReason.GPU_STALLED, StreamHealthReason.PUBLISH_STALLED,
+        StreamHealthReason.AUDIO_PUBLISH_STALLED -> StreamAlertType.STREAM_STALLED
         StreamHealthReason.ENCODER_STALLED -> StreamAlertType.VIDEO_ENCODER_FAILURE
         StreamHealthReason.AUDIO_STALLED -> StreamAlertType.AUDIO_CAPTURE_FAILURE
         StreamHealthReason.QUEUE_PRESSURE -> StreamAlertType.QUEUE_PRESSURE

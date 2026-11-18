@@ -329,7 +329,7 @@ class MainViewModel internal constructor(
 
     fun verifySubscription() {
         val profile = _relayProfile.value
-        if (profile.provider == RelayProvider.CLOUDFLARE && profile.canShare() && streamState.value is StreamState.Live)
+        if (profile.provider == RelayProvider.CLOUDFLARE && profile.canShare() && streamState.value.canVerifyRemoteMedia())
             session.verifier.verify(profile, _enableAudio.value)
     }
 

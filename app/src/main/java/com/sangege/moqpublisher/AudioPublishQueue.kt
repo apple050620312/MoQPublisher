@@ -45,6 +45,10 @@ internal class AudioPublishQueue(private val capacity: Int = 4) : AutoCloseable 
 
     fun depth(): Int = synchronized(monitor) { queue.size }
 
+    fun discardForReconnect() = synchronized(monitor) {
+        queue.clear()
+    }
+
     override fun close() {
         synchronized(monitor) {
             closed = true

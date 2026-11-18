@@ -301,6 +301,9 @@
     <string name="status_connected">Connected</string>
     <string name="status_publishing">Publishing</string>
     <string name="status_reconnecting">Reconnecting</string>
+    <string name="status_recovering_video">Relay reconnected. Waiting for a fresh keyframe.</string>
+    <string name="health_gpu_stalled">The camera is active, but the GPU has stopped submitting frames to the encoder.</string>
+    <string name="health_audio_publish_stalled">The microphone is active, but audio publication has stalled.</string>
     <string name="connected_waiting_media">Connected; waiting for a subscriber to request the video track.</string>
     <string name="stat_reconnects">Reconnect count: %1$d</string>
     <string name="stat_endpoint_draft">Endpoint: Draft %1$d. Negotiated draft is not exposed by SDK 0.5.3.</string>

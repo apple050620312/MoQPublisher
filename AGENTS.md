@@ -1260,3 +1260,10 @@ P0 > P1 > P2
 - `v1.0.39` 修復第 11／15 項的開播相容性回歸。硬體 surface 能力清單缺項時，保留所選 H.264／H.265、解析度與 FPS，由 CameraX 與實際 MediaCodec 啟動確認。能力查詢移至 IO dispatcher，診斷保存編碼器候選與實際啟動錯誤。
 - 強化第 06／16 項的碼率控制。佇列深度與媒體年齡可觸發快速降碼率，持續高 RTT 使用容量估計保留額外餘裕，變更受最低與最高碼率限制。MediaCodec 拒絕時保留上次接受的碼率與設定。熱度降碼率操作限於當場直播。解析度與 FPS 的直播中重配置仍待實作。
 - 驗證結果為 `testDebugUnitTest` 201 項通過。`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML、APK v2 簽章與 zipalign 檢查通過，兩個 APK 的簽章與 v1.0.38 相同。原回報手機、Relay 與 OBS 尚未連接，仍需實測兩種 codec 與既有解析度／FPS。
+- 已以本機 `publish-release.ps1` 上傳 `v1.0.39`，並比對 GitHub Release 的四個資產 SHA-256。Release APK 為 `40eaa983e611c297f9d58933606e0a500e6b216d17f6073642ec292d4d6001e8`，Offline APK 為 `1041ced5de6001f67ec8bef984f36296f65cbb74d7862a646c9405828296d017`。
+
+### 2026-11-19
+
+- `v1.0.40` 強化第 02／03／04／05／07 項。網路切換及原生重連清除過期影音，維持直播時間基準，等待新關鍵影格再更新發布狀態。GPU、音訊擷取及音訊發布分別監測，持續十秒低 FPS 才提示。相同元件的反覆故障沿用重試額度，切線及停止會等待恢復工作結束。
+- 補第 01／10 項的 Relay 與 OBS 操作流程、2／4 小時壓測矩陣和診斷 ZIP 合併工具，並以重疊與缺漏的樣本驗證輸出。
+- 驗證 `testDebugUnitTest` 208 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest` 及 `lintRelease` 通過，lint 0 errors。Android 實機、真實 Relay 和 OBS 端對端播放尚未驗證。

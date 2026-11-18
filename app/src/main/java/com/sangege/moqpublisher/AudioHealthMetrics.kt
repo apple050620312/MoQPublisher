@@ -115,6 +115,7 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
 
     @Synchronized fun sample(): Map<String, Any?> = (capture.sample("audio_capture") + publication.sample("audio_publish") + mapOf(
         "audio_capture_packets" to captured, "audio_pcm_silent_packets" to silent,
+        "last_audio_capture_age_ms" to capture.previous?.let { (nanoTime() - it).coerceAtLeast(0L) / 1_000_000L },
         "audio_pcm_peak_percent" to peak * 100.0 / 32768,
         "audio_pcm_rms_percent" to levelLocked().rmsPercent,
         "audio_pcm_peak_hold_percent" to levelLocked().peakHoldPercent,

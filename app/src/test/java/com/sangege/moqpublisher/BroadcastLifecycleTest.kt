@@ -16,6 +16,19 @@ class BroadcastLifecycleTest {
         assertEquals(BroadcastPhase.WAITING_FOR_SUBSCRIBER, state.phase)
         state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.SubscriberDemand(true))
         assertEquals(BroadcastPhase.PUBLISHING, state.phase)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.SubscriberDemand(false))
+        assertEquals(BroadcastPhase.WAITING_FOR_SUBSCRIBER, state.phase)
+    }
+
+    @Test
+    fun defaultNetworkHandoverCanAnnounceAgainWithoutAnIntermediateNativeReconnect() {
+        var state = BroadcastLifecycleState(phase = BroadcastPhase.PUBLISHING, generation = 3)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.Reconnecting)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.Connecting)
+        assertEquals(BroadcastPhase.CONNECTING, state.phase)
+        state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.Announced)
+        assertEquals(BroadcastPhase.ANNOUNCED, state.phase)
+        assertEquals(3L, state.generation)
     }
 
     @Test
@@ -40,6 +53,17 @@ class BroadcastLifecycleTest {
         state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryStarted)
         state = BroadcastLifecyclePolicy.reduce(state, BroadcastLifecycleEvent.RecoveryCompleted(true))
         assertEquals(BroadcastPhase.PUBLISHING, state.phase)
+    }
+
+    @Test
+    fun healthWarningsMovePublishingToDegradedWithoutOverridingReconnect() {
+        val publishing = BroadcastLifecycleState(phase = BroadcastPhase.PUBLISHING)
+        val degraded = BroadcastLifecyclePolicy.reduce(publishing, BroadcastLifecycleEvent.HealthChanged(true))
+        assertEquals(BroadcastPhase.DEGRADED, degraded.phase)
+        assertEquals(publishing, BroadcastLifecyclePolicy.reduce(degraded, BroadcastLifecycleEvent.HealthChanged(false)))
+        val reconnecting = BroadcastLifecyclePolicy.reduce(degraded, BroadcastLifecycleEvent.Reconnecting)
+        assertEquals(reconnecting, BroadcastLifecyclePolicy.reduce(reconnecting, BroadcastLifecycleEvent.RecoveryStarted))
+        assertEquals(reconnecting, BroadcastLifecyclePolicy.reduce(reconnecting, BroadcastLifecycleEvent.HealthChanged(false)))
     }
 
     @Test

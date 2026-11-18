@@ -153,10 +153,11 @@ class BroadcastService : Service() {
             else -> null
         }
         val audioText = if (session.streamer.audioMuted.value) localized.getString(R.string.broadcast_notification_muted) else null
+        val recovering = state is StreamState.Live && !state.canVerifyRemoteMedia()
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_broadcast_notification)
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))
-            .setContentText(healthText ?: issueText ?: audioText ?: baseText)
+            .setContentText(if (recovering) baseText else healthText ?: issueText ?: audioText ?: baseText)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(0, localized.getString(R.string.stop_broadcast), stop).build()
     }

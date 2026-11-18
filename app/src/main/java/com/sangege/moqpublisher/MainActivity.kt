@@ -320,7 +320,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 relayProfile = relayProfile, onRelayProfileChange = viewModel::setRelayProfile,
                 profileError = configurationError,
                 subscriberVerification = subscriberVerification, onVerifySubscription = viewModel::verifySubscription,
-                canVerifySubscription = (streamState as? StreamState.Live)?.phase?.let { it != RelayConnectionPhase.RECONNECTING } == true,
+                canVerifySubscription = streamState.canVerifyRemoteMedia(),
                 streamPath = streamPath, onStreamPathChange = viewModel::setStreamPath,
                 videoCodec = videoCodec, onVideoCodecChange = viewModel::setVideoCodec,
                 videoResolution = videoResolution, onVideoResolutionChange = viewModel::setVideoResolution,
@@ -393,10 +393,12 @@ fun MainScreen(viewModel: MainViewModel) {
 private fun StreamHealthNotice(snapshot: StreamHealthSnapshot, modifier: Modifier = Modifier) {
     val message = when {
         StreamHealthReason.RECONNECTING in snapshot.reasons -> R.string.health_reconnecting
+        StreamHealthReason.GPU_STALLED in snapshot.reasons -> R.string.health_gpu_stalled
         StreamHealthReason.ENCODER_STALLED in snapshot.reasons -> R.string.health_encoder_stalled
         StreamHealthReason.PUBLISH_STALLED in snapshot.reasons -> R.string.health_publish_stalled
         StreamHealthReason.CAMERA_STALLED in snapshot.reasons -> R.string.health_camera_stalled
         StreamHealthReason.AUDIO_STALLED in snapshot.reasons -> R.string.health_audio_stalled
+        StreamHealthReason.AUDIO_PUBLISH_STALLED in snapshot.reasons -> R.string.health_audio_publish_stalled
         StreamHealthReason.LOW_FPS in snapshot.reasons -> R.string.health_low_fps
         StreamHealthReason.QUEUE_PRESSURE in snapshot.reasons -> R.string.health_queue_pressure
         StreamHealthReason.THERMAL in snapshot.reasons -> R.string.health_thermal
@@ -905,8 +907,8 @@ private fun StreamControls(
     when (state) {
         is StreamState.Connecting -> StatusNotice(stringResource(R.string.connecting_relay), loading = true)
         is StreamState.Live -> {
-            if (state.phase == RelayConnectionPhase.RECONNECTING)
-                StatusNotice(stringResource(R.string.status_reconnecting), loading = true)
+            if (!state.canVerifyRemoteMedia())
+                StatusNotice(stringResource(state.phase.statusResource()), loading = true)
             else if (state.phase == RelayConnectionPhase.CONNECTED)
                 StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
             val deviceHealth by viewModel.deviceHealth.collectAsState()

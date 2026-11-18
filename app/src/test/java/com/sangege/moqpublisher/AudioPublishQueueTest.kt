@@ -25,6 +25,15 @@ class AudioPublishQueueTest {
         assertFalse(queue.take()!!.resetEpoch)
     }
 
+    @Test fun reconnectDiscardsOldAudioWithoutClosingTheQueue() {
+        val queue = AudioPublishQueue()
+        queue.offer(EncodedAudioPacket(20_000, byteArrayOf(1)))
+        queue.discardForReconnect()
+        assertEquals(0, queue.depth())
+        assertEquals(AudioPublishQueue.OfferResult.ENQUEUED, queue.offer(EncodedAudioPacket(40_000, byteArrayOf(2))))
+        assertEquals(40_000L, queue.take()!!.timestampUs)
+    }
+
     @Test fun closingAnEmptyQueueReleasesTheWaitingPublisher() {
         val queue = AudioPublishQueue()
         val worker = Executors.newSingleThreadExecutor()

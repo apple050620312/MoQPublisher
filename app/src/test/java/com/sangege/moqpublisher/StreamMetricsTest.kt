@@ -61,6 +61,7 @@ class StreamMetricsTest {
         var now = 0L
         val metrics = StreamMetrics { now }
         metrics.count(StreamMetrics.Counter.CAMERA)
+        metrics.timing(StreamMetrics.Stage.GPU_SUBMIT, 4_000_000L)
         metrics.count(StreamMetrics.Counter.ENCODED)
         metrics.count(StreamMetrics.Counter.AUDIO_PACKET)
         now = 1_000_000_000L
@@ -70,6 +71,7 @@ class StreamMetricsTest {
         assertEquals("0.00", stalled["camera_fps"])
         assertEquals(0L, stalled["audio_packets"])
         assertEquals(3_000L, stalled["last_camera_age_ms"])
+        assertEquals(3_000L, stalled["last_gpu_age_ms"])
         assertEquals(3_000L, stalled["last_encoded_age_ms"])
         assertEquals(3_000L, stalled["last_audio_age_ms"])
         assertNull(stalled["last_video_age_ms"])

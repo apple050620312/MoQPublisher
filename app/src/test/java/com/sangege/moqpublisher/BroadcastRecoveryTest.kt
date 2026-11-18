@@ -7,8 +7,12 @@ import org.junit.Test
 
 class BroadcastRecoveryTest {
     @Test
-    fun retriesUseBoundedExponentialBackoffAndResetAfterSuccess() {
-        val coordinator = BroadcastRecoveryCoordinator(maxAttempts = 3, initialDelayMs = 250L, maximumDelayMs = 700L)
+    fun recurrentFaultsUseBoundedExponentialBackoffAndResetAfterStability() {
+        var now = 0L
+        val coordinator = BroadcastRecoveryCoordinator(
+            maxAttempts = 3, initialDelayMs = 250L, maximumDelayMs = 700L, stabilityWindowMs = 30_000L,
+            nowMs = { now }
+        )
         val first = coordinator.begin(RecoveryComponent.VIDEO_ENCODER, RecoveryClassification.TRANSIENT)
         val second = coordinator.begin(RecoveryComponent.VIDEO_ENCODER, RecoveryClassification.TRANSIENT)
         val third = coordinator.begin(RecoveryComponent.VIDEO_ENCODER, RecoveryClassification.RECOVERABLE)
@@ -20,7 +24,8 @@ class BroadcastRecoveryTest {
         assertEquals(700L, third.delayMs)
         assertFalse(exhausted.allowed)
 
-        coordinator.succeeded(RecoveryComponent.VIDEO_ENCODER)
+        assertEquals(1, coordinator.begin(RecoveryComponent.CAMERA, RecoveryClassification.TRANSIENT).attempt)
+        now = 30_000L
         assertEquals(1, coordinator.begin(RecoveryComponent.VIDEO_ENCODER, RecoveryClassification.TRANSIENT).attempt)
     }
 

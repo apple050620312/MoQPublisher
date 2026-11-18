@@ -10,10 +10,12 @@ class StreamHealthTest {
         relayPhase = RelayConnectionPhase.CONNECTED,
         videoDemanded = true,
         cameraAgeMs = 100,
+        gpuAgeMs = 100,
         encoderAgeMs = 100,
         publishedAgeMs = 100,
         audioExpected = true,
-        audioAgeMs = 100,
+        audioCaptureAgeMs = 100,
+        audioPublishAgeMs = 100,
         targetFps = 30,
         publishedFps = 30.0,
         queueDepth = 2
@@ -49,9 +51,37 @@ class StreamHealthTest {
     fun reconnectingIsRecoveringAndAudioGapIsWarning() {
         val evaluator = StreamHealthEvaluator()
         assertEquals(StreamHealthLevel.WARNING, evaluator.evaluate(healthy.copy(relayPhase = RelayConnectionPhase.RECONNECTING)).level)
-        val audio = evaluator.evaluate(healthy.copy(audioAgeMs = 2_001, relayPhase = RelayConnectionPhase.CONNECTED))
+        val audio = evaluator.evaluate(healthy.copy(audioCaptureAgeMs = 2_001, relayPhase = RelayConnectionPhase.CONNECTED))
         assertEquals(StreamHealthLevel.WARNING, audio.level)
         assertTrue(StreamHealthReason.AUDIO_STALLED in audio.reasons)
+    }
+
+    @Test
+    fun startupWithoutCameraFramesWarnsEvenWithoutAViewerAfterGracePeriod() {
+        val evaluator = StreamHealthEvaluator()
+        val startup = StreamHealthInput(active = true, videoExpected = true, elapsedMs = 2_900L)
+        assertEquals(StreamHealthLevel.HEALTHY, evaluator.evaluate(startup).level)
+        val stalled = evaluator.evaluate(startup.copy(elapsedMs = 3_001L))
+        assertEquals(setOf(StreamHealthReason.CAMERA_STALLED), stalled.reasons)
+        assertEquals(StreamHealthLevel.WARNING, stalled.level)
+    }
+
+    @Test
+    fun gpuFailureAndAudioPublicationLagAreDistinctFromCaptureFailure() {
+        val evaluator = StreamHealthEvaluator()
+        val snapshot = evaluator.evaluate(healthy.copy(gpuAgeMs = 3_500, encoderAgeMs = 3_500, audioPublishAgeMs = 5_001))
+        assertEquals(StreamHealthLevel.CRITICAL, snapshot.level)
+        assertEquals(setOf(StreamHealthReason.GPU_STALLED, StreamHealthReason.AUDIO_PUBLISH_STALLED), snapshot.reasons)
+    }
+
+    @Test
+    fun lowFrameRateMustPersistForTenSecondsOfDemand() {
+        val evaluator = StreamHealthEvaluator()
+        val lagging = healthy.copy(publishedFps = 15.0, intervalMs = 1_000)
+        repeat(9) { assertEquals(StreamHealthLevel.HEALTHY, evaluator.evaluate(lagging).level) }
+        assertEquals(setOf(StreamHealthReason.LOW_FPS), evaluator.evaluate(lagging).reasons)
+        evaluator.evaluate(lagging.copy(videoDemanded = false))
+        assertTrue(evaluator.evaluate(lagging).reasons.isEmpty())
     }
 
     @Test

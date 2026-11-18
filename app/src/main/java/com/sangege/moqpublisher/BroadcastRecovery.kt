@@ -22,42 +22,43 @@ data class RecoveryAttempt(
 )
 
 /**
- * Keeps media recovery finite and independent for each component. A successful
- * repair clears only that component's counter, so a camera repair does not
- * grant unlimited retries to a failing audio device.
+ * Keeps media recovery finite and independent for each component. Repeated
+ * faults within the stability window consume the same budget, even if a
+ * CameraX rebind or codec restart returned before the fault recurred.
  */
 internal class BroadcastRecoveryCoordinator(
     private val maxAttempts: Int = 3,
     private val initialDelayMs: Long = 250L,
-    private val maximumDelayMs: Long = 4_000L
+    private val maximumDelayMs: Long = 4_000L,
+    private val stabilityWindowMs: Long = 30_000L,
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L }
 ) {
-    private val attempts = mutableMapOf<RecoveryComponent, Int>()
+    private data class Failure(val attempts: Int, val atMs: Long)
+    private val failures = mutableMapOf<RecoveryComponent, Failure>()
 
     init {
         require(maxAttempts > 0)
         require(initialDelayMs >= 0L)
         require(maximumDelayMs >= initialDelayMs)
+        require(stabilityWindowMs >= maximumDelayMs)
     }
 
     @Synchronized
     fun begin(component: RecoveryComponent, classification: RecoveryClassification): RecoveryAttempt {
-        val next = (attempts[component] ?: 0) + 1
+        val now = nowMs()
+        val previous = failures[component]?.takeIf { now - it.atMs < stabilityWindowMs }
+        val next = (previous?.attempts ?: 0) + 1
         if (classification == RecoveryClassification.FATAL || next > maxAttempts) {
             return RecoveryAttempt(component, next, 0L, allowed = false, classification)
         }
-        attempts[component] = next
+        failures[component] = Failure(next, now)
         val multiplier = 1L shl (next - 1).coerceAtMost(30)
         val delay = (initialDelayMs * multiplier).coerceAtMost(maximumDelayMs)
         return RecoveryAttempt(component, next, delay, allowed = true, classification)
     }
 
     @Synchronized
-    fun succeeded(component: RecoveryComponent) {
-        attempts.remove(component)
-    }
-
-    @Synchronized
     fun reset() {
-        attempts.clear()
+        failures.clear()
     }
 }

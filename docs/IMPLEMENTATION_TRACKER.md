@@ -4,16 +4,16 @@
 
 | 編號 | 功能 | 原始狀態與已有能力 | 缺少能力／本批次範圍 | 實作狀態 | 自動測試 | 實機驗證 | 已知限制 |
 |---|---|---|---|---|---|---|---|
-| 01 | 端對端直播測試基礎 | 有 JVM、遠端 verifier 與 release 流程 | 建立可重複的 moq.pro／Cloudflare／OBS 手動流程與測試紀錄 | IN_PROGRESS | 基線建置通過 | BLOCKED | 沒有 Android 裝置、OBS、有效 Relay 帳號 |
-| 02 | 完整直播狀態機 | 有 Idle、Connecting、Live、Error 與 relay phase | 統一 publisher lifecycle 與遠端驗證狀態 | IMPLEMENTED | `BroadcastLifecycleTest` 與既有 RelayConnectionPolicyTest | 未驗證 | OBS 接收狀態仍由獨立 verifier 表達 |
-| 03 | 直播 Watchdog | 有每秒 StreamMetrics 與 AudioHealthMetrics | 健康等級、門檻、遲滯、UI／診斷整合 | IMPLEMENTED | `StreamHealthTest`、`StreamMetricsTest`、`VideoPublishQueueTest` | 未驗證 | 需要長時間裝置資料校準 |
-| 04 | 媒體管線自動恢復 | 有 cleanup、generation、keyframe recovery | 元件級有限重試與恢復協調器 | IMPLEMENTED | `BroadcastRecoveryTest`、`BroadcastLifecycleTest` | 未驗證 | 需要實機 Codec／CameraX／AudioRecord 故障情境 |
-| 05 | 網路切換與重連 | 有 DefaultNetworkMonitor、QUIC reconnect、退避與 keyframe | 完整網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | RelayConnectionPolicyTest | BLOCKED | 未連接 Wi-Fi／4G／5G 與 Relay |
+| 01 | 端對端直播測試基礎 | 有 moq.pro／Cloudflare、OBS、認證、codec、延遲與音畫量測流程，支援合併匯出的診斷樣本 | 取得實際端對端矩陣 | IMPLEMENTED | ZIP 合併腳本以重疊樣本驗證去重、排序、期間篩選 | BLOCKED | 未連接 Android 裝置或測試 Relay |
+| 02 | 完整直播狀態機 | 補齊 handover → connecting → announced，從健康事件進入 Degraded，遠端驗證在等待關鍵影格期間停用 | 各種 Relay 與 Service 生命週期實測 | IMPLEMENTED | `BroadcastLifecycleTest`、`RelayConnectionPolicyTest` | 未驗證 | 遠端解碼結果使用獨立 verifier |
+| 03 | 直播 Watchdog | 每秒監控相機、GPU 提交、編碼、發布、音訊擷取和發布、Relay 與佇列。低 FPS 採十秒門檻 | 長時間裝置資料校準 | IMPLEMENTED | `StreamHealthTest`、`StreamMetricsTest`、`VideoPublishQueueTest` | 未驗證 | 裝置和畫質影響實際門檻 |
+| 04 | 媒體管線自動恢復 | 元件級重試採穩定窗口與有限退避，分流 Codec callback，停止／切線先等恢復 worker 結束 | 驗證元件重新輸出及真實故障情境 | IMPLEMENTED | `BroadcastRecoveryTest`、`BroadcastLifecycleTest` | 未驗證 | Codec／CameraX／AudioRecord 需實機故障驗收 |
+| 05 | 網路切換與重連 | DefaultNetworkMonitor 與 QUIC reconnect，共用直播時間基準，清除舊媒體並等新關鍵影格 | 真實網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | `RelayConnectionPolicyTest`、`AudioPublishQueueTest` 涵蓋舊寫入、相同 epoch 重連與關鍵影格 | BLOCKED | 尚未連接可切換 Wi-Fi／4G／5G 的 Android 裝置 |
 | 06 | ABR | VideoBitrateControl 從目標碼率開始，依佇列年齡、深度和網路容量調整，限制於最低及最高設定 | 解析度與 FPS 動態重建見 16 | TESTED | `VideoBitrateControlTest` 涵蓋拒絕動態調整、舊佇列、持續高 RTT 與碼率上下限 | 未驗證 | 動態碼率以 MediaCodec 執行結果為準 |
 | 07 | 音畫同步 | 有 AudioTimeline、VideoTimestampMapper、reset 與 monotonic tests | 接收端延遲與音畫誤差量測 | TESTED | AudioTimeline、VideoTimestampMapper tests | BLOCKED | 端到端誤差不能以 RTT 代替 |
 | 08 | 遠端媒體驗證／OBS | 有 Subscribe-only `SubscriberVerifier`，可驗證 catalog、video、audio decode | moq.pro 接收矩陣、OBS telemetry | TESTED | verifier 編譯與 JVM 規則 | BLOCKED | 無手機、Token、OBS |
 | 09 | 主動異常警報 | 有錯誤 UI、前景通知與 diagnostics events | Alert manager、冷卻、歷史、通知與健康事件 | IMPLEMENTED | `StreamAlertManagerTest`、`StreamHealthTest` | 未驗證 | 目前使用 App 畫面與 diagnostics，背景震動／提示音尚未實測 |
-| 10 | 長時間穩定性 | 有 queue、資源 cleanup、metrics | 2／4 小時正式回歸紀錄與 leak 檢查 | NOT_STARTED | 可執行 JVM regression | BLOCKED | 需要實機與長時間環境 |
+| 10 | 長時間穩定性 | 有 2／4 小時測試矩陣、資源檢查及診斷合併工具 | 取得正式壓測與 leak 檢查紀錄 | IMPLEMENTED | ZIP 合併腳本以含缺口的資料驗證 | BLOCKED | 需要手機、OBS、Relay 憑證與測試時段 |
 | 11 | 開播前檢查 | PASS／WARNING／ERROR 預檢已串入開播，硬體 surface 清單缺項會提示並允許實際啟動編碼器 | 以原回報裝置驗證 H.264／H.265 開播 | TESTED | `BroadcastPreflightTest` 重現能力清單誤擋，並檢查權限、核心與無效參數 | BLOCKED | 尚無原回報裝置 |
 | 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要裝置實測切換增益時的實際聽感 |
 | 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 聲道與削波顯示需要不同硬體麥克風實測 |
@@ -39,5 +39,5 @@
 ## 本輪基線
 
 - `assembleRelease` 與 `testDebugUnitTest` 在 v1.0.20 基線通過。
-- 目前沒有連接 Android 裝置，不能把真實 Cloudflare、moq.pro 或 OBS 行為標示為通過。
-- 下一個開發批次先完成 11，再處理 12～18 的產品化整合。
+- 目前沒有連接 Android 裝置。端對端及長時間直播依 `docs/testing/END_TO_END.md` 的流程逐案例驗證。
+- v1.0.40 補上 01～05／07／10 的重連、Watchdog 與驗收工具。第 08／09 項仍在開發。

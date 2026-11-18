@@ -20,8 +20,12 @@ import androidx.core.content.ContextCompat
 import dev.moq.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
@@ -35,6 +39,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -77,7 +82,8 @@ sealed interface StreamState {
         val phase: RelayConnectionPhase = RelayConnectionPhase.CONNECTED,
         val reconnectCount: Long = 0,
         val endpointDraft: Int? = null,
-        val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN
+        val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN,
+        val reconnectedAtNs: Long? = null
     ) : StreamState
     data class Error(val message: UiMessage) : StreamState
 }
@@ -126,10 +132,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     @Volatile
     private var videoGeneration = 0
 
-    private var videoPublishQueue: VideoPublishQueue? = null
+    @Volatile private var videoPublishQueue: VideoPublishQueue? = null
     private var videoPublishExecutor: ExecutorService? = null
     private var videoPublishFuture: Future<*>? = null
-    private var audioPublishQueue: AudioPublishQueue? = null
+    @Volatile private var audioPublishQueue: AudioPublishQueue? = null
     private var audioPublishExecutor: ExecutorService? = null
     private var audioPublishFuture: Future<*>? = null
     private var audioCaptureExecutor: ExecutorService? = null
@@ -148,7 +154,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     @Volatile
     private var videoProducer: MediaProducer? = null
 
-    private var audioRecord: AudioRecord? = null
+    @Volatile private var audioRecord: AudioRecord? = null
     private var statsJob: Job? = null
     private var broadcastJob: Job? = null
 
@@ -176,6 +182,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     internal var requestCameraRecovery: () -> Unit = {}
     internal val canStart: Boolean get() = synchronized(lifecycleLock) { !closed && broadcastJob == null }
 
+    @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
     internal fun startBroadcast(
         relayUrl: String,
         streamPath: String,
@@ -194,7 +201,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             // A cancelled job still owns its resources until cleanup completes.
             if (closed || broadcastJob != null) return
 
-            cancelRecoveryWorker()
             recoveryCoordinator.reset()
             audioTrackCounter = 0
             diagnostics.metrics.reset()
@@ -222,6 +228,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredDraft = protocolDraft
             _audioCaptureStatus.value = null
             _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
+            startNanoTime = System.nanoTime()
             videoBitrateControl = VideoBitrateControl(
                 videoBitrate, if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L
             )
@@ -229,7 +236,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             _streamState.value = StreamState.Connecting
             _healthState.value = healthEvaluator.reset()
             _alertState.value = alertManager.reset()
-            broadcastJob = scope.launch {
+            broadcastJob = scope.launch(start = CoroutineStart.ATOMIC) {
                 runBroadcast(
                     relayUrl = relayUrl.trim(),
                     streamPath = streamPath.trim(),
@@ -264,11 +271,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             diagnostics.event("default_network_changed", mapOf("network" to diagnostics.networkDescription()))
                         }
                     }
-                    _streamState.update { current ->
-                        (current as? StreamState.Live)?.copy(phase = RelayConnectionPhase.RECONNECTING)
-                            ?: StreamState.Live(phase = RelayConnectionPhase.RECONNECTING, endpointDraft = configuredDraft)
-                    }
-                    transitionLifecycle(BroadcastLifecycleEvent.Reconnecting)
+                    markRelayReconnecting()
                     connection.cancelAndJoin()
                 }
                 reconnectBase = ((_streamState.value as? StreamState.Live)?.reconnectCount ?: reconnectBase) + 1
@@ -317,7 +320,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     maxUs = RelayConnectionPolicy.MAX_BACKOFF_US, timeoutUs = RelayConnectionPolicy.RETRY_WINDOW_US)
             ).also { connected -> synchronized(streamLock) { moqSession = connected } } }
             currentCoroutineContext().ensureActive()
-            _streamState.value = StreamState.Live(epoch = moq.epoch(), reconnectCount = reconnectBase, endpointDraft = configuredDraft)
+            val initialEpoch = moq.epoch()
+            _streamState.value = StreamState.Live(
+                epoch = initialEpoch, reconnectCount = reconnectBase, endpointDraft = configuredDraft,
+                phase = if (reconnectBase == 0L) RelayConnectionPhase.CONNECTED else RelayConnectionPhase.RECOVERING
+            )
             val bandwidth = synchronized(streamLock) {
                 moq.bandwidth().also { sessionBandwidth = it }
             }
@@ -335,7 +342,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             startVideoPublisher(broadcast)
 
             synchronized(streamLock) {
-                startNanoTime = System.nanoTime()
+                diagnostics.metrics.reset()
+                audioHealth.reset()
                 videoFramePacer = VideoFramePacer(configuredFramerate)
                 videoTimestampMapper = VideoTimestampMapper()
                 isBroadcasting.set(true)
@@ -361,39 +369,52 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             diagnostics.event("broadcast_advertised", mapOf("epoch" to moq.epoch()))
             startStatsMonitoring(moq)
             launch {
-                var lastEpoch = 0uL
+                var lastEpoch = initialEpoch
                 var lastStatus: ConnectionStatus? = null
                 while (isActive) {
                     val status = moq.session.status()
                     val epoch = moq.epoch()
                     if (status != lastStatus || epoch != lastEpoch) {
                         diagnostics.event("relay_status", mapOf("status" to status, "epoch" to epoch))
-                        lastStatus = status
-                    }
-                    when (status) {
-                        ConnectionStatus.CONNECTED -> {
-                            _streamState.update { current ->
-                                if (current is StreamState.Live && epoch != lastEpoch)
-                                    RelayConnectionPolicy.reconnected(current, epoch, reconnectBase) else current
+                        when (status) {
+                            ConnectionStatus.CONNECTED -> if (lastStatus != null || epoch != initialEpoch) {
+                                markRelayReconnected(epoch, reconnectBase)
                             }
-                            if (epoch != lastEpoch) {
-                                transitionLifecycle(BroadcastLifecycleEvent.Recovered)
-                                videoPublishQueue?.waitForKeyframe()
-                                synchronized(videoLock) {
-                                    hardwareEncoder?.requestKeyframe(((System.nanoTime() - startNanoTime) / 1000L).coerceAtLeast(0))
-                                    videoWasUsed = false
-                                }
-                                lastEpoch = epoch
-                            }
+                            ConnectionStatus.DISCONNECTED, ConnectionStatus.MIGRATING -> markRelayReconnecting()
                         }
-                        ConnectionStatus.DISCONNECTED, ConnectionStatus.MIGRATING -> _streamState.update { current ->
-                            if (current is StreamState.Live) current.copy(phase = RelayConnectionPhase.RECONNECTING) else current
-                        }.also { transitionLifecycle(BroadcastLifecycleEvent.Reconnecting) }
+                        lastStatus = status
+                        lastEpoch = epoch
                     }
                     delay(RelayConnectionPolicy.SESSION_STATUS_POLL_MS)
                 }
             }
             awaitCancellation()
+    }
+
+    private fun markRelayReconnecting() {
+        _streamState.update { current ->
+            if (current is StreamState.Error || lifecycleState.value.phase == BroadcastPhase.STOPPING) return@update current
+            val live = current as? StreamState.Live ?: StreamState.Live(endpointDraft = configuredDraft)
+            live.copy(phase = RelayConnectionPhase.RECONNECTING, rttMs = null, sendRateKbps = null, publishedFps = null)
+        }
+        transitionLifecycle(BroadcastLifecycleEvent.Reconnecting)
+        videoPublishQueue?.waitForKeyframe()
+        audioPublishQueue?.discardForReconnect()
+    }
+
+    private fun markRelayReconnected(epoch: ULong, reconnectBase: Long) = synchronized(videoLock) {
+        if (!isBroadcasting.get()) return@synchronized
+        // Also invalidate queued media when the native epoch changes between polls.
+        markRelayReconnecting()
+        transitionLifecycle(BroadcastLifecycleEvent.Recovered)
+        val resumedAt = System.nanoTime()
+        _streamState.update { current ->
+            if (current is StreamState.Live) RelayConnectionPolicy.reconnected(current, epoch, reconnectBase, resumedAt)
+            else current
+        }
+        runCatching { hardwareEncoder?.requestKeyframe(((resumedAt - startNanoTime) / 1_000L).coerceAtLeast(0)) }
+            .onFailure { diagnostics.error("reconnect_keyframe_request_failed", it) }
+        videoWasUsed = false
     }
 
     /** Runs MoQ video writes on a dedicated thread, behind a bounded queue. */
@@ -412,7 +433,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             try {
                 while (!Thread.currentThread().isInterrupted) {
                     val packet = queue.take() ?: break
-                    if (!isBroadcasting.get()) continue
+                    if (!isBroadcasting.get() || queue !== videoPublishQueue || packet.generation != videoGeneration) continue
+                    val beforeWrite = _streamState.value as? StreamState.Live ?: continue
+                    if (!beforeWrite.acceptsMedia(packet.enqueuedAtNs)) continue
+                    if (beforeWrite.phase == RelayConnectionPhase.RECOVERING && !packet.accessUnit.keyframe) continue
 
                     if (packet.generation != activeGeneration) {
                         val old = activeProducer
@@ -479,15 +503,27 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     }
                     diagnostics.metrics.published(packet.timestampUs, startNanoTime, packet.accessUnit.data.size)
                     val requested = videoDemand?.isUsed() == true
-                    transitionLifecycle(BroadcastLifecycleEvent.SubscriberDemand(requested))
-                    _streamState.update { current ->
-                        if (current is StreamState.Live) RelayConnectionPolicy.mediaWritten(current, requested) else current
+                    val previous = _streamState.getAndUpdate { current ->
+                        if (current is StreamState.Live && isBroadcasting.get() &&
+                            queue === videoPublishQueue && packet.generation == videoGeneration) {
+                            RelayConnectionPolicy.mediaWritten(current, beforeWrite, requested, packet.accessUnit.keyframe)
+                        } else current
+                    }
+                    val updated = _streamState.value as? StreamState.Live
+                    if (updated?.canVerifyRemoteMedia() == true && updated.reconnectCount == beforeWrite.reconnectCount &&
+                        queue === videoPublishQueue && packet.generation == videoGeneration) {
+                        transitionLifecycle(BroadcastLifecycleEvent.SubscriberDemand(requested))
+                        if (previous is StreamState.Live && previous.phase == RelayConnectionPhase.RECOVERING) {
+                            diagnostics.event("relay_video_resumed", mapOf("epoch" to updated.epoch, "reconnects" to updated.reconnectCount))
+                        }
                     }
                 }
             } catch (_: InterruptedException) {
                 // Cleanup interrupts the worker after closing its queue.
             } catch (error: Throwable) {
-                if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.VIDEO_PUBLISH_QUEUE, error, R.string.error_video)
+                if (isBroadcasting.get() && queue === videoPublishQueue) {
+                    scheduleMediaRecovery(RecoveryComponent.VIDEO_PUBLISH_QUEUE, error, R.string.error_video)
+                }
             } finally {
                 activeProducer?.let {
                     runCatching { it.finish() }
@@ -616,7 +652,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             }
                         }
                     } catch (e: Throwable) {
-                        if (!Thread.currentThread().isInterrupted && isBroadcasting.get())
+                        if (!Thread.currentThread().isInterrupted && isBroadcasting.get() && audioRecord === createdRecord)
                             scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, e, R.string.error_audio_capture)
                     }
                 }
@@ -640,16 +676,21 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         audioPublishQueue = queue
         audioPublishExecutor = executor
         audioPublishFuture = executor.submit { runBlocking {
+            var lastReconnect: Long? = null
             try {
                 while (!Thread.currentThread().isInterrupted) {
                     val packet = queue.take() ?: break
-                    if (!isBroadcasting.get()) continue
-                    if (packet.resetEpoch) {
+                    if (!isBroadcasting.get() || queue !== audioPublishQueue) continue
+                    val state = _streamState.value as? StreamState.Live ?: continue
+                    if (!state.acceptsMedia(packet.enqueuedAtNs)) continue
+                    val reset = packet.resetEpoch || (lastReconnect != null && lastReconnect != state.reconnectCount)
+                    if (reset) {
                         diagnostics.metrics.count(StreamMetrics.Counter.AUDIO_RESET)
                     }
                     val writeStartedNs = System.nanoTime()
                     diagnostics.metrics.timing(StreamMetrics.Stage.AUDIO_QUEUE_WAIT, writeStartedNs - packet.enqueuedAtNs)
-                    val published = audio.writeSuspending(packet)
+                    val published = audio.writeSuspending(if (reset) packet.copy(resetEpoch = true) else packet)
+                    lastReconnect = state.reconnectCount
                     audioHealth.published(published.bytes, published.groupClosed)
                     diagnostics.metrics.timing(StreamMetrics.Stage.AUDIO_WRITE, System.nanoTime() - writeStartedNs)
                     diagnostics.metrics.count(StreamMetrics.Counter.AUDIO_PACKET)
@@ -657,7 +698,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             } catch (_: InterruptedException) {
                 // Cleanup interrupts the worker after closing its queue.
             } catch (error: Throwable) {
-                if (isBroadcasting.get()) scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, error, R.string.error_audio_capture)
+                if (isBroadcasting.get() && queue === audioPublishQueue) {
+                    scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, error, R.string.error_audio_capture)
+                }
             } finally {
                 audio.close()
             }
@@ -851,8 +894,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         if (closed || !isBroadcasting.get()) return
         val request = RecoveryRequest(component, error, fallbackMessage)
         val started = synchronized(recoveryLock) {
+            if (!isBroadcasting.get()) return
             pendingRecoveries[component] = request
-            if (recoveryWorker?.isActive == true) false else {
+            if (recoveryWorker != null) false else {
                 recoveryWorker = scope.launch { runRecoveryWorker() }
                 true
             }
@@ -864,6 +908,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private suspend fun runRecoveryWorker() {
+        val owner = currentCoroutineContext()[Job]
         try {
             while (currentCoroutineContext().isActive && isBroadcasting.get()) {
                 val request = synchronized(recoveryLock) {
@@ -888,9 +933,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     delay(attempt.delayMs)
                     currentCoroutineContext().ensureActive()
                     recoverComponent(request.component)
-                    recoveryCoordinator.succeeded(request.component)
                     transitionLifecycle(BroadcastLifecycleEvent.RecoveryCompleted(videoDemand?.isUsed() == true))
-                    diagnostics.event("media_recovery_succeeded", mapOf(
+                    diagnostics.event("media_recovery_restarted", mapOf(
                         "component" to request.component, "attempt" to attempt.attempt
                     ))
                 } catch (error: CancellationException) {
@@ -898,15 +942,19 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 } catch (error: Throwable) {
                     diagnostics.error("media_recovery_failed", error)
                     synchronized(recoveryLock) {
-                        pendingRecoveries[request.component] = request.copy(error = error)
+                        if (recoveryWorker === owner && isBroadcasting.get()) {
+                            pendingRecoveries.putIfAbsent(request.component, request.copy(error = error))
+                        }
                     }
                 }
             }
         } finally {
             synchronized(recoveryLock) {
-                recoveryWorker = null
-                if (pendingRecoveries.isNotEmpty() && isBroadcasting.get() && !closed) {
-                    recoveryWorker = scope.launch { runRecoveryWorker() }
+                if (recoveryWorker === owner) {
+                    recoveryWorker = null
+                    if (pendingRecoveries.isNotEmpty() && isBroadcasting.get() && !closed) {
+                        recoveryWorker = scope.launch { runRecoveryWorker() }
+                    }
                 }
             }
         }
@@ -1020,7 +1068,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
         hardwareEncoder = if (surfaceInput) SurfaceVideoEncoder.open(
             width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics,
-            onFailure = ::cameraFailed, onEncoded = encoded
+            onFailure = { error ->
+                if (generation == videoGeneration) scheduleMediaRecovery(RecoveryComponent.VIDEO_ENCODER, error, R.string.error_video)
+            },
+            onEncoded = encoded
         ) else HardwareVideoEncoder.open(width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics, encoded)
         bitrateControl.encoderOpened()
         videoPublishQueue?.clear()
@@ -1031,6 +1082,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     private fun startStatsMonitoring(moq: Moq) {
         statsJob?.cancel()
+        val startedAtNs = System.nanoTime()
         statsJob = scope.launch {
             val sendRate = SendRateEstimator()
             var lastEpoch: ULong? = null
@@ -1099,12 +1151,17 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         val health = healthEvaluator.evaluate(StreamHealthInput(
                             active = true,
                             relayPhase = (_streamState.value as? StreamState.Live)?.phase,
+                            videoExpected = true,
                             videoDemanded = encoderStatus["video_used"] == true,
                             cameraAgeMs = metricLong(frameMetrics["last_camera_age_ms"]),
+                            gpuAgeMs = metricLong(frameMetrics["last_gpu_age_ms"]),
                             encoderAgeMs = metricLong(frameMetrics["last_encoded_age_ms"]),
                             publishedAgeMs = metricLong(frameMetrics["last_video_age_ms"]),
                             audioExpected = configuredAudioEnabled,
-                            audioAgeMs = metricLong(frameMetrics["last_audio_age_ms"] ?: audioMetrics["audio_capture_interval_max_ms"]),
+                            audioCaptureAgeMs = metricLong(audioMetrics["last_audio_capture_age_ms"]),
+                            audioPublishAgeMs = metricLong(frameMetrics["last_audio_age_ms"]),
+                            elapsedMs = (sampleTimeNanos - startedAtNs) / 1_000_000L,
+                            intervalMs = metricLong(frameMetrics["interval_ms"]) ?: 0L,
                             targetFps = configuredFramerate,
                             publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
                             queueDepth = videoQueueDepth,
@@ -1114,6 +1171,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         val previousHealth = _healthState.value
                         if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {
                             _healthState.value = health
+                            transitionLifecycle(BroadcastLifecycleEvent.HealthChanged(health.hasAlert))
                         }
                         val alerts = alertManager.update(health, System.currentTimeMillis())
                         val previousAlerts = _alertState.value
@@ -1174,11 +1232,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     fun stopBroadcast() {
         diagnostics.event("broadcast_stop_requested")
         transitionLifecycle(BroadcastLifecycleEvent.StopRequested)
-        cancelRecoveryWorker()
         val job = synchronized(lifecycleLock) {
             isBroadcasting.set(false)
             broadcastJob
         }
+        cancelRecoveryWorker()
 
         if (job != null) {
             job.cancel(CancellationException("Broadcast stopped by user"))
@@ -1235,12 +1293,19 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private fun failBroadcast(error: Throwable, fallbackMessage: Int = R.string.error_audio_capture) {
+        val job = synchronized(lifecycleLock) {
+            val activeJob = broadcastJob ?: return
+            if (lifecycleState.value.phase == BroadcastPhase.STOPPING) return
+            val message = formatError(error, fallbackMessage)
+            isBroadcasting.set(false)
+            _streamState.value = StreamState.Error(message)
+            transitionLifecycle(BroadcastLifecycleEvent.Failed(message))
+            activeJob
+        }
         Log.e(TAG, "Broadcast pipeline failed: ${DiagnosticRedactor.redact(error.stackTraceToString())}")
         diagnostics.error("pipeline_error", error)
-        val message = formatError(error, fallbackMessage)
-        _streamState.value = StreamState.Error(message)
-        transitionLifecycle(BroadcastLifecycleEvent.Failed(message))
-        stopBroadcast()
+        cancelRecoveryWorker()
+        job.cancel(CancellationException("Broadcast failed").apply { initCause(error) })
     }
 
     private fun stopVideoPublisher() {
@@ -1284,16 +1349,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
     }
 
-    private fun cancelRecoveryWorker() {
-        synchronized(recoveryLock) {
-            pendingRecoveries.clear()
-            recoveryWorker?.cancel()
-            recoveryWorker = null
-            recoveryCoordinator.reset()
-        }
+    private fun cancelRecoveryWorker(): Job? = synchronized(recoveryLock) {
+        pendingRecoveries.clear()
+        recoveryWorker?.also { it.cancel() }
     }
 
-    /** Releases the native session and coroutine scope when the ViewModel is cleared. */
+    /** Cancels the application-owned streamer and lets its broadcast job release resources. */
     fun close() {
         synchronized(lifecycleLock) {
             if (closed) return
@@ -1301,16 +1362,18 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             isBroadcasting.set(false)
             broadcastJob?.cancel(CancellationException("Streamer closed"))
         }
-        cleanup()
         scope.cancel()
     }
 
-    private fun cleanup() {
+    private suspend fun cleanup() = withContext(NonCancellable) {
         isBroadcasting.set(false)
-        cancelRecoveryWorker()
+        cancelRecoveryWorker()?.join()
+        // A worker cancelled before its body ran has no finally block.
+        synchronized(recoveryLock) { recoveryWorker = null }
+        recoveryCoordinator.reset()
         // Release the EGL producer before its MediaCodec input Surface, including on handover.
         runCatching { beforeVideoEncoderClose() }.onFailure { diagnostics.error("encoder_surface_detach_failed", it) }
-        statsJob?.cancel()
+        statsJob?.cancelAndJoin()
         statsJob = null
         // Stop publisher workers before closing native producers. This keeps a
         // write/close race from reaching the MoQ FFI and bounds teardown time.
@@ -1329,7 +1392,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             videoProducer = null
             videoFramePacer = null
             videoTimestampMapper = null
-            videoGeneration = 0
+            videoGeneration++
             currentVideoWidth = 0
             currentVideoHeight = 0
             videoTrackCounter = 0
@@ -1370,10 +1433,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private fun transitionLifecycle(event: BroadcastLifecycleEvent) {
-        val previous = _lifecycleState.value
+        val previous = _lifecycleState.getAndUpdate { BroadcastLifecyclePolicy.reduce(it, event) }
         val next = BroadcastLifecyclePolicy.reduce(previous, event)
         if (next != previous) {
-            _lifecycleState.value = next
             diagnostics.event("broadcast_phase", mapOf("phase" to next.phase, "generation" to next.generation))
         }
     }

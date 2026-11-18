@@ -25,7 +25,7 @@ sealed interface BroadcastLifecycleEvent {
     data object Connecting : BroadcastLifecycleEvent
     data object Announced : BroadcastLifecycleEvent
     data class SubscriberDemand(val requested: Boolean) : BroadcastLifecycleEvent
-    data object Degraded : BroadcastLifecycleEvent
+    data class HealthChanged(val degraded: Boolean) : BroadcastLifecycleEvent
     data object RecoveryStarted : BroadcastLifecycleEvent
     data class RecoveryCompleted(val subscriberDemanded: Boolean) : BroadcastLifecycleEvent
     data object Reconnecting : BroadcastLifecycleEvent
@@ -41,7 +41,8 @@ internal object BroadcastLifecyclePolicy {
         BroadcastLifecycleEvent.StartRequested -> if (state.phase == BroadcastPhase.IDLE) {
             state.copy(phase = BroadcastPhase.PREPARING, generation = state.generation + 1, error = null)
         } else state
-        BroadcastLifecycleEvent.Connecting -> if (state.phase in setOf(BroadcastPhase.PREPARING, BroadcastPhase.RECOVERING)) {
+        BroadcastLifecycleEvent.Connecting -> if (state.phase in setOf(
+                BroadcastPhase.PREPARING, BroadcastPhase.RECONNECTING, BroadcastPhase.RECOVERING)) {
             state.copy(phase = BroadcastPhase.CONNECTING, error = null)
         } else state
         BroadcastLifecycleEvent.Announced -> if (state.phase == BroadcastPhase.CONNECTING) {
@@ -50,12 +51,18 @@ internal object BroadcastLifecyclePolicy {
         is BroadcastLifecycleEvent.SubscriberDemand -> when {
             event.requested && state.phase in setOf(BroadcastPhase.ANNOUNCED, BroadcastPhase.WAITING_FOR_SUBSCRIBER, BroadcastPhase.RECOVERING) ->
                 state.copy(phase = BroadcastPhase.PUBLISHING)
-            !event.requested && state.phase in setOf(BroadcastPhase.ANNOUNCED, BroadcastPhase.RECOVERING) ->
+            !event.requested && state.phase in setOf(
+                BroadcastPhase.ANNOUNCED, BroadcastPhase.PUBLISHING, BroadcastPhase.DEGRADED, BroadcastPhase.RECOVERING) ->
                 state.copy(phase = BroadcastPhase.WAITING_FOR_SUBSCRIBER)
             else -> state
         }
-        BroadcastLifecycleEvent.Degraded -> if (state.phase == BroadcastPhase.PUBLISHING) state.copy(phase = BroadcastPhase.DEGRADED) else state
-        BroadcastLifecycleEvent.RecoveryStarted -> if (state.phase !in setOf(BroadcastPhase.IDLE, BroadcastPhase.STOPPING, BroadcastPhase.FAILED)) {
+        is BroadcastLifecycleEvent.HealthChanged -> when {
+            event.degraded && state.phase == BroadcastPhase.PUBLISHING -> state.copy(phase = BroadcastPhase.DEGRADED)
+            !event.degraded && state.phase == BroadcastPhase.DEGRADED -> state.copy(phase = BroadcastPhase.PUBLISHING)
+            else -> state
+        }
+        BroadcastLifecycleEvent.RecoveryStarted -> if (state.phase in setOf(
+                BroadcastPhase.ANNOUNCED, BroadcastPhase.WAITING_FOR_SUBSCRIBER, BroadcastPhase.PUBLISHING, BroadcastPhase.DEGRADED)) {
             state.copy(phase = BroadcastPhase.RECOVERING, error = null)
         } else state
         is BroadcastLifecycleEvent.RecoveryCompleted -> if (state.phase == BroadcastPhase.RECOVERING) {

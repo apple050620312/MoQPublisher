@@ -286,6 +286,9 @@
     <string name="status_connected">已連線</string>
     <string name="status_publishing">推流中</string>
     <string name="status_reconnecting">重新連線中</string>
+    <string name="status_recovering_video">Relay 已重新連線，正在等候新的關鍵影格。</string>
+    <string name="health_gpu_stalled">相機仍在擷取，但 GPU 已停止將影格送到編碼器。</string>
+    <string name="health_audio_publish_stalled">麥克風仍在擷取，但音訊推流已停滯。</string>
     <string name="connected_waiting_media">已連線，等待訂閱端要求視訊 Track。</string>
     <string name="stat_reconnects">重新連線次數：%1$d</string>
     <string name="stat_endpoint_draft">端點：Draft %1$d。SDK 0.5.3 未提供實際協商版本查詢。</string>

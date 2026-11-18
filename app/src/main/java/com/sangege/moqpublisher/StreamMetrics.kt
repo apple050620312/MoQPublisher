@@ -15,6 +15,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
     private val counts = LongArray(Counter.entries.size)
     private var sinceNs = nanoTime()
     private var lastCameraNs: Long? = null
+    private var lastGpuNs: Long? = null
     private var lastEncodedNs: Long? = null
     private var lastVideoNs: Long? = null
     private var lastAudioNs: Long? = null
@@ -29,6 +30,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
     fun timing(stage: Stage, durationNs: Long) {
         val index = stage.ordinal
         val duration = durationNs.coerceAtLeast(0L)
+        if (stage == Stage.GPU_SUBMIT) lastGpuNs = nanoTime()
         stageCounts[index]++
         stageTotalsNs[index] += duration
         stageMaxNs[index] = maxOf(stageMaxNs[index], duration)
@@ -45,6 +47,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
         counts.fill(0)
         sinceNs = nanoTime()
         lastCameraNs = null
+        lastGpuNs = null
         lastEncodedNs = null
         lastVideoNs = null
         lastAudioNs = null
@@ -108,6 +111,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
             "video_handoff_avg_ms" to if (count(Counter.PUBLISHED) > 0) handoffTotalUs / count(Counter.PUBLISHED) / 1_000.0 else null,
             "video_handoff_max_ms" to if (count(Counter.PUBLISHED) > 0) handoffMaxUs / 1_000.0 else null,
             "last_camera_age_ms" to age(lastCameraNs),
+            "last_gpu_age_ms" to age(lastGpuNs),
             "last_encoded_age_ms" to age(lastEncodedNs),
             "last_video_age_ms" to age(lastVideoNs),
             "last_audio_age_ms" to age(lastAudioNs)

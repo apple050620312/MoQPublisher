@@ -39,7 +39,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
                 if (!active) verifier.reset()
                 if (state is StreamState.Live) {
                     val connection = state.epoch to state.reconnectCount
-                    if (state.phase == RelayConnectionPhase.RECONNECTING ||
+                    if (!state.canVerifyRemoteMedia() ||
                         (previousConnection != null && previousConnection != connection)) verifier.reset()
                     previousConnection = connection
                 } else if (!active) previousConnection = null
