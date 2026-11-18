@@ -65,7 +65,7 @@ Each ZIP contains `summary.txt` (device, state, settings, network and AVC/HEVC e
 ## Project layout
 
 - `MainActivity.kt` contains the Compose screens and permission flow.
-- `MainViewModel.kt` owns persisted settings and validation and observes the application-owned broadcast state.
+- `MainViewModel.kt` owns persisted settings and validation and observes the application-owned broadcast state. Live statistics include the actual hardware encoder name when the device reports it.
 - `BroadcastSession.kt` and `BroadcastService.kt` own the live session, foreground notification, generation-safe stop actions and CPU wake lock.
 - `CameraPreview.kt` owns only the display texture and camera gestures; `CameraCaptureEngine.kt` owns the independent CameraX lifecycle.
 - `CameraSurfaceRenderer.kt` and `SurfaceVideoEncoder.kt` feed GPU surfaces to the hardware encoder and drain compressed frames asynchronously.
@@ -93,7 +93,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.25)
+## APK variants (v1.0.26)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

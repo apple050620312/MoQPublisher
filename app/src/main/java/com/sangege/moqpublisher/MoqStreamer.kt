@@ -68,6 +68,7 @@ sealed interface StreamState {
         val bytesSentMb: Double? = null,
         val publishedFps: Double? = null,
         val videoBitrateBps: Long? = null,
+        val encoderName: String? = null,
         val epoch: ULong = 1u,
         val phase: RelayConnectionPhase = RelayConnectionPhase.CONNECTED,
         val reconnectCount: Long = 0,
@@ -1076,6 +1077,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         }
                         val encoderStatus = synchronized(videoLock) {
                             mapOf("encoder_pending" to hardwareEncoder?.pendingFrames,
+                                "encoder_name" to hardwareEncoder?.name,
                                 "video_budget_bps" to hardwareEncoder?.bitrateBps,
                                 "bitrate_adaptation" to bitrateAdaptationEnabled,
                                 "video_used" to videoDemand?.isUsed(),
@@ -1137,6 +1139,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 bytesSentMb = sentMb,
                                 publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
                                 videoBitrateBps = encoderStatus["video_budget_bps"] as? Long,
+                                encoderName = encoderStatus["encoder_name"] as? String,
                                 epoch = epoch
                             )
                         }

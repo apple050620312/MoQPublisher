@@ -72,6 +72,7 @@
     <string name="stat_rtt">往返延遲</string>
     <string name="stat_bitrate">傳輸碼率</string>
     <string name="stat_sent">已傳送</string>
+    <string name="stat_encoder">編碼器</string>
     <string name="stat_codec">編碼 / 幀率</string>
     <string name="stat_unavailable">—</string>
     <string name="value_ms">%1$d ms</string>

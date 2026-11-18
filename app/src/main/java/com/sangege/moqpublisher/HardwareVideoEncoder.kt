@@ -15,6 +15,7 @@ import java.util.ArrayDeque
 /** Android hardware encoding; only compressed access units cross the MoQ FFI boundary. */
 internal class HardwareVideoEncoder private constructor(
     private val encoder: MediaCodec,
+    override val name: String,
     override val width: Int,
     override val height: Int,
     initialBitrateBps: Long,
@@ -277,7 +278,7 @@ internal class HardwareVideoEncoder private constructor(
                     encoder.start()
                     Log.i("HardwareVideoEncoder", "Using ${candidate.name}: $codec ${width}x$height@$framerate")
                     diagnostics.event("encoder_open", mapOf("name" to candidate.name, "codec" to codec, "format" to format))
-                    return HardwareVideoEncoder(encoder, width, height, bitrateBps, color, hevc, diagnostics, onEncoded)
+                    return HardwareVideoEncoder(encoder, candidate.name, width, height, bitrateBps, color, hevc, diagnostics, onEncoded)
                 } catch (e: Exception) {
                     runCatching { encoder?.release() }
                     diagnostics.event("encoder_candidate_failed", mapOf("name" to candidate.name, "error" to e.toString()))

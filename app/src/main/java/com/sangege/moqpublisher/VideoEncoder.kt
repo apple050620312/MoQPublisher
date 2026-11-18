@@ -1,6 +1,7 @@
 package com.sangege.moqpublisher
 
 internal interface VideoEncoder : AutoCloseable {
+    val name: String?
     val width: Int
     val height: Int
     val bitrateBps: Long

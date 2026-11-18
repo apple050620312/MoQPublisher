@@ -17,6 +17,7 @@ internal class SurfaceVideoEncoder private constructor(
     private val codec: MediaCodec,
     val inputSurface: Surface,
     private val worker: HandlerThread,
+    override val name: String,
     override val width: Int,
     override val height: Int,
     initialBitrate: Long,
@@ -143,7 +144,7 @@ internal class SurfaceVideoEncoder private constructor(
                     codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                     surface = codec.createInputSurface()
                     worker = HandlerThread("MoqCodecOutput", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
-                    return SurfaceVideoEncoder(codec, surface, worker, width, height, bitrate, AnnexB(hevc), diagnostics, onEncoded, onFailure)
+                    return SurfaceVideoEncoder(codec, surface, worker, info.name, width, height, bitrate, AnnexB(hevc), diagnostics, onEncoded, onFailure)
                         .also { it.start(); diagnostics.event("encoder_open", mapOf("name" to info.name, "input" to "surface", "format" to format)) }
                 } catch (error: Throwable) {
                     runCatching { codec?.release() }; runCatching { surface?.release() }; worker?.quitSafely()

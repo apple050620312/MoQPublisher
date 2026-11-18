@@ -968,6 +968,9 @@ private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int) {
                     ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
                 StatItem(stringResource(R.string.stat_codec), stringResource(R.string.value_codec_fps, codecDisplayName(codec), fps), Modifier.weight(1f))
             }
+            stats.encoderName?.let { name ->
+                StatItem(stringResource(R.string.stat_encoder), name, Modifier.fillMaxWidth())
+            }
             Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
             stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)

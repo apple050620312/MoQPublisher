@@ -82,6 +82,7 @@
     <string name="stat_rtt">RTT</string>
     <string name="stat_bitrate">Bitrate</string>
     <string name="stat_sent">Sent</string>
+    <string name="stat_encoder">Encoder</string>
     <string name="stat_codec">Codec / FPS</string>
     <string name="stat_unavailable"></string>
     <string name="value_ms">%1$d ms</string>

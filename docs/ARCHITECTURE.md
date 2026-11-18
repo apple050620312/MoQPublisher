@@ -36,6 +36,7 @@ flowchart LR
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
 - 音訊 capture worker 以每個 20 ms frame 的 ramp gain 套用增益，`AudioHealthMetrics` 在 capture thread 計算 RMS、dBFS、peak hold、聲道峰值與削波，UI 只讀取 `StateFlow`。
 - `AudioInputDeviceRepository` 透過 `AudioManager` 列出可選輸入，`MoqStreamer` 對 `AudioDeviceCallback` 做拔除監控。選定設備消失時，AudioRecord 回退系統路由並由元件恢復協調器重建音訊 track。
+- `HardwareVideoEncoder` 與 `SurfaceVideoEncoder` 將實際 MediaCodec 名稱保存到 `StreamState.Live`，主畫面與每秒 diagnostics 都能區分實際硬體實作。動態碼率若被 codec 拒絕，ABR 會停用並保留最後有效碼率。
 - `BroadcastRecoveryCoordinator` 以元件為單位限制恢復次數並套用指數退避。`MoqStreamer` 可重建相機綁定、MediaCodec、影片發布 worker 或 AudioRecord，而不立即結束整場直播。
 - `MoqCoreManager` 下載、驗證、選擇與快取官方相容的 native core。直播期間不替換正在使用的 native library。
 - `AppDiagnostics`、`StreamMetrics` 與 `AudioHealthMetrics` 以受限事件歷史和每秒樣本記錄效能、傳輸、裝置與資源資訊。憑證在寫入前遮罩。
