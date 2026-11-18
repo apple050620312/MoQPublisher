@@ -75,6 +75,7 @@ class AppUpdateManager(context: Context, private val currentVersion: String = pa
     @Volatile private var release: AppRelease? = null
 
     @Synchronized fun checkForUpdates() {
+        if (!BuildConfig.GITHUB_APP_UPDATES) return
         if (job?.isActive == true) return
         val nextJob = scope.launch {
             mutableState.value = state.value.copy(
@@ -116,6 +117,7 @@ class AppUpdateManager(context: Context, private val currentVersion: String = pa
     }
 
     @Synchronized fun downloadUpdate() {
+        if (!BuildConfig.GITHUB_APP_UPDATES) return
         val candidate = release ?: run {
             checkForUpdates()
             return

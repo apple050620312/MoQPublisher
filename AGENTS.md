@@ -1280,3 +1280,9 @@ P0 > P1 > P2
 
 - `v1.0.42` 完善第 16～19／22 項。解析度和 FPS 可在直播中一起套用，重建後等影片 Track 寫入關鍵影格，失敗時重新套用原畫質。加入簡易／專業儀表板、充電與 CPU／編碼表現監控、複製畫質預設及可設定的停止確認。前景通知可立即停止。直播期間檢查相機及音訊使用權限。
 - 驗證 `testDebugUnitTest` 212 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest` 與 `lintRelease` 通過。原回報手機、OBS 畫質重建／回復、背景停止及權限撤銷尚待實機測試。
+- `v1.0.42` Release APK SHA-256 為 `becc5ac15c0b122d8694236c196af2e04a722e8a68d87f295bad2b81b3df2993`，Offline APK 為 `2674e1ee00e7c475e14872e6c90f56de19b5e81d72f8fc869026f29452faba91`，四個 GitHub Release 資產均已核對。
+
+### 2026-11-19
+
+- `v1.0.43` 加入第 20／21 項的離線單一 ABI 建置及獨立 production variant，GitHub Release 會檢查三種 ABI 與離線核心檔案。第 23／24 項將 moq.pro 內嵌發布 JWT 移至 Keystore，加入獨立觀看 JWT、訂閱端點、QR、OBS 操作指引與遠端解碼。
+- 驗證 `testDebugUnitTest` 214 項通過，Release、Offline、Android Test APK 和 `lintRelease` 通過，APK 包名、版本、簽章、ABI 與 ZIP 對齊均核對。Production 缺少正式金鑰時明確停止，正式簽章與實機 Relay／OBS 尚待驗收。

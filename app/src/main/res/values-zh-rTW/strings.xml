@@ -175,6 +175,7 @@
     <string name="app_update_title">App 更新</string>
     <string name="app_update_description">從 GitHub Releases 檢查已簽署的 MoQ Publisher APK，下載後會先驗證 SHA-256 再安裝。</string>
     <string name="app_update_current">目前版本：%1$s</string>
+    <string name="app_update_managed">請透過原本的發佈管道更新 App。</string>
     <string name="app_update_latest">最新版本：%1$s</string>
     <string name="app_update_checking">正在檢查 GitHub Releases</string>
     <string name="app_update_available">有較新的 App 版本可用。</string>
@@ -337,6 +338,16 @@
     <string name="verify_subscription">驗證遠端影音解碼</string>
     <string name="verify_hint">請先開始推流。此功能會另開遠端訂閱連線，最多 30 秒，解碼視訊及已啟用的音訊，會使用額外流量；不等同於外部瀏覽器或 OBS 的驗證。</string>
     <string name="verify_connecting">使用 Subscribe Token 連線中…</string>
+    <string name="moq_pro_viewing">moq.pro 觀看設定</string>
+    <string name="moq_pro_subscribe_token">僅供訂閱的 JWT</string>
+    <string name="moq_pro_subscribe_hint">私人 Relay 請填入獨立的觀看 JWT。公開 Relay 可留空。</string>
+    <string name="moq_pro_subscribe_unavailable">請填入安全的 Relay 網址，以及與發布 JWT 不同的觀看 JWT。</string>
+    <string name="clear_subscribe_jwt">清除觀看 JWT</string>
+    <string name="copy_relay_url">複製 Relay 網址</string>
+    <string name="copy_broadcast_name">複製直播名稱</string>
+    <string name="copy_subscribe_url">複製訂閱端點</string>
+    <string name="moq_pro_browser_guide">在 OBS Browser Source 開啟與 Relay 相容的播放頁，填入訂閱端點與直播名稱，再於 OBS 確認影音。</string>
+    <string name="moq_pro_native_guide">選擇支援 Relay 協定及 Hang Catalog 的 OBS 來源。填入訂閱端點與直播名稱後，確認視訊與 Opus 音訊。</string>
     <string name="verify_authentication">訂閱連線認證已通過</string>
     <string name="verify_catalog">等待遠端直播與影音 Catalog</string>
     <string name="verify_subscription_stage">正在訂閱視訊 Track</string>

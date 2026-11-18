@@ -30,7 +30,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 
 1. Install the signed release APK (recommended), offline APK, compact APK or debug APK on a supported Android device. The release, compact and debug APKs download the compatible MoQ core on first launch. The offline APK includes the official core for ARM64, ARMv7 and x86_64 and does not need that first download.
 2. On first launch, connect to the internet and allow the official MoQ core package to download (about 33 MB). Only the running process ABI is extracted and saved. Grant camera permission; microphone permission is requested when an audio broadcast starts.
-3. Open **Settings -> Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
+3. Open **Settings -> Relay Provider**. For moq.pro, enter the relay URL, broadcast path and optional publish JWT. For a private relay, enter a separate viewing JWT under **moq.pro viewing** to copy the Subscribe endpoint or verify remote decoding.
    For Cloudflare, enter a **Publish + Subscribe connection token** and a broadcast name
    (default `twcam.hang`). You can clear the broadcast name to publish an unnamed broadcast, matching the official `moq-pub` example. Use a `.hang` name for moq.watch links and QR codes. Native subscriber settings and the in-app decoder check accept an empty name with a separate Subscribe-only token. This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`.
    do not use a Management API token, Project ID, Relay ID or `?jwt=`.
@@ -97,9 +97,11 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.42)
+## APK variants (v1.0.43)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease assembleOffline testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. Release, compact and debug omit `libmoq_ffi.so`, while offline packages the official core as verified assets for the three supported Android ABIs. The local APKs are signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
+
+Build a local single-ABI Offline APK with `./gradlew assembleOffline -PmoqAbi=arm64-v8a`. The other supported values are `armeabi-v7a` and `x86_64`. GitHub builds include every supported ABI.
 
 ## Main app updates
 
@@ -110,6 +112,8 @@ Available App and MoQ core updates now open an on-screen reminder at startup and
 Version 1.0.19 gives update APKs and diagnostic exports separate FileProvider components. Android caches local providers by component class; sharing one class between the two authorities could send the installer an unreadable APK URI. Installation now includes a ClipData read grant, opens Android's unknown-app-source permission screen when needed, and resumes installation after permission is granted. Before opening the installer, the app rechecks the file size, SHA-256, package name, release version, increasing version code, Android compatibility and signing certificate on an IO dispatcher. If an earlier version reports a package parsing error, download this release APK in a browser and install it over the existing app once; subsequent updates use the repaired flow.
 
 Run `./publish-release.ps1` on the development computer after committing and pushing source changes. The script runs the signed builds, JVM tests and release lint locally, checks package/version, certificate and ZIP alignment, then uploads the release APK, offline APK and both SHA-256 sidecars to the matching GitHub tag. It verifies the uploaded digests. Use `./publish-release.ps1 -ValidateOnly -SkipTests` to validate already built APKs locally.
+
+For production distribution, provide the keystore path and its credentials through the local `MOQ_PRODUCTION_KEYSTORE`, `MOQ_PRODUCTION_STORE_PASSWORD`, `MOQ_PRODUCTION_KEY_ALIAS` and `MOQ_PRODUCTION_KEY_PASSWORD` environment variables. Run `./gradlew bundleProduction --no-configuration-cache` for a store bundle or `./gradlew assembleProduction --no-configuration-cache` for an APK. Keep the official keystore outside the repository. Production uses the same application ID and receives App updates through its distribution channel. Android requires a fresh install to switch from the sideload certificate to an unrelated production certificate. Before migrating, save the connection and quality settings you need and restore them after reinstalling. Re-enter relay credentials in the new installation.
 
 `AudioSettings.kt` processes interleaved signed 16-bit PCM before Opus encoding. Economy uses 32/64 Kbps for mono/stereo, Standard 64/128, High 96/192 and Maximum 128/256. Standard preserves the previous bitrate. Capture layout, frame size, encoder channels and video bandwidth reservation use the actual selected format and quality. Unsupported stereo retries mono, selects the corresponding mono bitrate and shows a localized notice. Gain is applied with saturation; 100% preserves every input sample.
 

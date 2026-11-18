@@ -46,19 +46,18 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
         if (ticket == generation) mutableState.value = value
     }
 
-    @Synchronized fun verify(profile: RelayProfile, expectAudio: Boolean) {
-        if (!profile.canSubscribe() || job?.isActive == true) return
+    @Synchronized fun verify(url: String, path: String, provider: RelayProvider, expectAudio: Boolean) {
+        if (job?.isActive == true) return
         val ticket = ++generation
-        DiagnosticRedactor.protectSecrets(profile.publishToken, profile.subscribeToken)
         mutableState.value = SubscriberVerification.Running(UiMessage(R.string.verify_connecting))
         job = scope.launch {
             var stage = SubscriberVerificationStage.CONNECTION
             try {
                 val result = withTimeout(30_000) {
-                    receiveAndDecode(profile, expectAudio) { next ->
+                    receiveAndDecode(url, path, provider, expectAudio) { next ->
                         stage = next
                         report(ticket, SubscriberVerification.Running(UiMessage(next.progress)))
-                        diagnostics.event("subscriber_verification_stage", mapOf("provider" to profile.provider, "stage" to next))
+                        diagnostics.event("subscriber_verification_stage", mapOf("provider" to provider, "stage" to next))
                     }
                 }
                 currentCoroutineContext().ensureActive()
@@ -78,19 +77,21 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
     }
 
     private suspend fun receiveAndDecode(
-        profile: RelayProfile,
+        url: String,
+        path: String,
+        provider: RelayProvider,
         expectAudio: Boolean,
         progress: (SubscriberVerificationStage) -> Unit
     ): SubscriberVerification.Passed {
         // Distinct origins also make it impossible to mistake a local publication for remote delivery.
         OriginProducer(OriginConfig()).use { emptyPublish ->
             OriginProducer(OriginConfig()).use { remoteSubscribe ->
-                Moq.connect(profile.subscribeUrl(), tlsVerify = true, reconnect = false, websocketEnabled = false,
+                Moq.connect(url, tlsVerify = true, reconnect = false, websocketEnabled = provider == RelayProvider.MOQ_PRO,
                     publish = emptyPublish, subscribe = remoteSubscribe).use { moq ->
                     // The SDK completes authentication as part of connect().
                     progress(SubscriberVerificationStage.AUTHENTICATION)
                     progress(SubscriberVerificationStage.CATALOG)
-                    moq.announcedBroadcast(profile.broadcastName.trim()).use { announcement ->
+                    moq.announcedBroadcast(path).use { announcement ->
                         try {
                             announcement.available().use { broadcast ->
                                 broadcast.subscribeCatalog().use { catalogs ->

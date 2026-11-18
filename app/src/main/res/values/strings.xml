@@ -190,6 +190,7 @@
     <string name="app_update_title">App update</string>
     <string name="app_update_description">Checks GitHub Releases for a signed MoQ Publisher APK. Downloads are verified with SHA-256 before installation.</string>
     <string name="app_update_current">Installed version: %1$s</string>
+    <string name="app_update_managed">Install App updates through the original distribution channel.</string>
     <string name="app_update_latest">Latest release: %1$s</string>
     <string name="app_update_checking">Checking GitHub Releases</string>
     <string name="app_update_available">A newer app version is available.</string>
@@ -352,6 +353,16 @@
     <string name="verify_subscription">Verify remote media decoding</string>
     <string name="verify_hint">Start broadcasting first. This opens a separate remote Subscribe session for up to 30 seconds and decodes video and enabled audio. It uses extra data and does not verify a separate browser or OBS client.</string>
     <string name="verify_connecting">Connecting with the Subscribe Token</string>
+    <string name="moq_pro_viewing">moq.pro viewing</string>
+    <string name="moq_pro_subscribe_token">Subscribe-only JWT</string>
+    <string name="moq_pro_subscribe_hint">Use a separate viewing JWT for a private relay. Public relays can use an empty field.</string>
+    <string name="moq_pro_subscribe_unavailable">Enter a secure relay URL and a viewing JWT that differs from the publish JWT.</string>
+    <string name="clear_subscribe_jwt">Clear viewing JWT</string>
+    <string name="copy_relay_url">Copy relay URL</string>
+    <string name="copy_broadcast_name">Copy broadcast name</string>
+    <string name="copy_subscribe_url">Copy subscribe endpoint</string>
+    <string name="moq_pro_browser_guide">Open a viewing page compatible with the relay in OBS Browser Source. Enter the subscribe endpoint and broadcast name in that player, then check video and audio in OBS.</string>
+    <string name="moq_pro_native_guide">Use an OBS source that supports the relay protocol and Hang catalog. Enter the subscribe endpoint and broadcast name, then check video and Opus audio in OBS.</string>
     <string name="verify_authentication">Subscribe connection authenticated</string>
     <string name="verify_catalog">Waiting for the remote broadcast and media catalog</string>
     <string name="verify_subscription_stage">Subscribing to the video track</string>

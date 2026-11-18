@@ -23,11 +23,11 @@
 | 17 | 直播儀表板 | 簡易模式顯示直播時間、幀率、傳輸碼率與網路，專業模式顯示實際編碼器、尺寸、丟幀、佇列、RTT、電量、熱度與解碼結果 | 實機驗證版面與連續資料 | IMPLEMENTED | metrics tests、release compile | 未驗證 | 遠端解碼資料來自 App 的獨立訂閱連線 |
 | 18 | 裝置健康／溫度 | 電量、充電、熱度、記憶體、省電、App CPU 用量與編碼表現進入監控。使用者可採用降碼率建議 | 真實溫度及負載驗收 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | CPU 壓力由 App 使用率及實際編碼 FPS 判斷 |
 | 19 | 畫質 Preset | 內建與自訂 Preset 可套用、建立、編輯、刪除、複製及重設 | 實機模式驗證 | IMPLEMENTED | `StreamPresetTest`、release compile | 未驗證 | CameraX 依支援模式擷取 |
-| 20 | 完整離線 APK | core 快取、checksum、ABI／FFI 驗證與 fallback | 真正內含 compatible core 的離線 variant | IMPLEMENTED | `assembleOffline`、APK v2／zipalign、CoreLibraryFiles tests | 未驗證 | offline APK 約 35 MB，啟動時仍會將 asset 安全安裝到 app-private 目錄；需要 Android 實機確認 native loading |
-| 21 | Release pipeline | 本機簽章、JVM、lint、APK 包名／版本／對齊／簽章檢查、GitHub tag／SHA-256 核對 | 正式簽章與遷移 | IN_PROGRESS | publish script、APK checks | BLOCKED | 目前公開 APK 沿用既有開發簽章 |
+| 20 | 完整離線 APK | 完整核心資產與 checksum，支援本機指定單一 ABI，GitHub Release 檢查三種 ABI | 實機首次啟動與 native loading | IMPLEMENTED | `assembleOffline`、APK v2／zipalign、CoreLibraryFiles tests | 未驗證 | ABI 依 Android 程序支援選擇 |
+| 21 | Release pipeline | 開發簽章的 GitHub 發佈與獨立 production variant，文件記錄憑證遷移 | 實際正式簽章及商店發佈 | IMPLEMENTED | publish script、APK checks、缺少正式金鑰時阻擋建置 | BLOCKED | 尚無正式私鑰 |
 | 22 | 停止／Android lifecycle | App 可設定停止確認，通知有立即停止，直播取樣監控相機及音訊權限，Service 以 generation 辨識直播 | Android 背景、急停、權限撤銷及快速啟停實測 | IMPLEMENTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
-| 23 | 認證／安全 | Keystore、token 分離、redaction、signature check | token permission probing、clear UI、錯誤分類擴充 | IMPLEMENTED | repository／redaction tests、release compile、lint | 未驗證 | Token 權限由 Relay 回應決定；設定頁可清除加密 JWT 與 Cloudflare Token |
-| 24 | OBS 連接體驗 | Cloudflare watch／OBS text、remote verification | QR、Browser Source、native source guide、moq.pro guidance | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | 真實 OBS／瀏覽器／moq.pro 接收能力仍需實測；QR 僅在獨立 Subscribe Token 與 `.hang` 名稱可用時提供 |
+| 23 | 認證／安全 | 內嵌 moq.pro JWT 遷移至 Keystore，發布與訂閱 JWT 分離；Cloudflare 獨立 Token 與診斷遮罩 | 以測試帳號實測權限與失效情境 | IMPLEMENTED | repository／redaction／RelayProfile tests、release compile、lint | 未驗證 | Token 權限由 Relay 回應決定 |
+| 24 | OBS 連接體驗 | moq.pro 與 Cloudflare 訂閱端點、觀看 QR、OBS 指引與遠端解碼檢查 | 真實 OBS 播放矩陣 | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | moq.pro 需要相容播放頁或原生來源，私人 Relay 使用獨立觀看 JWT |
 | 25 | 本機備援錄影 | — | MediaMuxer、分段、儲存監測、獨立錯誤處理 | NOT_STARTED | — | 未驗證 | — |
 | 26 | 多鏡頭／防手震 | front/back、zoom、focus、torch、exposure | logical camera、stabilization、focus／exposure lock | PARTIAL | camera policy／geometry tests | 未驗證 | 需要裝置能力矩陣 |
 | 27 | 遠端監控／控制 | — | 安全配對、可撤銷控制通道 | NOT_STARTED | — | 未驗證 | 需定義低維運傳輸方案 |

@@ -113,6 +113,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val wideLayout = windowSize.width > windowSize.height
     val relayUrl by viewModel.relayUrl.collectAsState()
     val authToken by viewModel.authToken.collectAsState()
+    val moqProSubscribeToken by viewModel.moqProSubscribeToken.collectAsState()
     val relayProfile by viewModel.relayProfile.collectAsState()
     val subscriberVerification by viewModel.subscriberVerification.collectAsState()
     val streamPath by viewModel.streamPath.collectAsState()
@@ -325,6 +326,7 @@ fun MainScreen(viewModel: MainViewModel) {
             SettingsScreen(
                 relayUrl = relayUrl, onRelayUrlChange = viewModel::setRelayUrl,
                 authToken = authToken, onAuthTokenChange = viewModel::setAuthToken,
+                moqProSubscribeToken = moqProSubscribeToken, onMoqProSubscribeTokenChange = viewModel::setMoqProSubscribeToken,
                 effectiveUrl = viewModel.getDisplayRelayUrl(),
                 relayProfile = relayProfile, onRelayProfileChange = viewModel::setRelayProfile,
                 profileError = configurationError,
@@ -1159,6 +1161,7 @@ internal fun StatusNotice(
 internal fun SettingsScreen(
     relayUrl: String, onRelayUrlChange: (String) -> Unit,
     authToken: String, onAuthTokenChange: (String) -> Unit,
+    moqProSubscribeToken: String, onMoqProSubscribeTokenChange: (String) -> Unit,
     effectiveUrl: String, streamPath: String, onStreamPathChange: (String) -> Unit,
     relayProfile: RelayProfile, onRelayProfileChange: (RelayProfile) -> Unit,
     profileError: UiMessage?,
@@ -1236,6 +1239,8 @@ internal fun SettingsScreen(
                 Text(stringResource(R.string.effective_url), style = MaterialTheme.typography.labelMedium)
                 Text(effectiveUrl, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
             }
+            MoqProViewingPanel(relayUrl, streamPath, authToken, moqProSubscribeToken, onMoqProSubscribeTokenChange,
+                editable, subscriberVerification, canVerifySubscription, onVerifySubscription)
             }
         }
         SettingCard(stringResource(R.string.video_configuration)) {
@@ -1319,7 +1324,12 @@ internal fun SettingsScreen(
         }
         SettingCard(stringResource(R.string.about), stringResource(R.string.about_description),
             Modifier.onGloballyPositioned { aboutOffset = it.positionInParent().y.roundToInt() }) {
-            AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
+            if (BuildConfig.GITHUB_APP_UPDATES) {
+                AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
+            } else {
+                Text(stringResource(R.string.app_update_current, appUpdateState.currentVersion))
+                SupportingText(stringResource(R.string.app_update_managed))
+            }
             CoreStatusCard(coreState, onCoreCheck)
         }
     }

@@ -22,3 +22,7 @@ local.properties
 *.idsig
 dist/
 /.idea/
+*.jks
+*.keystore
+*.p12
+keystore.properties

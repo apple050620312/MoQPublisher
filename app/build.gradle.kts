@@ -6,7 +6,18 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val offlineCoreAssets = layout.buildDirectory.dir("generated/offlineCore/assets")
+val supportedMoQAbis = setOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val splitAbi = providers.gradleProperty("moqAbi").orNull
+require(splitAbi == null || splitAbi in supportedMoQAbis) { "moqAbi must be one of $supportedMoQAbis" }
+val includedMoQAbis = splitAbi?.let(::setOf) ?: supportedMoQAbis
+val offlineCoreAssets = layout.buildDirectory.dir("generated/offlineCore/${splitAbi ?: "universal"}/assets")
+
+val productionStore = providers.environmentVariable("MOQ_PRODUCTION_KEYSTORE").orNull?.takeIf(String::isNotBlank)?.let(::file)
+val productionStorePassword = providers.environmentVariable("MOQ_PRODUCTION_STORE_PASSWORD").orNull
+val productionAlias = providers.environmentVariable("MOQ_PRODUCTION_KEY_ALIAS").orNull
+val productionKeyPassword = providers.environmentVariable("MOQ_PRODUCTION_KEY_PASSWORD").orNull
+val hasProductionSigning = productionStore != null &&
+    listOf(productionStorePassword, productionAlias, productionKeyPassword).none { it.isNullOrBlank() }
 
 android {
     namespace = "com.sangege.moqpublisher"
@@ -18,13 +29,24 @@ android {
         applicationId = "com.sangege.moqpublisher"
         minSdk = 24
         targetSdk = 37
-        versionCode = 43
-        versionName = "1.0.42"
+        versionCode = 44
+        versionName = "1.0.43"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "GITHUB_APP_UPDATES", "true")
         ndk {
-            // All targets published in the official Android MoQ core artifact.
-            abiFilters += setOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += includedMoQAbis
+        }
+    }
+
+    signingConfigs {
+        create("production") {
+            if (hasProductionSigning) {
+                storeFile = productionStore
+                storePassword = productionStorePassword
+                keyAlias = productionAlias
+                keyPassword = productionKeyPassword
+            }
         }
     }
 
@@ -55,6 +77,12 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
         }
+        create("production") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("production")
+            buildConfigField("boolean", "GITHUB_APP_UPDATES", "false")
+            matchingFallbacks += "release"
+        }
     }
     sourceSets.getByName("offline") {
         assets.srcDir(offlineCoreAssets.get().asFile)
@@ -65,6 +93,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -126,6 +155,7 @@ dependencies {
 val prepareOfflineCore = tasks.register("prepareOfflineCore") {
     notCompatibleWithConfigurationCache("Resolves the selected Android AAR during offline asset preparation")
     outputs.dir(offlineCoreAssets)
+    inputs.property("abis", includedMoQAbis.sorted())
     doLast {
         val output = offlineCoreAssets.get().asFile
         output.deleteRecursively()
@@ -142,6 +172,7 @@ val prepareOfflineCore = tasks.register("prepareOfflineCore") {
                 .forEach { entry ->
                     val parts = entry.name.split('/')
                     check(parts.size == 3) { "Unexpected native core path ${entry.name}" }
+                    if (parts[1] !in includedMoQAbis) return@forEach
                     val target = output.resolve("moq-core-offline/${parts[1]}/libmoq_ffi.so")
                     target.parentFile.mkdirs()
                     archive.getInputStream(entry).use { input -> target.outputStream().use(input::copyTo) }
@@ -159,10 +190,25 @@ val prepareOfflineCore = tasks.register("prepareOfflineCore") {
                     )
                 }
         }
-        check(output.resolve("moq-core-offline").listFiles()?.isNotEmpty() == true) {
-            "The official AAR contains no offline MoQ core ABI"
+        val packagedAbis = output.resolve("moq-core-offline").listFiles().orEmpty().map { it.name }.toSet()
+        check(packagedAbis == includedMoQAbis) {
+            "The official AAR lacks the requested offline MoQ ABIs: ${includedMoQAbis - packagedAbis}"
         }
     }
 }
 
 tasks.matching { it.name == "preOfflineBuild" }.configureEach { dependsOn(prepareOfflineCore) }
+
+val requireProductionSigning = tasks.register("requireProductionSigning") {
+    notCompatibleWithConfigurationCache("The production signing credentials are local to this build")
+    doLast {
+        check(hasProductionSigning && productionStore?.isFile == true) {
+            "Production signing requires MOQ_PRODUCTION_KEYSTORE, MOQ_PRODUCTION_STORE_PASSWORD, " +
+                "MOQ_PRODUCTION_KEY_ALIAS, and MOQ_PRODUCTION_KEY_PASSWORD."
+        }
+        check(productionStore.canonicalFile != android.signingConfigs.getByName("debug").storeFile?.canonicalFile) {
+            "Use a production keystore separate from the installed development APK key."
+        }
+    }
+}
+tasks.matching { it.name == "preProductionBuild" }.configureEach { dependsOn(requireProductionSigning) }

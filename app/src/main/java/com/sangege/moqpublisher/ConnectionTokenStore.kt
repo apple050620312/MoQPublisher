@@ -91,4 +91,8 @@ internal class RelayProfileRepository(private val prefs: SharedPreferences, priv
         // A recovered keystore must not let a pending legacy migration overwrite new input.
         check(prefs.edit().remove("auth_token").commit())
     }
+
+    fun moqProSubscribeToken(): String = tokens.read("moq_pro_subscribe")
+
+    fun saveMoqProSubscribeToken(value: String) = tokens.write("moq_pro_subscribe", value)
 }

@@ -90,4 +90,20 @@ class RelayProfileTest {
         assertEquals("https://cdn.moq.pro/project?jwt=existing", RelayUrl.withJwt("https://cdn.moq.pro/project?jwt=existing", "fixture"))
         assertEquals("https://cdn.moq.pro/project?jwt=****", RelayUrl.maskJwt("https://cdn.moq.pro/project?jwt=fixture"))
     }
+
+    @Test fun embeddedJwtCanBeEncryptedWithoutLosingOtherUrlParameters() {
+        val url = "https://cdn.moq.pro/project?route=edge&j%77t=fixture%2Btoken&mode=quic#viewer"
+        assertEquals("https://cdn.moq.pro/project?route=edge&mode=quic#viewer" to "fixture+token", RelayUrl.splitJwt(url))
+        assertEquals("https://cdn.moq.pro/project?route=edge&j%77t=****&mode=quic#viewer", RelayUrl.maskJwt(url))
+    }
+
+    @Test fun moqProViewingUsesOnlyADistinctSubscribeCredential() {
+        val relay = "https://cdn.moq.pro/project?jwt=publish-fixture&auth_token=fixture"
+        assertNull(RelayUrl.moqProSubscriptionUrl(relay, "", ""))
+        assertNull(RelayUrl.moqProSubscriptionUrl(relay, "", "jwt=publish-fixture"))
+        assertEquals("https://cdn.moq.pro/project?jwt=subscribe-fixture",
+            RelayUrl.moqProSubscriptionUrl(relay, "", "subscribe-fixture"))
+        assertNull(RelayUrl.publicRelayEndpoint("https://user:password@relay.example/project"))
+        assertNull(RelayUrl.publicRelayEndpoint("http://relay.example/project"))
+    }
 }

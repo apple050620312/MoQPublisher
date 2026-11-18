@@ -150,13 +150,17 @@ class MainViewModel internal constructor(
     val relayUrl: StateFlow<String> = _relayUrl.asStateFlow()
 
     private val _authToken = MutableStateFlow(
-        runCatching { relayProfiles.moqProToken() }.getOrElse {
+        runCatching { migrateMoqProRelayCredential() }.getOrElse {
             _configurationError.value = UiMessage(R.string.error_token_storage)
             tokenReadFailed = true
             ""
         }
     )
     val authToken: StateFlow<String> = _authToken.asStateFlow()
+    private val _moqProSubscribeToken = MutableStateFlow(
+        runCatching { relayProfiles.moqProSubscribeToken() }.getOrDefault("")
+    )
+    val moqProSubscribeToken = _moqProSubscribeToken.asStateFlow()
 
     private val _streamPath = MutableStateFlow(
         prefs.getString(KEY_STREAM_PATH, DEFAULT_STREAM_PATH) ?: DEFAULT_STREAM_PATH
@@ -302,9 +306,40 @@ class MainViewModel internal constructor(
     }
 
     fun setRelayUrl(url: String) {
-        _relayUrl.value = url
+        if (streamState.value.isActive() || session.pendingStart != null) return
+        val (address, embeddedJwt) = RelayUrl.splitJwt(url)
+        if (embeddedJwt != null) {
+            try {
+                relayProfiles.saveMoqProToken(embeddedJwt)
+                _authToken.value = embeddedJwt
+            } catch (error: Exception) {
+                diagnostics.error("relay_credential_storage_failed", error)
+                setConfigurationError(UiMessage(R.string.error_token_storage))
+                return
+            }
+        }
+        _relayUrl.value = address
         clearConfigurationError()
-        prefs.edit { putString(KEY_RELAY_URL, url) }
+        prefs.edit { putString(KEY_RELAY_URL, address) }
+        session.verifier.reset()
+    }
+
+    private fun migrateMoqProRelayCredential(): String {
+        val (address, jwt) = RelayUrl.splitJwt(_relayUrl.value)
+        if (jwt == null) return relayProfiles.moqProToken()
+        relayProfiles.saveMoqProToken(jwt)
+        prefs.edit { putString(KEY_RELAY_URL, address) }
+        _relayUrl.value = address
+        return jwt
+    }
+
+    fun setMoqProSubscribeToken(token: String) {
+        if (streamState.value.isActive() || session.pendingStart != null) return
+        runCatching { relayProfiles.saveMoqProSubscribeToken(token) }.onSuccess {
+            _moqProSubscribeToken.value = token
+            session.verifier.reset()
+            clearConfigurationError()
+        }.onFailure { setConfigurationError(UiMessage(R.string.error_token_storage)) }
     }
 
     fun setAuthToken(token: String) {
@@ -329,17 +364,28 @@ class MainViewModel internal constructor(
     private fun reloadCredentials() {
         runCatching {
             val loaded = relayProfiles.load()
-            val auth = relayProfiles.moqProToken()
+            val auth = migrateMoqProRelayCredential()
             _relayProfile.value = loaded; _authToken.value = auth
             tokenReadFailed = false
         }.onFailure { _configurationError.value = UiMessage(R.string.error_token_storage) }
     }
 
     fun verifySubscription() {
+        if (!streamState.value.canVerifyRemoteMedia()) return
         val profile = _relayProfile.value
-        if (profile.canSubscribe() && streamState.value.canVerifyRemoteMedia())
-            session.verifier.verify(profile, _enableAudio.value)
+        DiagnosticRedactor.protectSecrets(profile.publishToken, profile.subscribeToken, _authToken.value, _moqProSubscribeToken.value)
+        when (profile.provider) {
+            RelayProvider.CLOUDFLARE -> if (profile.canSubscribe()) {
+                session.verifier.verify(profile.subscribeUrl(), profile.publicationPath(""), profile.provider, _enableAudio.value)
+            }
+            RelayProvider.MOQ_PRO -> moqProSubscriptionUrl()?.let { url ->
+                session.verifier.verify(url, getEffectiveStreamPath(), profile.provider, _enableAudio.value)
+            }
+        }
     }
+
+    fun moqProSubscriptionUrl(): String? =
+        RelayUrl.moqProSubscriptionUrl(_relayUrl.value, _authToken.value, _moqProSubscribeToken.value)
 
     fun setStreamPath(path: String) {
         _streamPath.value = path

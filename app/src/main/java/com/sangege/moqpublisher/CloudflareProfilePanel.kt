@@ -91,19 +91,7 @@ internal fun CloudflareProfilePanel(
     }
     Text(stringResource(R.string.verify_hint), style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    when (verification) {
-        SubscriberVerification.Idle -> Unit
-        is SubscriberVerification.Running -> {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(verification.stage.text(), style = MaterialTheme.typography.bodySmall)
-        }
-        is SubscriberVerification.Passed -> Text(stringResource(R.string.verify_passed, verification.codec,
-            verification.width, verification.height, verification.frames,
-            stringResource(if (verification.audio) R.string.verify_audio_passed else R.string.verify_audio_disabled)),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-        is SubscriberVerification.Failed -> Text(verification.message.text(), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
-    }
+    SubscriptionVerificationResult(verification)
     if (pendingAction != null) AlertDialog(onDismissRequest = { pendingAction = null },
         title = { Text(stringResource(R.string.confirm_subscribe_only)) },
         text = { Text(stringResource(R.string.confirm_subscribe_only_hint)) },
@@ -150,7 +138,7 @@ internal fun CloudflareProfilePanel(
     }
 }
 
-private fun qrBitmap(value: String, size: Int): Bitmap {
+internal fun qrBitmap(value: String, size: Int): Bitmap {
     val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, size, size)
     return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->
         for (x in 0 until size) for (y in 0 until size) {
@@ -160,8 +148,25 @@ private fun qrBitmap(value: String, size: Int): Bitmap {
 }
 
 @Composable
-private fun SecretField(value: String, onChange: (String) -> Unit, title: String, hint: String, editable: Boolean) {
+internal fun SecretField(value: String, onChange: (String) -> Unit, title: String, hint: String, editable: Boolean) {
     OutlinedTextField(value, onChange, label = { Text(title) }, supportingText = { Text(hint) },
         visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         singleLine = true, enabled = editable, shape = MaterialTheme.shapes.small, modifier = Modifier.fillMaxWidth())
+}
+
+@Composable
+internal fun SubscriptionVerificationResult(verification: SubscriberVerification) {
+    when (verification) {
+        SubscriberVerification.Idle -> Unit
+        is SubscriberVerification.Running -> {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(verification.stage.text(), style = MaterialTheme.typography.bodySmall)
+        }
+        is SubscriberVerification.Passed -> Text(stringResource(R.string.verify_passed, verification.codec,
+            verification.width, verification.height, verification.frames,
+            stringResource(if (verification.audio) R.string.verify_audio_passed else R.string.verify_audio_disabled)),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+        is SubscriberVerification.Failed -> Text(verification.message.text(), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error)
+    }
 }

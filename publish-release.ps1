@@ -57,6 +57,8 @@ $signer = Join-Path $buildTools.FullName "apksigner.bat"
 $zipalign = Join-Path $buildTools.FullName "zipalign.exe"
 # Public certificate SHA-256 from the existing MoQ Publisher sideload releases.
 $signingCertificate = '26adf81d995180fd487cee1d58da1c8fa4018357a95907d6af6e1a9eb4636122'
+$requiredAbis = @('arm64-v8a', 'armeabi-v7a', 'x86_64')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
 foreach ($file in @($apk, $offlineApk)) {
     if (-not (Test-Path -LiteralPath $file)) { throw "APK was not produced: $file" }
     $badging = & $aapt dump badging $file
@@ -64,6 +66,21 @@ foreach ($file in @($apk, $offlineApk)) {
     $package = $badging | Select-String '^package:'
     if ($package -notmatch "name='com\.sangege\.moqpublisher'.*versionCode='$versionCode'.*versionName='$([regex]::Escape($version))'") {
         throw "APK package or version does not match Gradle: $file"
+    }
+    $nativeCode = $badging | Select-String '^native-code:'
+    foreach ($abi in $requiredAbis) {
+        if ($nativeCode -notmatch "'$abi'") { throw "The public APK must contain $abi support: $file" }
+    }
+    if ($file -eq $offlineApk) {
+        $archive = [IO.Compression.ZipFile]::OpenRead($file)
+        try {
+            foreach ($abi in $requiredAbis) {
+                $nativeAsset = "assets/moq-core-offline/$abi/libmoq_ffi.so"
+                if (-not $archive.GetEntry($nativeAsset) -or -not $archive.GetEntry("$nativeAsset.sha256")) {
+                    throw "Offline APK is missing the $abi native core or its checksum."
+                }
+            }
+        } finally { $archive.Dispose() }
     }
     $signature = & $signer verify --verbose --print-certs $file
     if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed: $file" }
