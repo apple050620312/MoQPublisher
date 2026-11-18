@@ -163,6 +163,12 @@ class MainViewModel internal constructor(
     ))
     val recordingPreferences = _recordingPreferences.asStateFlow()
 
+    suspend fun recordings(): List<String> = withContext(Dispatchers.IO) { streamer.recordings() }
+
+    suspend fun exportRecording(name: String, destination: android.net.Uri) = withContext(Dispatchers.IO) {
+        streamer.exportRecording(name, destination)
+    }
+
     private val _relayUrl = MutableStateFlow(
         prefs.getString(KEY_RELAY_URL, DEFAULT_RELAY_URL) ?: DEFAULT_RELAY_URL
     )
@@ -920,11 +926,14 @@ class MainViewModel internal constructor(
         if (!checkStartSettings()) return false
 
         _configurationError.value = null
-        DiagnosticRedactor.protectSecrets(_authToken.value, _relayProfile.value.publishToken, _relayProfile.value.subscribeToken)
+        val publishes = _recordingPreferences.value.mode.publishes
+        if (publishes) DiagnosticRedactor.protectSecrets(
+            _authToken.value, _relayProfile.value.publishToken, _relayProfile.value.subscribeToken
+        )
         val codec = if (_videoCodec.value == "H265") VideoCodec.H265 else VideoCodec.H264
         try { session.requestStart(BroadcastConfiguration(
-            relayUrl = getEffectiveRelayUrl(),
-            streamPath = getEffectiveStreamPath(),
+            relayUrl = if (publishes) getEffectiveRelayUrl() else "",
+            streamPath = if (publishes) getEffectiveStreamPath() else "",
             tlsVerify = _relayProfile.value.provider == RelayProvider.CLOUDFLARE || _tlsVerify.value,
             enableAudio = _enableAudio.value,
             audioChannel = _audioChannel.value,
@@ -957,7 +966,8 @@ class MainViewModel internal constructor(
     fun runPreflight(): BroadcastPreflightReport {
         val profile = _relayProfile.value
         val context = getApplication<Application>()
-        val settingsError = validateBroadcastSettings()
+        val publishes = _recordingPreferences.value.mode.publishes
+        val settingsError = if (publishes) validateBroadcastSettings() else null
         val usesCamera = !preferScreen.value
         val report = BroadcastPreflightPolicy.evaluate(BroadcastPreflightInput(
             cameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED,
@@ -978,11 +988,12 @@ class MainViewModel internal constructor(
             publishTokenConfigured = profile.provider != RelayProvider.CLOUDFLARE || CloudflareRelay.validToken(profile.publishToken),
             subscribeTokenConfigured = profile.subscribeToken.isNotBlank(),
             subscribeTokenRequired = false,
-            networkAvailable = networkAvailable(context),
+            networkAvailable = publishes && networkAvailable(context),
             moqCoreReady = coreState.value.ready,
             batteryPercent = batteryPercent(context),
             thermalWarning = thermalWarning(context),
-            usesCamera = usesCamera
+            usesCamera = usesCamera,
+            publishes = publishes
         ))
         _preflightReport.value = report
         diagnostics.event("broadcast_preflight", mapOf(

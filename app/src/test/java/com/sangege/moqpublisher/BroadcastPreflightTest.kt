@@ -82,6 +82,21 @@ class BroadcastPreflightTest {
     }
 
     @Test
+    fun localRecordingDoesNotRequireNetworkCredentialsOrCore() {
+        val report = BroadcastPreflightPolicy.evaluate(ready.copy(
+            publishes = false,
+            relayConfigured = false,
+            publishTokenConfigured = false,
+            subscribeTokenConfigured = false,
+            networkAvailable = false,
+            moqCoreReady = false
+        ))
+        assertTrue(report.canStart)
+        assertTrue(report.warnings.isEmpty())
+        assertFalse(StreamState.Live(recordingOnly = true).canVerifyRemoteMedia())
+    }
+
+    @Test
     fun disabledAudioDoesNotRequireMicrophoneOrSubscribeToken() {
         val report = BroadcastPreflightPolicy.evaluate(ready.copy(
             audioEnabled = false,

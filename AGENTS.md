@@ -1320,3 +1320,10 @@ P0 > P1 > P2
 - SurfaceVideoEncoder 實際啟動後才確認支援。若廠商拒絕低延遲等選用參數，以相同 H.264／H.265、尺寸、FPS 與碼率再試。開播預檢保留能力清單缺項的警告。
 - 220 項 JVM 測試通過。Release、Offline、Android Test APK 與 lint 建置通過，lint 0 errors。UTF-8／XML、APK 包名、版本、ABI、開發簽章和 ZIP 對齊通過。尚未連接手機驗證原回報畫質、投影授權、旋轉、播放音訊和 OBS 接收。
 - Release APK SHA-256 為 `469a4f4448a3fef8f8a3a4737717c6046355e48d2902e21ce4b8d6fe38428cee`，Offline APK 為 `b2af3af980b8ecf09aac4f25c5f4c80a310b764556d251ef48b212ab84ec07ec`。
+
+### 2026-11-19
+
+- `v1.0.47` 完成第 25 項的只錄影模式與匯出。推流並錄影時，連線和切線保留擷取、編碼與錄影。Relay 最終連線失敗後改為繼續錄影並呈現錯誤。
+- 以獨立 worker 完成 MP4 封裝；關鍵影格開始新段，尺寸、編碼世代與聲道改變時換段。修正 AVC／HEVC 參數集格式、佇列滿時的停止、AAC 尾端與檔案完成狀態。
+- 223 項 JVM 測試、Release／Offline APK、Android Test APK、lint（0 errors）、UTF-8／XML、版本、ABI、APK 簽章和 ZIP 對齊通過。尚無手機驗證 MP4 播放、跨網路錄影、儲存空間與音畫同步。
+- Release APK SHA-256 為 `2c666c144ad5d277db32dd5f770f32d9c898131d6aadaf259c05afea7c1338c2`，Offline APK 為 `9bd858fd89d4f4977e550146bed937c69364058a33eb9ece9a98ce8207c89e21`。

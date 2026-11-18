@@ -7,6 +7,7 @@ enum class BroadcastPhase {
     ANNOUNCED,
     WAITING_FOR_SUBSCRIBER,
     PUBLISHING,
+    RECORDING,
     DEGRADED,
     RECONNECTING,
     RECOVERING,
@@ -24,6 +25,7 @@ sealed interface BroadcastLifecycleEvent {
     data object StartRequested : BroadcastLifecycleEvent
     data object Connecting : BroadcastLifecycleEvent
     data object Announced : BroadcastLifecycleEvent
+    data object RecordingLocally : BroadcastLifecycleEvent
     data class SubscriberDemand(val requested: Boolean) : BroadcastLifecycleEvent
     data class HealthChanged(val degraded: Boolean) : BroadcastLifecycleEvent
     data object RecoveryStarted : BroadcastLifecycleEvent
@@ -47,6 +49,10 @@ internal object BroadcastLifecyclePolicy {
         } else state
         BroadcastLifecycleEvent.Announced -> if (state.phase == BroadcastPhase.CONNECTING) {
             state.copy(phase = BroadcastPhase.ANNOUNCED)
+        } else state
+        BroadcastLifecycleEvent.RecordingLocally -> if (state.phase !in setOf(
+                BroadcastPhase.IDLE, BroadcastPhase.STOPPING, BroadcastPhase.FAILED)) {
+            state.copy(phase = BroadcastPhase.RECORDING, error = null)
         } else state
         is BroadcastLifecycleEvent.SubscriberDemand -> when {
             event.requested && state.phase in setOf(BroadcastPhase.ANNOUNCED, BroadcastPhase.WAITING_FOR_SUBSCRIBER, BroadcastPhase.RECOVERING) ->

@@ -1,8 +1,9 @@
 package com.sangege.moqpublisher
 
-enum class RecordingMode(val label: Int) {
-    STREAM_ONLY(R.string.recording_stream_only),
-    STREAM_AND_RECORD(R.string.recording_stream_and_record)
+enum class RecordingMode(val label: Int, val records: Boolean, val publishes: Boolean) {
+    STREAM_ONLY(R.string.recording_stream_only, records = false, publishes = true),
+    STREAM_AND_RECORD(R.string.recording_stream_and_record, records = true, publishes = true),
+    RECORD_ONLY(R.string.recording_record_only, records = true, publishes = false)
 }
 
 data class RecordingPreferences(
@@ -25,10 +26,11 @@ data class RecordingState(
     val lastFile: String? = null,
     val bytesWritten: Long = 0L,
     val availableBytes: Long? = null,
-    val error: String? = null
+    val error: UiMessage? = null
 )
 
 internal data class RecordingVideoFrame(
+    val generation: Int,
     val codec: dev.moq.VideoCodec,
     val width: Int,
     val height: Int,
@@ -36,5 +38,9 @@ internal data class RecordingVideoFrame(
     val headers: ByteArray,
     val accessUnit: AnnexB.AccessUnit,
     val timestampUs: Long
-)
+) {
+    fun matchesFormat(other: RecordingVideoFrame): Boolean =
+        generation == other.generation && codec == other.codec && width == other.width &&
+            height == other.height && framerate == other.framerate && headers.contentEquals(other.headers)
+}
 

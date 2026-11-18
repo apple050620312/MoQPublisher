@@ -37,6 +37,8 @@ flowchart LR
 - `CameraCaptureEngine` 管理 CameraX。`CameraSurfaceRenderer` 將相機紋理送到預覽與 MediaCodec input surface，避免在正常路徑複製 YUV。
 - BroadcastService 在收到本場直播的投影同意結果後，先啟用 mediaProjection 前景服務類型，再由 ScreenCaptureEngine 取得投影。每份授權只建立一個 VirtualDisplay，畫面尺寸改變時調整原有顯示器。
 - VirtualDisplay 接到共用 EGL renderer 的 SurfaceTexture。螢幕與相機沿用同一個編碼、影格節奏、時間戳和 MoQ 發布路徑。螢幕來源釋放後，相機開播的場次恢復 CameraX，螢幕開播的場次結束。Android 10 以上可在螢幕開播前選播放音訊並沿用現有 Opus 路徑。
+- 推流並錄影時先啟用擷取，再連線 Relay。網路切換只重建 Relay 與上傳執行緒，保留 MediaCodec、AudioRecord、錄影 worker 與時間基準。只錄影使用相同的擷取和 MP4 路徑。
+- 錄影 worker 在關鍵影格開始分段，編碼世代、尺寸、編碼參數及聲道改變時完成原段。它獨立管理 AAC 輸出、佇列、儲存空間及 MP4 封裝。完成並關閉封裝後才把檔案列為可匯出。
 - `SurfaceVideoEncoder` 和 `HardwareVideoEncoder` 封裝 MediaCodec。正常路徑使用 surface encoder，輸出在 callback 執行緒排入有上限的 `VideoPublishQueue`。
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
 - `LocalRecordingManager` 使用獨立 bounded queue 和 worker，沿用已編碼的 H.264／H.265 影像，另外以 AAC encoder 將 PCM 轉成 MP4 音訊。每個分段從關鍵影格開始，磁碟低於安全門檻或 MediaMuxer 失敗只停止錄影，並保留 MoQ 直播。

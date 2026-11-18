@@ -48,7 +48,8 @@ data class BroadcastPreflightInput(
     val moqCoreReady: Boolean,
     val batteryPercent: Int? = null,
     val thermalWarning: Boolean = false,
-    val usesCamera: Boolean = true
+    val usesCamera: Boolean = true,
+    val publishes: Boolean = true
 )
 
 /** Pure preflight policy so start checks stay deterministic and unit-testable. */
@@ -72,24 +73,26 @@ internal object BroadcastPreflightPolicy {
             warningWhenFalse = true)
         checks += check(PreflightCheckId.RESOLUTION_FPS, input.resolutionFpsValid,
             "The requested resolution and FPS are valid", "The requested resolution or FPS is invalid")
-        checks += check(PreflightCheckId.RELAY_CONFIGURATION, input.relayConfigured,
-            "Relay settings are valid", "Relay settings need correction")
-        checks += check(PreflightCheckId.PUBLISH_TOKEN, input.publishTokenConfigured,
-            "Publish authentication is configured", "A valid Publish token is required")
-        checks += if (!input.subscribeTokenRequired) {
-            PreflightCheck(PreflightCheckId.SUBSCRIBE_TOKEN, PreflightSeverity.PASS,
-                "Subscribe authentication is optional for publishing")
-        } else check(
-            PreflightCheckId.SUBSCRIBE_TOKEN,
-            input.subscribeTokenConfigured,
-            "Subscribe authentication is ready for remote verification",
-            "Remote verification needs a separate Subscribe token"
-        )
-        checks += check(PreflightCheckId.NETWORK, input.networkAvailable,
-            "A network is available", "No active network is available. The relay connection may wait for recovery",
-            warningWhenFalse = true)
-        checks += check(PreflightCheckId.MOQ_CORE, input.moqCoreReady,
-            "The MoQ core is ready", "The MoQ core must finish preparing before broadcast")
+        if (input.publishes) {
+            checks += check(PreflightCheckId.RELAY_CONFIGURATION, input.relayConfigured,
+                "Relay settings are valid", "Relay settings need correction")
+            checks += check(PreflightCheckId.PUBLISH_TOKEN, input.publishTokenConfigured,
+                "Publish authentication is configured", "A valid Publish token is required")
+            checks += if (!input.subscribeTokenRequired) {
+                PreflightCheck(PreflightCheckId.SUBSCRIBE_TOKEN, PreflightSeverity.PASS,
+                    "Subscribe authentication is optional for publishing")
+            } else check(
+                PreflightCheckId.SUBSCRIBE_TOKEN,
+                input.subscribeTokenConfigured,
+                "Subscribe authentication is ready for remote verification",
+                "Remote verification needs a separate Subscribe token"
+            )
+            checks += check(PreflightCheckId.NETWORK, input.networkAvailable,
+                "A network is available", "No active network is available. The relay connection may wait for recovery",
+                warningWhenFalse = true)
+            checks += check(PreflightCheckId.MOQ_CORE, input.moqCoreReady,
+                "The MoQ core is ready", "The MoQ core must finish preparing before broadcast")
+        }
         checks += batteryCheck(input.batteryPercent)
         checks += if (input.thermalWarning) PreflightCheck(
             PreflightCheckId.THERMAL, PreflightSeverity.WARNING, "The device reports thermal pressure"

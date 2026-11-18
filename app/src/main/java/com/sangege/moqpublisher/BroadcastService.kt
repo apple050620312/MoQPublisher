@@ -241,7 +241,7 @@ class BroadcastService : Service() {
             .putExtra(EXTRA_GENERATION, session.generation), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val baseText = localized.getString(when (state) {
             StreamState.Connecting -> R.string.connecting_relay
-            is StreamState.Live -> state.phase.statusResource()
+            is StreamState.Live -> state.statusResource()
             else -> R.string.broadcast_notification_live
         })
         val healthText = when (health.level) {
@@ -257,7 +257,7 @@ class BroadcastService : Service() {
             else -> null
         }
         val audioText = if (session.streamer.audioMuted.value) localized.getString(R.string.broadcast_notification_muted) else null
-        val recovering = state is StreamState.Live && !state.canVerifyRemoteMedia()
+        val recovering = state is StreamState.Live && !state.recordingOnly && !state.canVerifyRemoteMedia()
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_broadcast_notification)
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))

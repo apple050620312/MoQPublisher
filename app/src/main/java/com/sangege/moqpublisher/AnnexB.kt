@@ -46,6 +46,19 @@ internal class AnnexB(private val hevc: Boolean) {
     companion object {
         private val startCode = byteArrayOf(0, 0, 0, 1)
 
+        /** MediaMuxer expects start-coded SPS/PPS separately for AVC and one VPS/SPS/PPS block for HEVC. */
+        fun mp4CodecSpecificData(headers: ByteArray, hevc: Boolean): List<ByteArray> {
+            val types = if (hevc) listOf(32, 33, 34) else listOf(7, 8)
+            val nals = split(headers)
+            val parameterSets = types.map { required ->
+                nals.firstOrNull { nal ->
+                    val type = if (hevc) (nal[0].toInt() ushr 1) and 0x3f else nal[0].toInt() and 0x1f
+                    type == required
+                } ?: error("Missing codec parameter set $required")
+            }
+            return if (hevc) listOf(join(parameterSets)) else parameterSets.map { join(listOf(it)) }
+        }
+
         private fun join(nals: List<ByteArray>): ByteArray {
             val out = ByteArray(nals.sumOf { it.size + startCode.size })
             var offset = 0

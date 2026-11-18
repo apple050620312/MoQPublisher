@@ -78,8 +78,9 @@ internal class BroadcastSession(private val application: MoqApplication) {
     }
 
     suspend fun changeVideoMode(front: Boolean, previous: VideoMode, requested: VideoMode): Boolean {
+        val state = streamer.streamState.value
         if (screenCaptureState.value.busy || pendingVideoMode != null ||
-            !streamer.streamState.value.canVerifyRemoteMedia()) return false
+            !(state.canVerifyRemoteMedia() || (state as? StreamState.Live)?.recordingOnly == true)) return false
         val change = LiveVideoModeChange(
             rebuildEncoder = requested.camera.direction != previous.camera.direction ||
                 requested.camera.mirrorFront != previous.camera.mirrorFront

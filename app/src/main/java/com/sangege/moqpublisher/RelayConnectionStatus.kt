@@ -13,10 +13,13 @@ internal fun RelayConnectionPhase.statusResource(): Int = when (this) {
 internal fun StreamState.isActive(): Boolean = this is StreamState.Connecting || this is StreamState.Live
 
 internal fun StreamState.canVerifyRemoteMedia(): Boolean =
-    this is StreamState.Live && (phase == RelayConnectionPhase.CONNECTED || phase == RelayConnectionPhase.PUBLISHING)
+    this is StreamState.Live && !recordingOnly &&
+        (phase == RelayConnectionPhase.CONNECTED || phase == RelayConnectionPhase.PUBLISHING)
+
+internal fun StreamState.Live.statusResource(): Int = if (recordingOnly) R.string.recording_status else phase.statusResource()
 
 internal fun StreamState.Live.acceptsMedia(enqueuedAtNs: Long): Boolean =
-    phase != RelayConnectionPhase.RECONNECTING && (reconnectedAtNs == null || enqueuedAtNs >= reconnectedAtNs)
+    !recordingOnly && phase != RelayConnectionPhase.RECONNECTING && (reconnectedAtNs == null || enqueuedAtNs >= reconnectedAtNs)
 
 internal object RelayConnectionPolicy {
     const val CONNECT_TIMEOUT_MS = 45_000L

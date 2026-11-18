@@ -1,12 +1,14 @@
 package com.sangege.moqpublisher
 
+import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.net.Uri
 import android.os.Environment
-import android.os.SystemClock
 import android.os.StatFs
+import android.os.SystemClock
 import dev.moq.VideoCodec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,367 +16,362 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.util.ArrayDeque
 import java.util.concurrent.ArrayBlockingQueue
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/**
- * App-private MP4 recorder fed by the already encoded video and captured PCM.
- * It owns a separate worker, so a damaged disk or muxer cannot stop MoQ.
- */
-internal class LocalRecordingManager(
-    private val context: android.content.Context,
-    private val diagnostics: AppDiagnostics
-) : AutoCloseable {
+/** One worker owns the MP4 muxer and AAC encoder for the full capture session. */
+internal class LocalRecordingManager(private val context: Context, private val diagnostics: AppDiagnostics) {
     private sealed interface Event {
         data class Video(val frame: RecordingVideoFrame) : Event
         data class Audio(val pcm: ByteArray, val timestampUs: Long, val channels: Int) : Event
-        data object Stop : Event
+        data class Stop(val error: UiMessage?) : Event
     }
 
     private val mutableState = MutableStateFlow(RecordingState())
     val state = mutableState.asStateFlow()
     private val lock = Any()
-    private val events = ArrayBlockingQueue<Event>(240)
-    private var executor: ExecutorService? = null
-    @Volatile private var accepting = false
-    private var worker: RecordingWorker? = null
+    @Volatile private var worker: RecordingWorker? = null
+    val isRecording get() = worker?.accepting == true
+    private val root get() = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir, "recordings")
 
-    fun start(preferences: RecordingPreferences, codec: VideoCodec, audioEnabled: Boolean) {
-        synchronized(lock) {
-            if (accepting) return
-            if (preferences.mode == RecordingMode.STREAM_ONLY) {
-                mutableState.value = RecordingState(mode = preferences.mode)
-                return
-            }
-            accepting = true
-            events.clear()
-            mutableState.value = RecordingState(mode = preferences.mode)
-            val task = RecordingWorker(preferences, codec, audioEnabled)
+    fun start(preferences: RecordingPreferences, audioEnabled: Boolean): Boolean = synchronized(lock) {
+        if (worker != null) return@synchronized false
+        mutableState.value = RecordingState(mode = preferences.mode, lastFile = mutableState.value.lastFile)
+        if (preferences.mode.records) {
+            val task = RecordingWorker(preferences.segmentMinutes * 60_000_000L, audioEnabled)
             worker = task
-            executor = Executors.newSingleThreadExecutor { runnable ->
-                Thread(runnable, "MoqLocalRecorder").apply { isDaemon = true }
-            }.also { it.submit(task) }
-            diagnostics.event("recording_started", mapOf(
-                "mode" to preferences.mode,
-                "segment_minutes" to preferences.segmentMinutes,
-                "audio" to audioEnabled
-            ))
+            try {
+                Thread(task, "MoqLocalRecorder").apply { isDaemon = true }.start()
+            } catch (error: Exception) {
+                worker = null
+                diagnostics.error("recording_worker_start_failed", error)
+                mutableState.value = mutableState.value.copy(error = UiMessage(R.string.recording_error))
+                return@synchronized false
+            }
         }
+        true
     }
 
-    fun offerVideo(frame: RecordingVideoFrame): Boolean {
-        if (!accepting) return false
-        return events.offer(Event.Video(frame))
-            .also { if (!it) diagnostics.event("recording_video_queue_drop") }
-    }
+    fun offerVideo(frame: RecordingVideoFrame): Boolean = worker?.offer(Event.Video(frame)) == true
 
-    fun offerAudio(pcm: ByteArray, timestampUs: Long, channels: Int): Boolean {
-        if (!accepting) return false
-        return events.offer(Event.Audio(pcm, timestampUs, channels))
-            .also { if (!it) diagnostics.event("recording_audio_queue_drop") }
+    fun offerAudio(pcm: ByteArray, timestampUs: Long, channels: Int) {
+        val task = worker ?: return
+        if (task.accepting) task.offer(Event.Audio(pcm.clone(), timestampUs, channels))
     }
 
     fun stop() {
-        val task = synchronized(lock) {
-            if (!accepting) return
-            accepting = false
-            events.offer(Event.Stop)
-            worker
-        }
-        executor?.shutdown()
-        runCatching { executor?.awaitTermination(2, TimeUnit.SECONDS) }
-        if (task != null && task.isRunning) task.close()
-        executor = null
-        worker = null
-        diagnostics.event("recording_stopped")
+        val task = worker ?: return
+        task.stop()
+        if (!task.finished.await(3, TimeUnit.SECONDS)) diagnostics.event("recording_finalize_pending")
     }
 
-    override fun close() = stop()
+    fun recordings(): List<String> = root.listFiles { file ->
+        file.isFile && file.name.startsWith("MoQPublisher-") && file.extension.equals("mp4", true)
+    }.orEmpty().sortedByDescending { it.lastModified() }.map { it.name }
 
-    private inner class RecordingWorker(
-        private val preferences: RecordingPreferences,
-        private val codec: VideoCodec,
-        private val audioExpected: Boolean
-    ) : Runnable {
-        private val root = File(
-            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir,
-            "recordings"
-        )
-        private val segmentDurationUs = preferences.segmentMinutes * 60L * 1_000_000L
+    fun export(name: String, destination: Uri) {
+        require(name in recordings())
+        val directory = root.canonicalFile
+        val source = File(directory, name).canonicalFile
+        require(source.parentFile == directory)
+        source.inputStream().use { input ->
+            checkNotNull(context.contentResolver.openOutputStream(destination, "w")).use { output -> input.copyTo(output) }
+        }
+    }
+
+    private inner class RecordingWorker(private val segmentDurationUs: Long, private val audioExpected: Boolean) : Runnable {
+        // Always leave one slot for Stop, even if capture outpaces the disk.
+        private val events = ArrayBlockingQueue<Event>(241)
+        val finished = CountDownLatch(1)
+        @Volatile var accepting = true
+            private set
         private val pendingVideo = ArrayDeque<RecordingVideoFrame>()
         private val pendingAudio = ArrayDeque<AudioSample>()
-        private var videoFormat: MediaFormat? = null
         private var audioFormat: MediaFormat? = null
-        private var muxer: MediaMuxer? = null
-        private var videoTrack = -1
-        private var audioTrack = -1
-        private var segmentStartUs = Long.MIN_VALUE
-        private var segmentIndex = 0
-        private var lastVideoPts = Long.MIN_VALUE
-        private var lastAudioPts = Long.MIN_VALUE
-        private var bytesWritten = 0L
         private var aac: AacEncoder? = null
-        @Volatile var isRunning = false
+        private var audioChannels = 0
+        private var segment: Segment? = null
+        private var segmentCount = 0
+        private var nextStorageCheck = 0L
+
+        fun offer(event: Event): Boolean = synchronized(events) {
+            if (!accepting) return@synchronized false
+            if (events.remainingCapacity() == 1) {
+                stop(UiMessage(R.string.recording_overloaded))
+                return@synchronized false
+            }
+            events.offer(event)
+        }
+
+        fun stop(error: UiMessage? = null) {
+            synchronized(events) {
+                if (accepting) {
+                    accepting = false
+                    check(events.offer(Event.Stop(error)))
+                }
+            }
+        }
 
         override fun run() {
-            isRunning = true
+            var problem: UiMessage? = null
             try {
                 check(root.isDirectory || root.mkdirs()) { "Cannot create recording directory" }
-                while (true) {
+                checkStorage()
+                diagnostics.event("recording_started", mapOf("segment_duration_us" to segmentDurationUs, "audio" to audioExpected))
+                var recording = true
+                while (recording) {
                     when (val event = events.take()) {
-                        is Event.Video -> processVideo(event.frame)
-                        is Event.Audio -> processAudio(event)
-                        Event.Stop -> break
+                        is Event.Video -> { checkStorage(); processVideo(event.frame) }
+                        is Event.Audio -> { checkStorage(); processAudio(event) }
+                        is Event.Stop -> {
+                            problem = event.error
+                            aac?.finish()
+                            tryOpenSegment(waitForAudio = false)
+                            recording = false
+                        }
                     }
                 }
-            } catch (error: Throwable) {
-                fail(error)
+            } catch (error: Exception) {
+                diagnostics.error("recording_failed", error)
+                problem = (error as? UiException)?.uiMessage ?: problem ?: UiMessage(R.string.recording_error)
             } finally {
-                close()
-                isRunning = false
+                synchronized(events) { accepting = false; events.clear() }
+                try {
+                    finishSegment()
+                } catch (error: Exception) {
+                    diagnostics.error("recording_finalize_failed", error)
+                    if (problem == null) problem = UiMessage(R.string.recording_error)
+                } finally {
+                    aac?.close()
+                    synchronized(lock) {
+                        mutableState.value = mutableState.value.copy(active = false, currentFile = null, error = problem)
+                        if (worker === this) worker = null
+                    }
+                    diagnostics.event("recording_stopped", mapOf("segments" to segmentCount, "error" to problem?.resource))
+                    finished.countDown()
+                }
             }
         }
 
         private fun processVideo(frame: RecordingVideoFrame) {
-            if (!hasStorage()) return
-            if (videoFormat == null && frame.accessUnit.keyframe) {
-                videoFormat = videoFormat(frame)
-                pendingVideo.addLast(frame)
-                trimPending()
-                startMuxerIfReady()
-                return
+            val current = segment
+            if (current != null) {
+                val formatChanged = !frame.matchesFormat(current.first)
+                val elapsed = frame.timestampUs - current.first.timestampUs
+                val audioReady = current.audioTrack < 0 && audioFormat != null && pendingAudio.isNotEmpty()
+                if (!formatChanged && (!frame.accessUnit.keyframe || elapsed < segmentDurationUs && !audioReady)) {
+                    current.writeVideo(frame)
+                    return
+                }
+                finishSegment()
             }
-            if (muxer == null) {
-                pendingVideo.addLast(frame)
-                trimPending()
-                startMuxerIfReady()
-                return
-            }
-            if (frame.accessUnit.keyframe && segmentStartUs != Long.MIN_VALUE &&
-                frame.timestampUs - segmentStartUs >= segmentDurationUs) {
-                closeSegment()
-                startMuxerIfReady()
-            }
-            writeVideo(frame)
+            val first = pendingVideo.peekFirst()
+            if (first != null && (!first.matchesFormat(frame) || pendingVideo.size >= 160)) pendingVideo.clear()
+            if (pendingVideo.isEmpty() && !frame.accessUnit.keyframe) return
+            pendingVideo.addLast(frame)
+            tryOpenSegment()
         }
 
         private fun processAudio(event: Event.Audio) {
-            if (!hasStorage()) return
-            if (aac == null) aac = AacEncoder(event.channels, ::onAudioFormat, ::writeAudio)
-            aac?.encode(event.pcm, event.timestampUs)
-            startMuxerIfReady()
-        }
-
-        private fun onAudioFormat(format: MediaFormat) {
-            audioFormat = format
-            startMuxerIfReady()
-        }
-
-        private fun writeVideo(frame: RecordingVideoFrame) {
-            val target = muxer ?: return
-            if (frame.accessUnit.data.isEmpty()) return
-            val timestamp = frame.timestampUs.coerceAtLeast(lastVideoPts + 1L)
-            val info = MediaCodec.BufferInfo().apply {
-                set(0, frame.accessUnit.data.size, timestamp, if (frame.accessUnit.keyframe)
-                    MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+            if (event.channels != audioChannels) {
+                aac?.let {
+                    it.finish()
+                    it.close()
+                    aac = null
+                    finishSegment()
+                    pendingVideo.clear()
+                    pendingAudio.clear()
+                    audioFormat = null
+                }
+                audioChannels = event.channels
+                aac = AacEncoder(event.channels, { audioFormat = it }, ::writeAudio)
             }
-            target.writeSampleData(videoTrack, ByteBuffer.wrap(frame.accessUnit.data), info)
-            lastVideoPts = timestamp
-            updateBytes()
+            aac?.encode(event.pcm, event.timestampUs)
+            tryOpenSegment()
         }
 
         private fun writeAudio(sample: AudioSample) {
-            val target = muxer ?: run {
+            val current = segment
+            if (current != null && current.audioTrack >= 0) {
+                current.writeAudio(sample)
+            } else {
                 pendingAudio.addLast(sample)
-                while (pendingAudio.size > 80) pendingAudio.removeFirst()
-                return
+                if (pendingAudio.size > 100) pendingAudio.removeFirst()
             }
-            val timestamp = sample.timestampUs.coerceAtLeast(lastAudioPts + 1L)
-            val info = MediaCodec.BufferInfo().apply {
-                set(0, sample.data.size, timestamp, sample.flags)
-            }
-            target.writeSampleData(audioTrack, ByteBuffer.wrap(sample.data), info)
-            lastAudioPts = timestamp
-            updateBytes()
         }
 
-        private fun startMuxerIfReady() {
-            if (muxer != null || videoFormat == null || (audioExpected && audioFormat == null)) return
-            if (!hasStorage()) return
-            val video = videoFormat ?: return
-            val file = nextFile()
-            val created = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            videoTrack = created.addTrack(video)
-            audioTrack = audioFormat?.let(created::addTrack) ?: -1
-            created.start()
-            muxer = created
-            segmentStartUs = Long.MIN_VALUE
-            lastVideoPts = Long.MIN_VALUE
-            lastAudioPts = Long.MIN_VALUE
+        private fun tryOpenSegment(waitForAudio: Boolean = true) {
+            if (segment != null) return
+            val first = pendingVideo.peekFirst() ?: return
+            val last = pendingVideo.peekLast()
+            val audio = audioFormat?.takeIf { pendingAudio.peekLast()?.timestampUs?.let { pts -> pts >= first.timestampUs } == true }
+            if (waitForAudio && audioExpected && audio == null && last.timestampUs - first.timestampUs < 1_200_000L) return
+            val next = Segment.open(root, first, audio)
+            segment = next
+            segmentCount++
             mutableState.value = mutableState.value.copy(
-                active = true, segmentIndex = segmentIndex, currentFile = file.absolutePath,
-                availableBytes = availableBytes()
+                active = true, currentFile = next.destination.absolutePath, segmentIndex = segmentCount, bytesWritten = 0
             )
-            diagnostics.event("recording_segment_started", mapOf("file" to file.name, "segment" to segmentIndex))
-            while (pendingVideo.isNotEmpty()) writePendingVideo(pendingVideo.removeFirst())
-            while (pendingAudio.isNotEmpty()) writeAudio(pendingAudio.removeFirst())
+            diagnostics.event("recording_segment_started", mapOf("file" to next.destination.name, "segment" to segmentCount))
+            while (pendingVideo.isNotEmpty()) next.writeVideo(pendingVideo.removeFirst())
+            if (next.audioTrack >= 0) while (pendingAudio.isNotEmpty()) next.writeAudio(pendingAudio.removeFirst())
         }
 
-        private fun writePendingVideo(frame: RecordingVideoFrame) {
-            if (frame.accessUnit.keyframe && segmentStartUs == Long.MIN_VALUE) segmentStartUs = frame.timestampUs
-            writeVideo(frame)
+        private fun finishSegment() {
+            val current = segment ?: return
+            segment = null
+            current.finish()
+            val file = current.destination
+            mutableState.value = mutableState.value.copy(lastFile = file.absolutePath, currentFile = null)
+            diagnostics.event("recording_segment_closed", mapOf("file" to file.name, "segment" to segmentCount))
         }
 
-        private fun closeSegment() {
-            val file = mutableState.value.currentFile
-            runCatching { muxer?.stop() }
-            runCatching { muxer?.release() }
-            muxer = null
-            if (file != null) mutableState.value = mutableState.value.copy(lastFile = file, currentFile = null)
-            segmentIndex++
-            bytesWritten = 0L
-            diagnostics.event("recording_segment_closed", mapOf("file" to file, "segment" to segmentIndex - 1))
-        }
-
-        fun close() {
-            closeSegment()
-            runCatching { aac?.close() }
-            aac = null
-            mutableState.value = mutableState.value.copy(active = false, currentFile = null)
-        }
-
-        private fun fail(error: Throwable) {
-            diagnostics.error("recording_failed", error)
-            mutableState.value = mutableState.value.copy(error = error.javaClass.simpleName, active = false)
-            accepting = false
-        }
-
-        private fun trimPending() {
-            while (pendingVideo.size > 120) pendingVideo.removeFirst()
-        }
-
-        private fun hasStorage(): Boolean {
-            val available = availableBytes() ?: return true
-            mutableState.value = mutableState.value.copy(availableBytes = available)
-            if (available < MIN_FREE_BYTES) {
-                fail(IllegalStateException("Recording storage is below the safety threshold"))
-                return false
-            }
-            return true
-        }
-
-        private fun availableBytes(): Long? = runCatching { StatFs(root.absolutePath).availableBytes }.getOrNull()
-
-        private fun nextFile(): File = File(root, "MoQPublisher-${System.currentTimeMillis()}-${segmentIndex}.mp4")
-
-        private fun videoFormat(frame: RecordingVideoFrame): MediaFormat {
-            val format = MediaFormat.createVideoFormat(
-                if (frame.codec == VideoCodec.H265) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC,
-                frame.width, frame.height
-            )
-            format.setInteger(MediaFormat.KEY_FRAME_RATE, frame.framerate)
-            format.setByteBuffer("csd-0", ByteBuffer.wrap(requireNotNull(codecConfig(frame.headers, frame.codec, 0))))
-            codecConfig(frame.headers, frame.codec, 1)?.let { format.setByteBuffer("csd-1", ByteBuffer.wrap(it)) }
-            if (frame.codec == VideoCodec.H265) codecConfig(frame.headers, frame.codec, 2)?.let {
-                format.setByteBuffer("csd-2", ByteBuffer.wrap(it))
-            }
-            return format
-        }
-
-        private fun codecConfig(headers: ByteArray, codec: VideoCodec, index: Int): ByteArray? {
-            val types = if (codec == VideoCodec.H265) intArrayOf(32, 33, 34) else intArrayOf(7, 8)
-            val units = splitAnnexB(headers).filter { unit ->
-                val type = if (codec == VideoCodec.H265) (unit.firstOrNull()?.toInt()?.ushr(1) ?: -1) and 0x3f
-                else (unit.firstOrNull()?.toInt() ?: -1) and 0x1f
-                type == types.getOrNull(index)
-            }
-            return units.firstOrNull()
-        }
-
-        private fun splitAnnexB(data: ByteArray): List<ByteArray> {
-            val result = mutableListOf<ByteArray>()
-            var start = -1
-            var codeEnd = 0
-            fun codeAt(index: Int): Int = when {
-                index + 3 <= data.size && data[index] == 0.toByte() && data[index + 1] == 0.toByte() && data[index + 2] == 1.toByte() -> 3
-                index + 4 <= data.size && data[index] == 0.toByte() && data[index + 1] == 0.toByte() &&
-                    data[index + 2] == 0.toByte() && data[index + 3] == 1.toByte() -> 4
-                else -> 0
-            }
-            for (index in data.indices) {
-                val code = codeAt(index)
-                if (code > 0) {
-                    if (start >= 0 && index > codeEnd) result += data.copyOfRange(codeEnd, index)
-                    start = index
-                    codeEnd = index + code
-                }
-            }
-            if (start >= 0 && codeEnd < data.size) result += data.copyOfRange(codeEnd, data.size)
-            return result
-        }
-
-        private fun updateBytes() {
-            val file = mutableState.value.currentFile ?: return
-            bytesWritten = runCatching { File(file).length() }.getOrDefault(bytesWritten)
-            mutableState.value = mutableState.value.copy(bytesWritten = bytesWritten)
+        private fun checkStorage() {
+            val now = SystemClock.elapsedRealtime()
+            if (now < nextStorageCheck) return
+            nextStorageCheck = now + 1_000L
+            val available = StatFs(root.absolutePath).availableBytes
+            mutableState.value = mutableState.value.copy(availableBytes = available, bytesWritten = segment?.bytesWritten ?: 0)
+            if (available < MIN_FREE_BYTES) throw UiException(UiMessage(R.string.recording_storage_low))
         }
     }
 
-    private data class AudioSample(val data: ByteArray, val timestampUs: Long, val flags: Int)
+    private class Segment(
+        private val muxer: MediaMuxer, private val temporary: File, val destination: File,
+        val first: RecordingVideoFrame, private val videoTrack: Int, val audioTrack: Int
+    ) {
+        private val info = MediaCodec.BufferInfo()
+        private var lastVideoPts = -1L
+        private var lastAudioPts = -1L
+        var bytesWritten = 0L
+            private set
 
-    private class AacEncoder(
-        channels: Int,
-        private val onFormat: (MediaFormat) -> Unit,
-        private val onSample: (AudioSample) -> Unit
-    ) : AutoCloseable {
+        fun writeVideo(frame: RecordingVideoFrame) {
+            val flags = if (frame.accessUnit.keyframe) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
+            lastVideoPts = write(videoTrack, frame.accessUnit.data, frame.timestampUs, lastVideoPts, flags)
+        }
+
+        fun writeAudio(sample: AudioSample) {
+            lastAudioPts = write(audioTrack, sample.data, sample.timestampUs, lastAudioPts, 0)
+        }
+
+        private fun write(track: Int, data: ByteArray, timestampUs: Long, lastPts: Long, flags: Int): Long {
+            if (data.isEmpty() || timestampUs < first.timestampUs) return lastPts
+            val pts = (timestampUs - first.timestampUs).coerceAtLeast(lastPts + 1L)
+            info.set(0, data.size, pts, flags)
+            muxer.writeSampleData(track, ByteBuffer.wrap(data), info)
+            bytesWritten += data.size
+            return pts
+        }
+
+        fun finish() {
+            try {
+                try { muxer.stop() } finally { muxer.release() }
+                check(temporary.renameTo(destination)) { "Cannot finalize recording file" }
+            } catch (error: Exception) {
+                // A failed muxer must not advertise its file as a completed MP4.
+                temporary.delete()
+                throw error
+            }
+        }
+
+        companion object {
+            fun open(root: File, first: RecordingVideoFrame, audioFormat: MediaFormat?): Segment {
+                val hevc = first.codec == VideoCodec.H265
+                val mime = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+                val videoFormat = MediaFormat.createVideoFormat(mime, first.width, first.height).apply {
+                    setInteger(MediaFormat.KEY_FRAME_RATE, first.framerate)
+                    AnnexB.mp4CodecSpecificData(first.headers, hevc).forEachIndexed { index, data ->
+                        setByteBuffer("csd-$index", ByteBuffer.wrap(data))
+                    }
+                }
+                val temporary = File.createTempFile("MoQPublisher-${System.currentTimeMillis()}-", ".partial", root)
+                val destination = File(root, "${temporary.nameWithoutExtension}.mp4")
+                var muxer: MediaMuxer? = null
+                try {
+                    val created = MediaMuxer(temporary.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                    muxer = created
+                    val videoTrack = created.addTrack(videoFormat)
+                    val audioTrack = audioFormat?.let(created::addTrack) ?: -1
+                    created.start()
+                    return Segment(created, temporary, destination, first, videoTrack, audioTrack)
+                } catch (error: Exception) {
+                    runCatching { muxer?.release() }
+                    temporary.delete()
+                    throw error
+                }
+            }
+        }
+    }
+
+    private data class AudioSample(val data: ByteArray, val timestampUs: Long)
+
+    private class AacEncoder(channels: Int, val onFormat: (MediaFormat) -> Unit, val onSample: (AudioSample) -> Unit) {
         private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-        private val bufferInfo = MediaCodec.BufferInfo()
-        private var closed = false
+        private val info = MediaCodec.BufferInfo()
+        private var lastTimestampUs = 0L
 
         init {
-            val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AudioSettings.SAMPLE_RATE, channels)
-            format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-            format.setInteger(MediaFormat.KEY_BIT_RATE, if (channels == 1) 96_000 else 128_000)
-            format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, AudioSettings.frameBytes(if (channels == 1) AudioChannel.MONO else AudioChannel.STEREO))
-            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            codec.start()
+            try {
+                val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, AudioSettings.SAMPLE_RATE, channels)
+                format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                format.setInteger(MediaFormat.KEY_BIT_RATE, if (channels == 1) 96_000 else 128_000)
+                codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                codec.start()
+            } catch (error: Exception) {
+                runCatching { codec.release() }
+                throw error
+            }
         }
 
         fun encode(pcm: ByteArray, timestampUs: Long) {
-            if (closed) return
-            val input = codec.dequeueInputBuffer(0)
-            if (input >= 0) {
-                codec.getInputBuffer(input)?.let { buffer ->
-                    buffer.clear()
-                    buffer.put(pcm)
-                    codec.queueInputBuffer(input, 0, pcm.size, timestampUs, 0)
-                }
-            }
+            drain()
+            val input = codec.dequeueInputBuffer(20_000)
+            check(input >= 0) { "AAC encoder did not accept PCM" }
+            val buffer = checkNotNull(codec.getInputBuffer(input))
+            buffer.clear()
+            buffer.put(pcm)
+            lastTimestampUs = timestampUs
+            codec.queueInputBuffer(input, 0, pcm.size, timestampUs, 0)
             drain()
         }
 
-        private fun drain() {
-            while (!closed) {
-                when (val index = codec.dequeueOutputBuffer(bufferInfo, 0)) {
-                    MediaCodec.INFO_TRY_AGAIN_LATER -> return
+        fun finish() {
+            drain()
+            val input = codec.dequeueInputBuffer(50_000)
+            check(input >= 0) { "AAC encoder did not accept end of stream" }
+            codec.queueInputBuffer(input, 0, 0, lastTimestampUs + 20_000L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            val deadline = SystemClock.elapsedRealtime() + 500
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (drain(10_000)) return
+            }
+            error("AAC encoder did not drain end of stream")
+        }
+
+        private fun drain(waitUs: Long = 0L): Boolean {
+            while (true) {
+                when (val index = codec.dequeueOutputBuffer(info, waitUs)) {
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> return false
                     MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> onFormat(codec.outputFormat)
                     else -> if (index >= 0) {
-                        if (bufferInfo.size > 0) codec.getOutputBuffer(index)?.let { buffer ->
-                            val data = ByteArray(bufferInfo.size)
-                            buffer.position(bufferInfo.offset)
-                            buffer.get(data)
-                            onSample(AudioSample(data, bufferInfo.presentationTimeUs, bufferInfo.flags))
+                        try {
+                            if (info.size > 0 && info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0) {
+                                val buffer = checkNotNull(codec.getOutputBuffer(index))
+                                val bytes = ByteArray(info.size)
+                                buffer.position(info.offset)
+                                buffer.get(bytes)
+                                onSample(AudioSample(bytes, info.presentationTimeUs))
+                            }
+                            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return true
+                        } finally {
+                            codec.releaseOutputBuffer(index, false)
                         }
-                        codec.releaseOutputBuffer(index, false)
                     }
                 }
             }
         }
 
-        override fun close() {
-            if (closed) return
-            closed = true
+        fun close() {
             runCatching { codec.stop() }
             runCatching { codec.release() }
         }

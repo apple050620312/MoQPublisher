@@ -338,7 +338,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 onOpenSettings = openSettings
             )
         }
-        if (!coreState.ready && !showSettings) {
+        if (!coreState.ready && recordingPreferences.mode.publishes && !showSettings) {
             Column(
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
                     .systemBarsPadding().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -403,6 +403,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 streamAlertMode = streamAlertMode, onStreamAlertModeChange = viewModel::setStreamAlertMode,
                 streamAlerts = streamAlerts,
                 recordingPreferences = recordingPreferences, recordingState = recordingState,
+                listRecordings = viewModel::recordings, exportRecording = viewModel::exportRecording,
                 onRecordingPreferencesChange = viewModel::setRecordingPreferences,
                 screenCaptureState = screenCaptureState, onRequestScreenCapture = { requestScreenConsent(false) },
                 onStopScreenCapture = viewModel::stopScreenCapture,
@@ -583,9 +584,10 @@ private fun CameraStage(
                 audioCaptureStatus, cameraControls, cameraControlState, onToggleBroadcast, onToggleDetails, onOpenSettings
             )
         } else {
+            val recording by viewModel.recordingPreferences.collectAsState()
             CameraOnlyControls(
                 streamState, configurationError, cameraControls, cameraControlState, onToggleBroadcast,
-                onToggleDetails, onOpenSettings, viewModel::toggleCamera
+                onToggleDetails, onOpenSettings, viewModel::toggleCamera, recordOnly = !recording.mode.publishes
             )
         }
     }
@@ -672,7 +674,8 @@ private fun CameraLandscapeControls(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     CameraVerticalZoomControls(cameraControls, cameraControlState, Modifier.weight(1f))
-                    BroadcastButton(state, onToggleBroadcast, compact = true)
+                    val recording by viewModel.recordingPreferences.collectAsState()
+                    BroadcastButton(state, onToggleBroadcast, compact = true, recordOnly = !recording.mode.publishes)
                 }
             }
         }
@@ -819,7 +822,8 @@ private fun BoxScope.CameraOnlyControls(
     onToggleBroadcast: () -> Unit,
     onToggleDetails: () -> Unit,
     onOpenSettings: () -> Unit,
-    onSwitchCamera: () -> Unit
+    onSwitchCamera: () -> Unit,
+    recordOnly: Boolean
 ) {
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.align(Alignment.TopEnd).safeDrawingPadding().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -856,7 +860,7 @@ private fun BoxScope.CameraOnlyControls(
                 CameraControlBar(cameraControls, cameraControlState, compact = true)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StreamStateBadge(state)
-                    BroadcastButton(state, onToggleBroadcast, Modifier.weight(1f))
+                    BroadcastButton(state, onToggleBroadcast, Modifier.weight(1f), recordOnly = recordOnly)
                 }
             }
         }
@@ -989,13 +993,18 @@ private fun StreamControls(
     when (state) {
         is StreamState.Connecting -> StatusNotice(stringResource(R.string.connecting_relay), loading = true)
         is StreamState.Live -> {
-            if (!state.canVerifyRemoteMedia())
-                StatusNotice(stringResource(state.phase.statusResource()), loading = true)
-            else if (state.phase == RelayConnectionPhase.CONNECTED)
-                StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
-            val deviceHealth by viewModel.deviceHealth.collectAsState()
-            val verification by viewModel.subscriberVerification.collectAsState()
-            LiveStats(state, codec, fps, deviceHealth, verification, viewModel::applyDeviceHealthRecommendation)
+            if (state.recordingOnly) {
+                state.relayFailure?.let { StatusNotice(it.text(), error = true) }
+            } else {
+                if (!state.canVerifyRemoteMedia()) {
+                    StatusNotice(stringResource(state.phase.statusResource()), loading = true)
+                } else if (state.phase == RelayConnectionPhase.CONNECTED) {
+                    StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
+                }
+                val deviceHealth by viewModel.deviceHealth.collectAsState()
+                val verification by viewModel.subscriberVerification.collectAsState()
+                LiveStats(state, codec, fps, deviceHealth, verification, viewModel::applyDeviceHealthRecommendation)
+            }
         }
         else -> SettingCard(stringResource(R.string.effective_url)) {
             Text(relay, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1020,7 +1029,10 @@ private fun StreamControls(
             }
         }
     }
-    if (showBroadcastButton) BroadcastButton(state, onToggleBroadcast)
+    if (showBroadcastButton) {
+        val recording by viewModel.recordingPreferences.collectAsState()
+        BroadcastButton(state, onToggleBroadcast, recordOnly = !recording.mode.publishes)
+    }
     DiagnosticsExportButton(viewModel, Modifier.fillMaxWidth().heightIn(min = 48.dp))
 }
 
@@ -1134,12 +1146,16 @@ private fun LiveStats(
 }
 
 @Composable
-private fun BroadcastButton(state: StreamState, onClick: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
+private fun BroadcastButton(
+    state: StreamState, onClick: () -> Unit, modifier: Modifier = Modifier, compact: Boolean = false, recordOnly: Boolean = false
+) {
     val live = state is StreamState.Live
     val connecting = state is StreamState.Connecting
     val label = stringResource(when {
+        state is StreamState.Live && state.recordingOnly -> R.string.stop_recording
         live -> R.string.stop_broadcast
         connecting -> R.string.cancel_connection
+        recordOnly -> R.string.start_recording
         else -> R.string.start_broadcast
     })
     val actionIcon: @Composable () -> Unit = {
@@ -1152,7 +1168,7 @@ private fun BroadcastButton(state: StreamState, onClick: () -> Unit, modifier: M
         val status = stringResource(when (state) {
             StreamState.Idle -> R.string.status_idle
             StreamState.Connecting -> R.string.status_connecting
-            is StreamState.Live -> state.phase.statusResource()
+            is StreamState.Live -> state.statusResource()
             is StreamState.Error -> R.string.status_error
         })
         FilledIconButton(
@@ -1239,6 +1255,7 @@ internal fun SettingsScreen(
     streamAlertMode: StreamAlertMode, onStreamAlertModeChange: (StreamAlertMode) -> Unit,
     streamAlerts: StreamAlertState,
     recordingPreferences: RecordingPreferences, recordingState: RecordingState,
+    listRecordings: suspend () -> List<String>, exportRecording: suspend (String, Uri) -> Unit,
     onRecordingPreferencesChange: (RecordingMode, Int) -> Unit,
     screenCaptureState: ScreenCaptureState, onRequestScreenCapture: () -> Unit, onStopScreenCapture: () -> Unit,
     preferScreen: Boolean, onPreferScreenChange: (Boolean) -> Unit,
@@ -1329,7 +1346,9 @@ internal fun SettingsScreen(
             cameraLenses, cameraVideoSettings, onApplyCameraVideoSettings, cameraControls, cameraControlState,
             !changingVideoMode && (editable || canVerifySubscription)
         )
-        RecordingSettingsCard(recordingPreferences, recordingState, onRecordingPreferencesChange, editable)
+        RecordingSettingsCard(
+            recordingPreferences, recordingState, onRecordingPreferencesChange, editable, listRecordings, exportRecording
+        )
         ScreenCaptureSettingsCard(
             screenCaptureState, onRequestScreenCapture, onStopScreenCapture, isStreaming,
             preferScreen, onPreferScreenChange, capturePlaybackAudio, onCapturePlaybackAudioChange, enableAudio
@@ -1441,15 +1460,36 @@ private fun RecordingSettingsCard(
     preferences: RecordingPreferences,
     state: RecordingState,
     onChange: (RecordingMode, Int) -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    listRecordings: suspend () -> List<String>,
+    exportRecording: suspend (String, Uri) -> Unit
 ) {
     var mode by remember(preferences) { mutableStateOf(preferences.mode) }
     var segment by remember(preferences) { mutableIntStateOf(preferences.segmentMinutes) }
+    val files by produceState(initialValue = emptyList<String>(), state.lastFile) { value = listRecordings() }
+    var selectedFile by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingExport by rememberSaveable { mutableStateOf<String?>(null) }
+    var exportStatus by remember { mutableStateOf<UiMessage?>(null) }
+    val scope = rememberCoroutineScope()
+    val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("video/mp4")) { uri ->
+        val source = pendingExport
+        pendingExport = null
+        if (source != null && uri != null) scope.launch {
+            exportStatus = try {
+                exportRecording(source, uri)
+                UiMessage(R.string.recording_exported)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                UiMessage(R.string.recording_export_failed)
+            }
+        }
+    }
     SettingCard(stringResource(R.string.recording_settings), stringResource(R.string.recording_settings_hint)) {
         SelectionDropdown(stringResource(R.string.recording_mode), mode,
             RecordingMode.entries.map { it to stringResource(it.label) },
             { mode = it }, enabled)
-        if (mode == RecordingMode.STREAM_AND_RECORD) {
+        if (mode.records) {
             SelectionDropdown(stringResource(R.string.recording_segment), segment,
                 RecordingPreferences.SEGMENT_OPTIONS.map { it to stringResource(R.string.recording_minutes, it) },
                 { segment = it }, enabled)
@@ -1464,7 +1504,22 @@ private fun RecordingSettingsCard(
         state.availableBytes?.let { available ->
             SupportingText(stringResource(R.string.recording_storage, available / (1024 * 1024)))
         }
-        state.error?.let { SupportingText(stringResource(R.string.recording_error, it)) }
+        state.error?.let { SupportingText(it.text()) }
+        val file = selectedFile?.takeIf { it in files } ?: files.firstOrNull()
+        if (file != null) {
+            SelectionDropdown(stringResource(R.string.recording_file), file, files.map { it to it }, { selectedFile = it })
+            OutlinedButton(onClick = {
+                pendingExport = file
+                exportStatus = null
+                try {
+                    saveFile.launch(file)
+                } catch (_: ActivityNotFoundException) {
+                    pendingExport = null
+                    exportStatus = UiMessage(R.string.recording_export_failed)
+                }
+            }, enabled = pendingExport == null) { Text(stringResource(R.string.recording_export)) }
+        }
+        exportStatus?.let { SupportingText(it.text()) }
     }
 }
 
@@ -1904,7 +1959,7 @@ fun StreamStateBadge(state: StreamState) {
             Text(stringResource(when (state) {
                 StreamState.Idle -> R.string.status_idle
                 StreamState.Connecting -> R.string.status_connecting
-                is StreamState.Live -> state.phase.statusResource()
+                is StreamState.Live -> state.statusResource()
                 is StreamState.Error -> R.string.status_error
             }), style = MaterialTheme.typography.labelMedium)
         }
