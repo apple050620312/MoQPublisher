@@ -2,8 +2,10 @@ package com.sangege.moqpublisher
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.graphics.Bitmap
 import android.os.PersistableBundle
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -12,11 +14,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.MultiFormatWriter
 
 @Composable
 internal fun CloudflareProfilePanel(
@@ -28,6 +33,8 @@ internal fun CloudflareProfilePanel(
     val obsClipboardLabel = stringResource(R.string.copy_obs_info)
     var pendingAction by remember { mutableStateOf<String?>(null) }
     var copied by remember(profile) { mutableStateOf(false) }
+    var showQr by remember(profile) { mutableStateOf(false) }
+    var showGuide by remember(profile) { mutableStateOf<String?>(null) }
     Text(stringResource(R.string.cloudflare_draft_18), style = MaterialTheme.typography.titleSmall)
     Text(stringResource(R.string.cloudflare_compatibility), style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -57,6 +64,17 @@ internal fun CloudflareProfilePanel(
     OutlinedButton(onClick = { pendingAction = "obs" }, enabled = profile.canShare(), modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
         Text(stringResource(R.string.copy_obs_info))
+    }
+    OutlinedButton(onClick = { showQr = true }, enabled = profile.canShare(), modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.show_qr_code))
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { showGuide = "browser" }, enabled = profile.canShare(), modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.browser_source_guide))
+        }
+        TextButton(onClick = { showGuide = "native" }, enabled = profile.canShare(), modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.native_moq_source_guide))
+        }
     }
     if (copied) Text(stringResource(R.string.subscription_copied), color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodySmall)
@@ -101,6 +119,43 @@ internal fun CloudflareProfilePanel(
                 }
             }) { Text(stringResource(R.string.confirm_subscribe_only_action)) }
         }, dismissButton = { TextButton(onClick = { pendingAction = null }) { Text(stringResource(R.string.cancel)) } })
+    if (showQr && profile.canShare()) {
+        val url = profile.watchUrl()
+        val bitmap = remember(url) { runCatching { qrBitmap(url, 640) }.getOrNull() }
+        AlertDialog(
+            onDismissRequest = { showQr = false },
+            title = { Text(stringResource(R.string.qr_code_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    bitmap?.let { Image(it.asImageBitmap(), contentDescription = stringResource(R.string.qr_code_content_description), modifier = Modifier.fillMaxWidth()) }
+                    Text(stringResource(R.string.qr_code_hint), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showQr = false }) { Text(stringResource(R.string.close)) } }
+        )
+    }
+    showGuide?.let { guide ->
+        if (profile.canShare()) AlertDialog(
+            onDismissRequest = { showGuide = null },
+            title = { Text(stringResource(if (guide == "browser") R.string.browser_source_guide else R.string.native_moq_source_guide)) },
+            text = {
+                Text(stringResource(
+                    if (guide == "browser") R.string.browser_source_guide_text else R.string.native_moq_source_guide_text,
+                    profile.watchUrl(), profile.subscribeUrl(), profile.broadcastName.trim()
+                ))
+            },
+            confirmButton = { TextButton(onClick = { showGuide = null }) { Text(stringResource(R.string.close)) } }
+        )
+    }
+}
+
+private fun qrBitmap(value: String, size: Int): Bitmap {
+    val matrix = MultiFormatWriter().encode(value, BarcodeFormat.QR_CODE, size, size)
+    return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also { bitmap ->
+        for (x in 0 until size) for (y in 0 until size) {
+            bitmap.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+        }
+    }
 }
 
 @Composable

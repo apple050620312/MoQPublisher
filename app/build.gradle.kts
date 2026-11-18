@@ -18,8 +18,8 @@ android {
         applicationId = "com.sangege.moqpublisher"
         minSdk = 24
         targetSdk = 37
-        versionCode = 34
-        versionName = "1.0.33"
+        versionCode = 35
+        versionName = "1.0.34"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.moq)
+    implementation("com.google.zxing:core:3.5.3")
     // The updater probes the downloaded native ABI before UniFFI initializes it.
     implementation("net.java.dev.jna:jna:5.19.1@aar")
     implementation(libs.kotlinx.coroutines.core)

@@ -26,6 +26,7 @@ flowchart LR
 ## 元件責任
 
 - `MainActivity` 負責 Compose 畫面、權限、設定與更新提示。它觀察 `MainViewModel` 的 `StateFlow`。
+- `CloudflareProfilePanel` 只在獨立 Subscribe Token 與 Hang namespace 可用時產生觀看 QR Code，並提供 Browser Source／原生 MoQ 指引。QR Code 與複製操作都使用 Subscribe URL，不會把 Publish Token 放入觀看資訊。
 - `MainViewModel` 保存使用者設定、驗證開播參數，並把啟停請求交給 application-owned `BroadcastSession`。
 - `StreamPresetRepository` 將自訂畫質 Preset 與 Relay Profile 分開持久化。`StreamPresetPolicy` 驗證視訊／音訊設定，`DeviceCapabilityRepository` 在套用前確認硬體 surface encoder，套用時由 `MainViewModel` 一次更新設定並重新同步 CameraX。
 - `BroadcastPreflight` 在開播前以 PASS、WARNING、ERROR 分級檢查權限、設備能力、Relay、網路、核心與裝置狀態，結果寫入 `MainViewModel` 的 diagnostics。

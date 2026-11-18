@@ -264,6 +264,15 @@
     <string name="cloudflare_obs_info">Relay:\n%1$s\n\nBroadcast:\n%2$s</string>
     <string name="copy_watch_url">Copy viewing URL</string>
     <string name="copy_obs_info">Copy OBS subscription info</string>
+    <string name="show_qr_code">Show QR code</string>
+    <string name="qr_code_title">Viewing QR code</string>
+    <string name="qr_code_content_description">QR code for the viewing URL</string>
+    <string name="qr_code_hint">Scan this code on a viewing device. The code contains the Subscribe token and should be shared only with trusted viewers.</string>
+    <string name="browser_source_guide">Browser Source guide</string>
+    <string name="native_moq_source_guide">Native MoQ guide</string>
+    <string name="browser_source_guide_text">In OBS, add a Browser Source and open this URL.&#10;&#10;%1$s&#10;&#10;Set the source size to the published video dimensions, then verify audio in OBS. The URL contains the Subscribe token.</string>
+    <string name="native_moq_source_guide_text">Use an MoQ Draft 18 source with this Subscribe endpoint.&#10;&#10;Subscribe URL: %1$s&#10;Relay: %2$s&#10;Broadcast: %3$s&#10;&#10;Use the source\'s native video and Opus audio tracks. The in-app decoder check confirms media delivery, but it does not replace OBS verification.</string>
+    <string name="close">Close</string>
     <string name="subscription_copied">Subscription information copied</string>
     <string name="confirm_subscribe_only">Confirm Subscribe-only Token</string>
     <string name="confirm_subscribe_only_hint">Confirm that this token has only Subscribe permission. Cloudflare tokens are opaque: the app cannot infer their permissions. The viewing URL and OBS info include this token.</string>

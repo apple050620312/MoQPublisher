@@ -1224,3 +1224,8 @@ P0 > P1 > P2
 - `v1.0.33`：完成第 20 項完整離線 APK。新增 `offline` build type，從官方 `moq-ffi` AAR 產生 arm64-v8a、armeabi-v7a 與 x86_64 core assets。`MoqCoreManager` 會在啟動時驗證 ELF、ABI、SHA-256 與 UniFFI symbols，通過後安裝到 app-private 目錄並設定 library override；一般 Release／Compact 流程維持核心下載與既有 fallback。
 - 驗證：`assembleOffline`、offline APK v2 簽章與 zipalign 通過；尚未連接 Android 實機確認離線 native library loading、三種 ABI 與首次啟動流程。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.33` GitHub Release。Release APK SHA-256 為 `fca743b8df0dc4d354030fdce9bf9468012c297af0d6d4054520c341ccccdfa6`，Offline APK SHA-256 為 `ed7f017f9f6a95395ff28907d824232a4f39c63e3807f0fda079c6a9de1d8e27`。
+
+### 2026-11-19
+
+- `v1.0.34`：完成第 24 項可在 App 內驗證的 OBS 連接體驗。Cloudflare 設定新增 Subscribe-only 觀看 QR Code、Browser Source 指引與原生 MoQ Draft 18 指引。QR Code 僅使用觀看 URL，Publish Token 不會進入 QR Code 或 OBS 資訊。
+- 驗證：`testDebugUnitTest` 194 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android、OBS、瀏覽器或 Relay 實測接收能力。

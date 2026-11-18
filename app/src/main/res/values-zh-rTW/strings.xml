@@ -249,6 +249,15 @@
     <string name="cloudflare_obs_info">Relay：\n%1$s\n\nBroadcast：\n%2$s</string>
     <string name="copy_watch_url">複製觀看網址</string>
     <string name="copy_obs_info">複製 OBS 訂閱資訊</string>
+    <string name="show_qr_code">顯示 QR Code</string>
+    <string name="qr_code_title">觀看 QR Code</string>
+    <string name="qr_code_content_description">觀看網址 QR Code</string>
+    <string name="qr_code_hint">請在觀看裝置掃描。QR Code 包含 Subscribe Token，請只分享給信任的觀看者。</string>
+    <string name="browser_source_guide">Browser Source 指引</string>
+    <string name="native_moq_source_guide">原生 MoQ 指引</string>
+    <string name="browser_source_guide_text">在 OBS 新增 Browser Source，開啟以下網址。&#10;&#10;%1$s&#10;&#10;將來源尺寸設為發布的視訊尺寸，再在 OBS 確認音訊。網址包含 Subscribe Token。</string>
+    <string name="native_moq_source_guide_text">使用支援 MoQ Draft 18 的來源，填入以下 Subscribe 端點。&#10;&#10;Subscribe URL：%1$s&#10;Relay：%2$s&#10;Broadcast：%3$s&#10;&#10;使用來源提供的視訊與 Opus 音訊 Track。App 內解碼檢查可確認媒體送達，但仍需在 OBS 實際確認。</string>
+    <string name="close">關閉</string>
     <string name="subscription_copied">已複製訂閱資訊</string>
     <string name="confirm_subscribe_only">確認使用僅訂閱 Token</string>
     <string name="confirm_subscribe_only_hint">請確認這組 Token 只有 Subscribe 權限。Cloudflare Token 是不透明字串，App 無法推斷權限。觀看網址與 OBS 資訊會包含這組 Token。</string>
