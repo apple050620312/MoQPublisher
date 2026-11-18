@@ -13,6 +13,14 @@
 7. 暫時在測試 Profile 使用過期或權限不符的測試 JWT／Token，分別驗證發布失敗與訂閱失敗。核對 App 的錯誤分類及重試是否終止，隨後恢復有效憑證重測。Cloudflare 的 Subscribe 權限失敗時也檢查既有 Publisher 能否繼續推流。
 8. 直播中從 720p30 切到相機支援的 1080p 模式，確認 OBS 解碼尺寸、實際 FPS、音訊時間線和 Relay session。另用已知被該手機 MediaCodec 拒絕的組合驗證回復舊畫質，保留 `live_video_mode_result` 與 OBS 錄影。
 
+### 指定編碼組合的實機測試
+
+使用與測試 APK 簽章一致的 Debug APK。依診斷中的編碼輸出方向與尺寸替換參數，在同一手機上各執行 H.264 和 H.265，並為每個回報過的尺寸及幀率留一筆結果。這項測試會用 GPU 送測試影格至 App 的實際 MediaCodec 路徑，確認所選模式能產生包含必要參數集的關鍵影格。
+
+```powershell
+.\gradlew.bat connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.sangege.moqpublisher.SurfaceEncoderModeTest -Pandroid.testInstrumentationRunnerArguments.moqCodec=H265 -Pandroid.testInstrumentationRunnerArguments.moqWidth=1280 -Pandroid.testInstrumentationRunnerArguments.moqHeight=720 -Pandroid.testInstrumentationRunnerArguments.moqFps=30
+```
+
 ## 螢幕來源
 
 1. 停播時在「視訊來源」選「螢幕」。在 Android 設定撤銷相機權限，保留錄音權限。以兩種已知可用的 codec 開播，授權後確認 OBS 收到螢幕和選定的音訊。拒絕授權應留在待機狀態。
@@ -41,6 +49,12 @@
 2. 以同一配對碼嘗試 `mute` 和 `stop`，確認回應 `read_only`，手機繼續推流。撤銷後再次查詢，確認舊配對無法連線。
 3. 重新啟用「允許控制」，檢查靜音、解除靜音、有效碼率、超出限制的碼率、訂閱驗證及停止。確認本機狀態與 OBS 音畫。迅速重開一場直播後，以舊配對碼再測停止，核對新場次持續。
 4. 在支援區域網路權限的 Android 版本測試拒絕與同意授權。切換手機網路後確認原配對無法控制新位址。記錄手機、Android、電腦 Python 版本與結果，保存紀錄前移除配對碼。
+
+## 直播疊圖
+
+1. 匯入透明 PNG，加入繁體中文文字、浮水印、時鐘及直播計時。分別在直向和橫向模式確認選定角落、縮放、不透明度與完整顯示。
+2. 用 H.264 和 H.265 各開一場直播並錄影。比對手機預覽、OBS 及 MP4 的構圖。直播中逐項修改、開關疊圖與切換鏡頭，核對計時、對焦和 Relay 連線。
+3. 切換到螢幕來源，旋轉手機並改變分享視窗大小。核對疊圖相對於輸出畫面的角落，並比較開啟及關閉時的 GPU 提交時間與輸出 FPS。
 
 ## OBS 相容性矩陣
 

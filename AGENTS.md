@@ -1333,3 +1333,10 @@ P0 > P1 > P2
 - `v1.0.48` 加入第 27 項的區域網路遠端存取。手機可授權查看或控制並在場次內撤銷。桌面用戶端驗證配對碼內的 TLS 憑證指紋，可查詢狀態、靜音、調整碼率、啟動訂閱驗證及停止。
 - 223 項 JVM 測試、Release／Offline APK、Android Test APK、lint（0 errors）、UTF-8／XML、版本、ABI、簽章和 ZIP 對齊通過。桌面用戶端通過本機 TLS 成功與拒絕錯誤憑證測試。尚未連接 Android 手機執行配對、區域網路權限、命令及撤銷驗收。
 - Release APK SHA-256 為 `e70c0b7d9de0e2e8b77ac51cad5c57faaad4d47dd755535424b2223bd46b4880`，Offline APK 為 `d9e73ed35d8872fe2fd7363048b6796255b142374421ea75a78b84ff912f28bd`。
+
+### 2026-11-19
+
+- `v1.0.49` 加入第 29 項直播疊圖。支援匯入標誌、文字、浮水印、時鐘及計時，可調整角落、縮放和不透明度，並在直播中切換。疊圖使用共用 EGL 管線，碼率或鏡頭變更後仍以輸出構圖定位。
+- Android 測試 APK 增加可指定 H.264／H.265、尺寸和 FPS 的 MediaCodec 測試。它使用 GPU 提交測試畫面，檢查編碼器能否產生含參數集的關鍵影格。
+- 226 項 JVM 測試通過。Release、Offline 與 Android Test APK 建置完成，lint 為 0 errors。UTF-8／XML、版本、ABI、簽章及 ZIP 對齊通過。原回報手機尚未連接，指定畫質、疊圖 GPU 輸出及長時間直播仍待實機驗收。
+- Release APK SHA-256 為 `c667791cb09d0bcd2e7fedbc462e61d11017e27366e9338eee02313ebb3f830f`，Offline APK 為 `c7b80f18fc3aaaa425f226f12064d781b71c0fcc7c5f80511f6880334d908657`。

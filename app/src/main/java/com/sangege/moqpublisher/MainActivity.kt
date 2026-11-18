@@ -430,6 +430,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 remoteControlState = remoteControlState, remoteAvailable = streamState is StreamState.Live,
                 onEnableRemote = enableRemote,
                 onRevokeRemote = viewModel::revokeRemote, onCopyPairing = viewModel::copyRemotePairingCode,
+                overlay = viewModel.overlay,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1283,6 +1284,7 @@ internal fun SettingsScreen(
     capturePlaybackAudio: Boolean, onCapturePlaybackAudioChange: (Boolean) -> Unit,
     remoteControlState: RemoteControlState, remoteAvailable: Boolean, onEnableRemote: (RemoteAccess) -> Unit,
     onRevokeRemote: () -> Unit, onCopyPairing: () -> Boolean,
+    overlay: StreamOverlay,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1380,6 +1382,7 @@ internal fun SettingsScreen(
             remoteControlState, remoteAvailable, screenCaptureState.busy,
             onEnableRemote, onRevokeRemote, onCopyPairing
         )
+        OverlaySettingsCard(overlay)
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
             SelectionDropdown(
@@ -1592,6 +1595,82 @@ private fun ScreenCaptureSettingsCard(
         }
         state.error?.let { SupportingText(it.text()) }
     }
+}
+
+@Composable
+private fun OverlaySettingsCard(overlay: StreamOverlay) {
+    val settings by overlay.settings.collectAsState()
+    val logoAvailable by overlay.logoAvailable.collectAsState()
+    val problem by overlay.problem.collectAsState()
+    var draft by remember(settings) { mutableStateOf(settings) }
+    var showEditor by rememberSaveable { mutableStateOf(false) }
+    val openLogo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) overlay.importLogo(uri)
+    }
+
+    SettingCard(stringResource(R.string.overlay_settings)) {
+        SettingSwitch(
+            stringResource(R.string.overlay_visible), stringResource(R.string.overlay_visible_hint),
+            settings.visible, { visible ->
+                val next = settings.copy(visible = visible)
+                overlay.save(next)
+            }, true
+        )
+        TextButton(onClick = { showEditor = !showEditor }) {
+            Text(stringResource(if (showEditor) R.string.overlay_hide_settings else R.string.overlay_edit))
+        }
+        if (showEditor) {
+            OutlinedTextField(
+                value = draft.text, onValueChange = { draft = draft.copy(text = it) },
+                label = { Text(stringResource(R.string.overlay_text)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = draft.watermark, onValueChange = { draft = draft.copy(watermark = it) },
+                label = { Text(stringResource(R.string.overlay_watermark)) },
+                singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = draft.clock, onClick = { draft = draft.copy(clock = !draft.clock) },
+                    label = { Text(stringResource(R.string.overlay_clock)) })
+                FilterChip(selected = draft.timer, onClick = { draft = draft.copy(timer = !draft.timer) },
+                    label = { Text(stringResource(R.string.overlay_timer)) })
+                if (logoAvailable) FilterChip(selected = draft.logo, onClick = { draft = draft.copy(logo = !draft.logo) },
+                    label = { Text(stringResource(R.string.overlay_logo)) })
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { openLogo.launch(arrayOf("image/png", "image/jpeg", "image/webp")) }) {
+                    Text(stringResource(R.string.overlay_choose_logo))
+                }
+                if (logoAvailable) TextButton(onClick = overlay::removeLogo) { Text(stringResource(R.string.overlay_remove_logo)) }
+            }
+            SelectionDropdown(
+                stringResource(R.string.overlay_position), draft.position,
+                OverlayPosition.entries.map { it to stringResource(it.label) },
+                { draft = draft.copy(position = it) }
+            )
+            OverlayPercentSlider(R.string.overlay_scale, draft.scale, 50f..200f) { draft = draft.copy(scale = it) }
+            OverlayPercentSlider(R.string.overlay_opacity, draft.opacity, 10f..100f) { draft = draft.copy(opacity = it) }
+            Button(onClick = { overlay.save(draft) }, enabled = draft != settings) {
+                Text(stringResource(R.string.overlay_apply))
+            }
+        }
+        problem?.let { SupportingText(it.text()) }
+    }
+}
+
+@Composable
+private fun OverlayPercentSlider(title: Int, amount: Int, limits: ClosedFloatingPointRange<Float>, changed: (Int) -> Unit) {
+    val label = stringResource(title)
+    val percent = stringResource(R.string.percent_value, amount)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.labelLarge)
+        Text(percent, style = MaterialTheme.typography.labelLarge)
+    }
+    Slider(
+        value = amount.toFloat(), onValueChange = { changed(it.roundToInt()) }, valueRange = limits,
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = label; stateDescription = percent }
+    )
 }
 
 @Composable

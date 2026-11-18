@@ -20,6 +20,7 @@ import java.nio.ByteOrder
 import java.util.concurrent.Executor
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /** One persistent camera input, independent preview and codec outputs, no CPU pixel readback. */
 internal class CameraSurfaceRenderer(
@@ -27,7 +28,8 @@ internal class CameraSurfaceRenderer(
     private val frameTimestamp: (Long) -> Long?,
     private val onFailure: (Throwable) -> Unit,
     private val onSubmitted: (Long) -> Unit = {},
-    private val onTransform: (Map<String, Any?>) -> Unit = {}
+    private val onTransform: (Map<String, Any?>) -> Unit = {},
+    private val onOverlayError: (Throwable) -> Unit
 ) {
     private val thread = HandlerThread("MoqCameraGpu", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
     private val handler = Handler(thread.looper)
@@ -42,6 +44,9 @@ internal class CameraSurfaceRenderer(
     private var preview: Output? = null
     private var previewTexture: SurfaceTexture? = null
     private var codec: Output? = null
+    private val overlay = OverlayTexture()
+    private val pendingOverlay = AtomicReference<OverlayFrame?>()
+    @Volatile private var previewMapping: PreviewMapping? = null
     private var encoding = false
     private var previewVisible = false
     private var previewRotation = 0
@@ -67,6 +72,53 @@ internal class CameraSurfaceRenderer(
         var mapping: FloatArray? = null
         var mappedWidth = 0; var mappedHeight = 0; var sourceWidth = 0; var sourceHeight = 0
         var rotation = -1; var mirror = false
+        private var viewport = FrameViewport(0, 0, width, height)
+        private var fitWidth = 0
+        private var fitHeight = 0
+        private var fullWidth = width
+        private var fullHeight = height
+
+        fun viewport(compositionWidth: Int, compositionHeight: Int): FrameViewport {
+            if (width != fullWidth || height != fullHeight || compositionWidth != fitWidth || compositionHeight != fitHeight) {
+                fullWidth = width
+                fullHeight = height
+                fitWidth = compositionWidth
+                fitHeight = compositionHeight
+                viewport = if (compositionWidth > 0) FrameViewport.fit(width, height, compositionWidth, compositionHeight)
+                    else FrameViewport(0, 0, width, height)
+            }
+            return viewport
+        }
+    }
+
+    private data class PreviewMapping(
+        val viewport: FrameViewport, val surfaceHeight: Int, val sourceWidth: Int, val sourceHeight: Int,
+        val rotation: Int, val mirror: Boolean
+    ) {
+        fun point(x: Float, y: Float): CameraGeometry.Point {
+            val fromTop = surfaceHeight - viewport.y - viewport.height
+            return CameraGeometry.meteringPoint(x - viewport.x, y - fromTop, viewport.width, viewport.height,
+                sourceWidth, sourceHeight, rotation, mirror)
+        }
+    }
+
+    fun updateOverlay(frame: OverlayFrame) {
+        pendingOverlay.getAndSet(frame)?.bitmap?.recycle()
+    }
+
+    fun previewPoint(x: Float, y: Float): CameraGeometry.Point? = previewMapping?.point(x, y)
+
+    private fun refreshOverlay() {
+        val frame = pendingOverlay.getAndSet(null) ?: return
+        try {
+            makeCurrent(pbuffer)
+            overlay.upload(frame)
+        } catch (error: Exception) {
+            overlay.clear()
+            onOverlayError(error)
+        } finally {
+            frame.bitmap?.recycle()
+        }
     }
 
     fun provide(
@@ -121,8 +173,9 @@ internal class CameraSurfaceRenderer(
                             if (next.hasFrame) {
                                 next.texture.getTransformMatrix(textureMatrix)
                                 val timestamp = System.nanoTime()
+                                refreshOverlay()
                                 renderEncoded(next, timestamp, rotation = 0)
-                                renderPreview(next, timestamp, rotation = 0, mirror = false)
+                                renderPreview(next, timestamp, rotation = 0, mirror = false, encodedRotation = 0)
                             }
                             val now = SystemClock.uptimeMillis()
                             frameDeadline += intervalMs
@@ -215,6 +268,7 @@ internal class CameraSurfaceRenderer(
     fun detachPreview(texture: SurfaceTexture) { handler.post {
         if (previewTexture === texture) {
             releaseOutput(preview); preview = null; previewTexture = null
+            previewMapping = null
         }
         texture.release()
     } }
@@ -250,11 +304,14 @@ internal class CameraSurfaceRenderer(
                     "normalized_texture" to normalized.toList()))
             }
             normalized.copyInto(textureMatrix)
+            refreshOverlay()
+            var encodedRotation: Int? = null
             if (encoding) {
                 val rotation = CameraCapturePolicy.outputRotation(source.width, source.height, encodeRotation, source.direction)
+                if (overlay.visible) encodedRotation = rotation
                 renderEncoded(source, timestamp, rotation)
             }
-            renderPreview(source, timestamp, previewRotation, mirrorPreview)
+            renderPreview(source, timestamp, previewRotation, mirrorPreview, encodedRotation)
         } catch (error: Throwable) {
             when (source.modeChange?.result?.value) {
                 LiveVideoModeChange.Result.PENDING -> source.modeChange.finish(false)
@@ -264,11 +321,20 @@ internal class CameraSurfaceRenderer(
         }
     }
 
-    private fun renderPreview(source: Input, timestamp: Long, rotation: Int, mirror: Boolean) {
+    private fun renderPreview(source: Input, timestamp: Long, rotation: Int, mirror: Boolean, encodedRotation: Int?) {
         val target = preview ?: return
         if (!previewVisible || timestamp >= lastPreviewNs && timestamp - lastPreviewNs < 30_000_000L) return
         if (runCatching {
-                draw(source, target, rotation, mirror)
+                val rotated = encodedRotation != null && encodedRotation % 180 != 0
+                val viewport = if (encodedRotation == null) target.viewport(0, 0) else target.viewport(
+                    if (rotated) source.height else source.width, if (rotated) source.width else source.height
+                )
+                val frameRotation = encodedRotation ?: rotation
+                val frameMirror = if (encodedRotation == null) mirror else source.mirrored
+                draw(source, target, frameRotation, frameMirror, viewport)
+                previewMapping = if (source.screenToken == null) PreviewMapping(
+                    viewport, target.height, source.width, source.height, frameRotation, frameMirror
+                ) else null
                 EGL14.eglSwapBuffers(display, target.egl)
             }.getOrDefault(false)) {
             lastPreviewNs = timestamp
@@ -276,6 +342,7 @@ internal class CameraSurfaceRenderer(
             runCatching { releaseOutput(target) }
             preview = null
             previewTexture = null
+            previewMapping = null
         }
     }
 
@@ -291,21 +358,25 @@ internal class CameraSurfaceRenderer(
         val target = codec ?: return
         val pts = frameTimestamp(timestamp) ?: return
         val submittedAt = System.nanoTime()
-        draw(source, target, rotation, source.mirrored)
+        draw(source, target, rotation, source.mirrored, target.viewport(0, 0))
         check(EGLExt.eglPresentationTimeANDROID(display, target.egl, pts))
         check(EGL14.eglSwapBuffers(display, target.egl)) { "Encoder surface swap failed" }
         onSubmitted(System.nanoTime() - submittedAt)
     }
 
-    private fun draw(source: Input, target: Output, rotation: Int, mirror: Boolean) {
+    private fun draw(source: Input, target: Output, rotation: Int, mirror: Boolean, viewport: FrameViewport) {
         makeCurrent(target.egl)
-        GLES20.glViewport(0, 0, target.width, target.height)
+        if (viewport.width != target.width || viewport.height != target.height) {
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        }
+        GLES20.glViewport(viewport.x, viewport.y, viewport.width, viewport.height)
         // Rotate/crop UVs in image coordinates, never the already transformed GL quad.
         // Using one mapping for display, encoding and metering keeps aspect and direction aligned.
-        if (target.mapping == null || target.mappedWidth != target.width || target.mappedHeight != target.height ||
+        if (target.mapping == null || target.mappedWidth != viewport.width || target.mappedHeight != viewport.height ||
             target.sourceWidth != source.width || target.sourceHeight != source.height || target.rotation != rotation || target.mirror != mirror) {
-            target.mapping = CameraGeometry.textureCoordinates(source.width, source.height, target.width, target.height, rotation, mirror)
-            target.mappedWidth = target.width; target.mappedHeight = target.height
+            target.mapping = CameraGeometry.textureCoordinates(source.width, source.height, viewport.width, viewport.height, rotation, mirror)
+            target.mappedWidth = viewport.width; target.mappedHeight = viewport.height
             target.sourceWidth = source.width; target.sourceHeight = source.height
             target.rotation = rotation; target.mirror = mirror
             onTransform(mapOf("output" to if (target.ownsSurface) "preview" else "encoder",
@@ -327,6 +398,7 @@ internal class CameraSurfaceRenderer(
         GLES20.glVertexAttribPointer(position, 2, GLES20.GL_FLOAT, false, 0, vertices)
         GLES20.glVertexAttribPointer(coordinate, 2, GLES20.GL_FLOAT, false, 0, coordinates)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        overlay.draw(vertices, viewport)
     }
 
     private fun initialize() {
@@ -346,21 +418,10 @@ internal class CameraSurfaceRenderer(
         check(context != EGL14.EGL_NO_CONTEXT)
         pbuffer = EGL14.eglCreatePbufferSurface(display, config, intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0)
         makeCurrent(pbuffer)
-        program = GLES20.glCreateProgram()
-        fun shader(type: Int, source: String): Int {
-            val id = GLES20.glCreateShader(type)
-            GLES20.glShaderSource(id, source); GLES20.glCompileShader(id)
-            val ok = IntArray(1); GLES20.glGetShaderiv(id, GLES20.GL_COMPILE_STATUS, ok, 0)
-            check(ok[0] != 0) { GLES20.glGetShaderInfoLog(id) }
-            GLES20.glAttachShader(program, id)
-            return id
-        }
-        val vertex = shader(GLES20.GL_VERTEX_SHADER, "attribute vec4 position; attribute vec4 coordinate; uniform mat4 geometry; uniform mat4 transform; varying vec2 uv; void main(){gl_Position=geometry*position; uv=(transform*coordinate).xy;}")
-        val fragment = shader(GLES20.GL_FRAGMENT_SHADER, "#extension GL_OES_EGL_image_external : require\nprecision mediump float; uniform samplerExternalOES image; varying vec2 uv; void main(){gl_FragColor=texture2D(image,uv);}")
-        GLES20.glLinkProgram(program)
-        val ok = IntArray(1); GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, ok, 0)
-        check(ok[0] != 0) { GLES20.glGetProgramInfoLog(program) }
-        GLES20.glDeleteShader(vertex); GLES20.glDeleteShader(fragment)
+        program = linkRenderProgram(
+            "attribute vec4 position; attribute vec4 coordinate; uniform mat4 geometry; uniform mat4 transform; varying vec2 uv; void main(){gl_Position=geometry*position; uv=(transform*coordinate).xy;}",
+            "#extension GL_OES_EGL_image_external : require\nprecision mediump float; uniform samplerExternalOES image; varying vec2 uv; void main(){gl_FragColor=texture2D(image,uv);}"
+        )
     }
 
     private fun output(surface: Surface, width: Int, height: Int, ownsSurface: Boolean): Output {

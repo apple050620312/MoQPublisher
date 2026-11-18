@@ -151,6 +151,7 @@ class MainViewModel internal constructor(
     val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
     val recordingState: StateFlow<RecordingState> = streamer.recordingState
     val screenCaptureState: StateFlow<ScreenCaptureState> = session.screenCaptureState
+    internal val overlay = session.overlay
     val remoteControlState: StateFlow<RemoteControlState> = session.remote.state
 
     fun enableRemote(access: RemoteAccess, generation: Long) = session.enableRemote(access, generation)

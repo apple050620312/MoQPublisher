@@ -40,6 +40,7 @@ flowchart LR
 - 推流並錄影時先啟用擷取，再連線 Relay。網路切換只重建 Relay 與上傳執行緒，保留 MediaCodec、AudioRecord、錄影 worker 與時間基準。只錄影使用相同的擷取和 MP4 路徑。
 - 錄影 worker 在關鍵影格開始分段，編碼世代、尺寸、編碼參數及聲道改變時完成原段。它獨立管理 AAC 輸出、佇列、儲存空間及 MP4 封裝。完成並關閉封裝後才把檔案列為可匯出。
 - 遠端存取由 BroadcastSession 啟用，在區域 IPv4 位址接受單一 TLS 用戶端。每次配對使用新的 Android Keystore 證書和隨機憑證。桌面程式先比對證書 SHA-256 才送憑證。手機可授權查看或控制，控制命令同時檢查配對授權與場次。撤銷或停止場次會關閉監聽與用戶端連線。
+- 疊圖在背景產生位圖，靜態內容只在設定改變時更新，時鐘與計時每秒更新。EGL 執行緒上傳最新位圖並把同一紋理合成到預覽與編碼輸出。開啟疊圖時預覽顯示完整輸出構圖，觸控對焦依實際預覽位置換算。
 - `SurfaceVideoEncoder` 和 `HardwareVideoEncoder` 封裝 MediaCodec。正常路徑使用 surface encoder，輸出在 callback 執行緒排入有上限的 `VideoPublishQueue`。
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
 - `LocalRecordingManager` 使用獨立 bounded queue 和 worker，沿用已編碼的 H.264／H.265 影像，另外以 AAC encoder 將 PCM 轉成 MP4 音訊。每個分段從關鍵影格開始，磁碟低於安全門檻或 MediaMuxer 失敗只停止錄影，並保留 MoQ 直播。

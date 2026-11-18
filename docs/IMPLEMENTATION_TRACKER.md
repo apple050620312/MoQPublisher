@@ -18,7 +18,7 @@
 | 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要裝置實測切換增益時的實際聽感 |
 | 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 聲道與削波顯示需要不同硬體麥克風實測 |
 | 14 | 音訊輸入設備 | AudioRecord 使用預設裝置 | AudioManager 列表、偏好與拔除處理 | IMPLEMENTED | `AudioInputDeviceTest` 與 AudioRecord 編譯驗證 | 未驗證 | 需要多種實體音訊裝置實測路由與拔除回退 |
-| 15 | 硬體編碼相容性 | DeviceCapabilityRepository 提供能力摘要，開播保留選定 codec、解析度與 FPS，MediaCodec 啟動失敗時保存候選編碼器錯誤 | 驗證廠商能力回報、實際開播與同 codec 的降級選項 | IMPLEMENTED | `BroadcastPreflightTest`、`SettingsPersistenceTest` 已編譯、release compile、lint | BLOCKED | 原回報手機未連接，CameraX 會依相機模式取得實際解析度 |
+| 15 | 硬體編碼相容性 | DeviceCapabilityRepository 提供能力摘要；預檢允許實際啟動，選用參數遭拒時以同 codec、尺寸與 FPS 重試 | 以原手機逐一驗證原有畫質組合 | IMPLEMENTED | `BroadcastPreflightTest`、`SurfaceEncoderModeTest` 已編譯、Release build、lint | BLOCKED | 原回報手機未連接，CameraX 依支援模式取得實際擷取尺寸 |
 | 16 | 直播中調整畫質 | 最低／目標／最高碼率與 ABR 可整組套用。解析度／FPS 重建 CameraX 與影片 Track，收到新的關鍵影格才保存 | 驗證成功套用、編碼器拒絕、逾時復原及接收端解碼 | IMPLEMENTED | `VideoBitrateControlTest`、`LiveVideoModeChangeTest`、`VideoPublishQueueTest` | BLOCKED | 動態碼率與畫質組合由 MediaCodec 啟動及實際輸出確認 |
 | 17 | 直播儀表板 | 簡易模式顯示直播時間、幀率、傳輸碼率與網路，專業模式顯示實際編碼器、尺寸、丟幀、佇列、RTT、電量、熱度與解碼結果 | 實機驗證版面與連續資料 | IMPLEMENTED | metrics tests、release compile | 未驗證 | 遠端解碼資料來自 App 的獨立訂閱連線 |
 | 18 | 裝置健康／溫度 | 電量、充電、熱度、記憶體、省電、App CPU 用量與編碼表現進入監控。使用者可採用降碼率建議 | 真實溫度及負載驗收 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | CPU 壓力由 App 使用率及實際編碼 FPS 判斷 |
@@ -32,7 +32,7 @@
 | 26 | 多鏡頭／防手震 | 依 Camera2 能力列出邏輯／實體鏡頭、套用支援的防手震、對焦與曝光鎖定 | 驗證多鏡頭切換後的實際尺寸、時間戳及 OBS 解碼 | IMPLEMENTED | camera policy／geometry tests | 未驗證 | 聯繫手機廠商提供的 Camera2 能力判斷鏡頭是否可用 |
 | 27 | 遠端監控／控制 | 區域網路 TLS 配對、僅查看或控制、會話內撤銷、靜音／碼率／驗證／停止 | 實機配對及 Android 區域網路授權驗收 | IMPLEMENTED | 桌面 TLS 本機驗證、Android build、lint | 未驗證 | 需 Wi-Fi／乙太網路 IPv4；桌面使用隨專案的 Python 用戶端 |
 | 28 | Android 螢幕直播 | 開播前選擇相機或螢幕，直播中可切換，MediaProjection／共用 EGL、旋轉、Android 10+ 播放音訊 | 實測授權、旋轉、視窗大小與投影撤銷 | IMPLEMENTED | `ScreenCaptureSizeTest`、`BroadcastPreflightTest`、Android build、lint | 未驗證 | 播放音訊受來源 App 的擷取政策限制 |
-| 29 | 直播疊圖 | GPU renderer 可作為整合點 | overlay model、clock、logo、opacity、同步預覽 | NOT_STARTED | — | 未驗證 | — |
+| 29 | 直播疊圖 | 共用 EGL 合成標誌、文字、浮水印、時鐘、計時；可調角落、縮放及不透明度 | 比對手機預覽、錄影與 OBS 畫面及 GPU 成本 | IMPLEMENTED | `OverlayGeometryTest`、Release build、lint | 未驗證 | 文字與圖片只在內容更新時產生新紋理，動態內容每秒更新 |
 | 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道以獨立程序輸出 Enhanced RTMP 與 SRT | 真實 Relay、Android 與 OBS 相容性及長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 實測 H.264／H.265＋Opus 雙路解碼 | 未驗證 | 需支援對應影音格式的接收端 |
 | 31 | 輸出方向／進階相機 | 固定方向、手動直向／橫向、前置輸出鏡像，直播中更新 GPU 與影片 Track | Android 旋轉、輸出切換與 OBS 解碼 | IMPLEMENTED | geometry、camera policy、mode change tests | 未驗證 | 需確認兩種 codec 在 OBS 的新畫質 Track |
 

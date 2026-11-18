@@ -30,6 +30,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
         cameraError.value = UiMessage(R.string.error_camera)
         streamer.cameraFailed(error)
     }
+    val overlay = StreamOverlay(application, prefs, diagnostics, camera::updateOverlay)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     var pendingStart: BroadcastConfiguration? = null
         private set
@@ -49,6 +50,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
     val screenCaptureState = screenCapture.state
 
     init {
+        camera.onOverlayError = overlay::renderFailed
         streamer.beforeVideoEncoderClose = camera::detachEncoder
         streamer.requestCameraRecovery = camera::recover
         var previousConnection: Pair<ULong, Long>? = null
@@ -75,6 +77,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
                     previousVideoGeneration = null
                 }
                 application.core.setStreaming(active)
+                overlay.setCapturing(active)
                 updateCameraSource(active)
             }
         }

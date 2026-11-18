@@ -64,11 +64,13 @@ internal class CameraCaptureEngine(
     private var frozenRotation = 0
     private var streamDisplayRotation = Surface.ROTATION_0
     private var actuallyFront = false
+    @Volatile var onOverlayError: (Throwable) -> Unit = {}
     private val renderer = CameraSurfaceRenderer(
         streamer::prepareVideoSurface, streamer::onSurfaceFrame,
         { error -> executor.execute { diagnostics.error("camera_surface_error", error); onError(error) } },
         { elapsed -> diagnostics.metrics.timing(StreamMetrics.Stage.GPU_SUBMIT, elapsed) },
-        { fields -> diagnostics.event("camera_transform", fields) }
+        { fields -> diagnostics.event("camera_transform", fields) },
+        { error -> onOverlayError(error) }
     )
 
     init { lifecycle.currentState = Lifecycle.State.CREATED }
@@ -123,6 +125,7 @@ internal class CameraCaptureEngine(
 
     fun detachPreview(texture: SurfaceTexture) = renderer.detachPreview(texture)
     fun detachEncoder() = renderer.detachEncoder()
+    fun updateOverlay(frame: OverlayFrame) = renderer.updateOverlay(frame)
 
     /** Rebinds the CameraX surface while the application-owned stream remains live. */
     fun recover() {
@@ -262,7 +265,9 @@ internal class CameraCaptureEngine(
                     }
                 }.also { bound.cameraInfo.cameraState.observe(this, it) }
                 controls.attach(bound, this, { x, y ->
-                    val point = CameraGeometry.meteringPoint(x, y, viewWidth, viewHeight, sourceWidth, sourceHeight, rotation(), actuallyFront)
+                    val point = renderer.previewPoint(x, y) ?: CameraGeometry.meteringPoint(
+                        x, y, viewWidth, viewHeight, sourceWidth, sourceHeight, rotation(), actuallyFront
+                    )
                     SurfaceOrientedMeteringPointFactory(1f, 1f, useCase).createPoint(point.x, point.y)
                 }, { viewWidth / 2f to viewHeight / 2f }, executor)
                 val actual = useCase.resolutionInfo?.resolution
