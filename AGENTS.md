@@ -1267,3 +1267,10 @@ P0 > P1 > P2
 - `v1.0.40` 強化第 02／03／04／05／07 項。網路切換及原生重連清除過期影音，維持直播時間基準，等待新關鍵影格再更新發布狀態。GPU、音訊擷取及音訊發布分別監測，持續十秒低 FPS 才提示。相同元件的反覆故障沿用重試額度，切線及停止會等待恢復工作結束。
 - 補第 01／10 項的 Relay 與 OBS 操作流程、2／4 小時壓測矩陣和診斷 ZIP 合併工具，並以重疊與缺漏的樣本驗證輸出。
 - 驗證 `testDebugUnitTest` 208 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest` 及 `lintRelease` 通過，lint 0 errors。Android 實機、真實 Relay 和 OBS 端對端播放尚未驗證。
+- 已驗證 `v1.0.40` APK 簽章與 zipalign，並以本機腳本上傳。Release 與 Offline APK SHA-256 分別為 `7389f1c826cd760e081028c278f53901e95d25b17f7f190d08475be231de00b6`、`c825ebc0fda5fe4d0fc0ca29e42909910aed85f140fe94de8181cf775f750936`，四個 GitHub Release 資產的雜湊均與本機一致。
+
+### 2026-11-19
+
+- `v1.0.41` 補強第 08／09 項。Cloudflare 遠端檢查細分失敗階段，支援用獨立 Subscribe-only Token 檢查空名稱，並在重連或編碼器重建後清除舊結果。背景警報依優先級及冷卻時間送出，設定頁可選聲音、震動或靜音，並查看警報歷史。
+- 第 21 項的本機發佈腳本加入 Release lint、APK 版本／簽章／對齊和 GitHub 資產雜湊驗證。正式簽章仍需正式金鑰。
+- 驗證 `testDebugUnitTest` 209 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 errors）、UTF-8/XML 與 `publish-release.ps1 -ValidateOnly -SkipTests` 通過。實機聲音／震動、真實 Cloudflare 訂閱解碼和 OBS 播放尚未驗證。

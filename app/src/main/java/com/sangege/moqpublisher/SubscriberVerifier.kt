@@ -7,12 +7,29 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import uniffi.moq.MoqException
+import uniffi.moq.MoqMediaFrame
 
 sealed interface SubscriberVerification {
     data object Idle : SubscriberVerification
     data class Running(val stage: UiMessage) : SubscriberVerification
     data class Passed(val codec: String, val width: Int, val height: Int, val frames: Int, val audio: Boolean) : SubscriberVerification
     data class Failed(val message: UiMessage) : SubscriberVerification
+}
+
+internal enum class SubscriberVerificationStage(val progress: Int, val failure: Int) {
+    CONNECTION(R.string.verify_connecting, R.string.verify_connection_failed),
+    AUTHENTICATION(R.string.verify_authentication, R.string.verify_authentication_failed),
+    CATALOG(R.string.verify_catalog, R.string.verify_catalog_failed),
+    SUBSCRIPTION(R.string.verify_subscription_stage, R.string.verify_track_failed),
+    MEDIA(R.string.verify_receiving, R.string.verify_media_failed),
+    VIDEO_DECODE(R.string.verify_video_decode, R.string.verify_video_decode_failed),
+    AUDIO_DECODE(R.string.verify_audio_decode, R.string.verify_audio_decode_failed);
+
+    fun failureMessage(error: Throwable): UiMessage = when {
+        error is MoqException && error.isAuth -> UiMessage(R.string.verify_authentication_failed)
+        error is UiException -> error.uiMessage
+        else -> UiMessage(failure)
+    }
 }
 
 /** An independent, subscribe-token-only remote session: never the publisher's loopback origin. */
@@ -30,36 +47,49 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
     }
 
     @Synchronized fun verify(profile: RelayProfile, expectAudio: Boolean) {
-        if (!profile.canShare() || job?.isActive == true) return
+        if (!profile.canSubscribe() || job?.isActive == true) return
         val ticket = ++generation
         DiagnosticRedactor.protectSecrets(profile.publishToken, profile.subscribeToken)
         mutableState.value = SubscriberVerification.Running(UiMessage(R.string.verify_connecting))
         job = scope.launch {
+            var stage = SubscriberVerificationStage.CONNECTION
             try {
-                val result = withTimeout(30_000) { receiveAndDecode(profile, expectAudio, ticket) }
+                val result = withTimeout(30_000) {
+                    receiveAndDecode(profile, expectAudio) { next ->
+                        stage = next
+                        report(ticket, SubscriberVerification.Running(UiMessage(next.progress)))
+                        diagnostics.event("subscriber_verification_stage", mapOf("provider" to profile.provider, "stage" to next))
+                    }
+                }
                 currentCoroutineContext().ensureActive()
                 report(ticket, result)
                 diagnostics.event("subscriber_decode_verified", mapOf("codec" to result.codec,
                     "width" to result.width, "height" to result.height, "frames" to result.frames, "audio" to result.audio))
             } catch (error: TimeoutCancellationException) {
-                report(ticket, SubscriberVerification.Failed(UiMessage(R.string.verify_timeout)))
-                diagnostics.event("subscriber_verification_timeout")
+                report(ticket, SubscriberVerification.Failed(stage.failureMessage(error)))
+                diagnostics.event("subscriber_verification_timeout", mapOf("stage" to stage))
             } catch (error: CancellationException) { throw error }
             catch (error: Throwable) {
-                diagnostics.error("subscriber_verification_failed", error)
-                report(ticket, SubscriberVerification.Failed(if (error is MoqException && error.isAuth)
-                    UiMessage(R.string.error_relay_auth) else (error as? UiException)?.uiMessage ?: UiMessage(R.string.verify_failed)))
+                val failedStage = if (error is MoqException && error.isAuth) SubscriberVerificationStage.AUTHENTICATION else stage
+                diagnostics.event("subscriber_verification_failed", mapOf("stage" to failedStage, "error" to error.toString()))
+                report(ticket, SubscriberVerification.Failed(failedStage.failureMessage(error)))
             }
         }
     }
 
-    private suspend fun receiveAndDecode(profile: RelayProfile, expectAudio: Boolean, ticket: Long): SubscriberVerification.Passed = coroutineScope {
+    private suspend fun receiveAndDecode(
+        profile: RelayProfile,
+        expectAudio: Boolean,
+        progress: (SubscriberVerificationStage) -> Unit
+    ): SubscriberVerification.Passed {
         // Distinct origins also make it impossible to mistake a local publication for remote delivery.
         OriginProducer(OriginConfig()).use { emptyPublish ->
             OriginProducer(OriginConfig()).use { remoteSubscribe ->
                 Moq.connect(profile.subscribeUrl(), tlsVerify = true, reconnect = false, websocketEnabled = false,
                     publish = emptyPublish, subscribe = remoteSubscribe).use { moq ->
-                    report(ticket, SubscriberVerification.Running(UiMessage(R.string.verify_catalog)))
+                    // The SDK completes authentication as part of connect().
+                    progress(SubscriberVerificationStage.AUTHENTICATION)
+                    progress(SubscriberVerificationStage.CATALOG)
                     moq.announcedBroadcast(profile.broadcastName.trim()).use { announcement ->
                         try {
                             announcement.available().use { broadcast ->
@@ -69,26 +99,32 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
                                         while (catalog.video.isEmpty() || (expectAudio && catalog.audio.isEmpty()))
                                             catalog = checkNotNull(catalogs.next())
                                         val video = catalog.video.entries.first()
-                                        report(ticket, SubscriberVerification.Running(UiMessage(R.string.verify_decoding)))
-                                        val decodedAudio = async {
-                                            if (!expectAudio) false else {
-                                                val audio = catalog.audio.entries.first()
-                                                broadcast.decodeAudio(audio.key, audio.value,
-                                                    AudioDecoderOutput(AudioSampleFormat.S16, maxAgeUs = 500_000u)).use { pcm ->
-                                                    try {
-                                                        repeat(3) { check(checkNotNull(pcm.next()).data.isNotEmpty()) }
-                                                        true
-                                                    } finally { pcm.cancel() }
-                                                }
-                                            }
-                                        }
-                                        broadcast.subscribeMedia(video.key, video.value.container,
+                                        progress(SubscriberVerificationStage.SUBSCRIPTION)
+                                        val decodedVideo = broadcast.subscribeMedia(video.key, video.value.container,
                                             Subscription(maxAgeUs = 500_000u)).use { frames ->
                                             try {
-                                                val decoded = decodeVideo(video.value, frames)
-                                                SubscriberVerification.Passed(video.value.codec, decoded.first, decoded.second, 3, decodedAudio.await())
+                                                progress(SubscriberVerificationStage.MEDIA)
+                                                var firstKeyframe: MoqMediaFrame
+                                                do {
+                                                    firstKeyframe = checkNotNull(frames.next()) { "Remote video ended before a keyframe arrived" }
+                                                } while (firstKeyframe.payload.isEmpty() || !firstKeyframe.keyframe)
+                                                progress(SubscriberVerificationStage.VIDEO_DECODE)
+                                                decodeVideo(video.value, frames, firstKeyframe)
                                             } finally { frames.cancel() }
                                         }
+                                        if (expectAudio) {
+                                            progress(SubscriberVerificationStage.AUDIO_DECODE)
+                                            val audio = catalog.audio.entries.first()
+                                            broadcast.decodeAudio(audio.key, audio.value,
+                                                AudioDecoderOutput(AudioSampleFormat.S16, maxAgeUs = 500_000u)).use { pcm ->
+                                                try {
+                                                    repeat(3) { check(checkNotNull(pcm.next()).data.isNotEmpty()) }
+                                                } finally { pcm.cancel() }
+                                            }
+                                        }
+                                        return SubscriberVerification.Passed(
+                                            video.value.codec, decodedVideo.first, decodedVideo.second, 3, expectAudio
+                                        )
                                     } finally { catalogs.cancel() }
                                 }
                             }
@@ -100,7 +136,7 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
     }
 
     /** Prove output frames exist, rather than accepting catalog, SUBSCRIBE_OK or compressed bytes. */
-    private suspend fun decodeVideo(video: Video, frames: MediaConsumer): Pair<Int, Int> {
+    private suspend fun decodeVideo(video: Video, frames: MediaConsumer, keyframe: MoqMediaFrame): Pair<Int, Int> {
         val mime = when {
             video.codec.startsWith("avc") -> MediaFormat.MIMETYPE_VIDEO_AVC
             video.codec.startsWith("hev") || video.codec.startsWith("hvc") -> MediaFormat.MIMETYPE_VIDEO_HEVC
@@ -111,15 +147,11 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
         try {
             decoder.configure(MediaFormat.createVideoFormat(mime, dimensions.width.toInt(), dimensions.height.toInt()), null, null, 0)
             decoder.start()
-            var started = false
+            var frame = keyframe
             var decoded = 0
             val info = MediaCodec.BufferInfo()
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val frame = checkNotNull(frames.next()) { "Remote video ended before decode verification" }
-                if (frame.payload.isEmpty()) continue
-                if (!started && !frame.keyframe) continue
-                started = true
                 val bytes = VideoDecoderInput.annexB(frame.payload)
                 var input = decoder.dequeueInputBuffer(10_000)
                 while (input < 0) {
@@ -136,6 +168,9 @@ internal class SubscriberVerifier(private val diagnostics: AppDiagnostics) {
                     val output = decoder.outputFormat
                     return output.getInteger(MediaFormat.KEY_WIDTH) to output.getInteger(MediaFormat.KEY_HEIGHT)
                 }
+                do {
+                    frame = checkNotNull(frames.next()) { "Remote video ended before decode verification" }
+                } while (frame.payload.isEmpty())
             }
         } finally { runCatching { decoder.stop() }; decoder.release() }
     }

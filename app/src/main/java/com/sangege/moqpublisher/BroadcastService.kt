@@ -11,9 +11,12 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -48,8 +51,7 @@ class BroadcastService : Service() {
         }
         scope.launch {
             session.streamer.healthState.collect { health ->
-                if (started && health.level != StreamHealthLevel.IDLE &&
-                    health.level != StreamHealthLevel.HEALTHY) {
+                if (started && notificationsEnabled() && session.streamer.streamState.value.isActive()) {
                     getSystemService(NotificationManager::class.java).notify(
                         NOTIFICATION_ID, notification(session.streamer.streamState.value, health)
                     )
@@ -64,9 +66,32 @@ class BroadcastService : Service() {
         }
         scope.launch {
             session.streamer.audioMuted.collect {
-                if (started) getSystemService(NotificationManager::class.java).notify(
+                if (started && notificationsEnabled()) getSystemService(NotificationManager::class.java).notify(
                     NOTIFICATION_ID, notification(session.streamer.streamState.value, session.streamer.healthState.value)
                 )
+            }
+        }
+        scope.launch {
+            var seenEventId = session.streamer.alertState.value.history.lastOrNull()?.id ?: 0L
+            var lastNotificationMs = -ALERT_COOLDOWN_MS
+            var lastPriority = -1
+            session.streamer.alertState.collect { state ->
+                val newEvents = state.history.filter { it.id > seenEventId }
+                if (newEvents.isEmpty()) return@collect
+                seenEventId = newEvents.last().id
+                if (!started || !notificationsEnabled()) return@collect
+                val alert = newEvents.filter { it.active }.maxByOrNull { it.type.priority }
+                val manager = getSystemService(NotificationManager::class.java)
+                if (alert == null) {
+                    if (state.active.isEmpty()) manager.cancel(ALERT_NOTIFICATION_ID)
+                    return@collect
+                }
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastNotificationMs < ALERT_COOLDOWN_MS && alert.type.priority <= lastPriority) return@collect
+                lastNotificationMs = now
+                lastPriority = alert.type.priority
+                runCatching { manager.notify(ALERT_NOTIFICATION_ID, alertNotification(alert.type, manager)) }
+                    .onFailure { session.diagnostics.error("stream_alert_notification_failed", it) }
             }
         }
     }
@@ -126,6 +151,41 @@ class BroadcastService : Service() {
         return createConfigurationContext(Configuration(resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) })
     }
 
+    private fun notificationsEnabled(): Boolean =
+        Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun alertNotification(type: StreamAlertType, manager: NotificationManager): Notification {
+        val localized = localizedContext()
+        val prefs = getSharedPreferences("moq_stream_prefs", Context.MODE_PRIVATE)
+        val mode = StreamAlertMode.fromPreference(prefs.getString(StreamAlertMode.PREFERENCE, null))
+        val channel = "broadcast-alert-${mode.name.lowercase(Locale.ROOT)}"
+        val sound = if (mode.sound) RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) else null
+        if (Build.VERSION.SDK_INT >= 26) {
+            manager.createNotificationChannel(NotificationChannel(
+                channel, localized.getString(R.string.alert_channel, localized.getString(mode.label)),
+                if (mode == StreamAlertMode.SILENT) NotificationManager.IMPORTANCE_LOW else NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                setSound(sound, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build())
+                enableVibration(mode.vibration)
+            })
+        }
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Builder(this, channel)
+            .setSmallIcon(R.drawable.ic_broadcast_notification)
+            .setContentTitle(localized.getString(R.string.alert_title))
+            .setContentText(localized.getString(type.label))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(localized.getString(type.label)))
+            .setPriority(if (mode == StreamAlertMode.SILENT) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT)
+            .setDefaults(if (mode.vibration) Notification.DEFAULT_VIBRATE else 0)
+            .setSound(sound)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setTimeoutAfter(20_000L)
+            .build()
+    }
+
     private fun notification(state: StreamState, health: StreamHealthSnapshot = StreamHealthSnapshot()): Notification {
         val localized = localizedContext()
         val manager = getSystemService(NotificationManager::class.java)
@@ -165,6 +225,8 @@ class BroadcastService : Service() {
     companion object {
         private const val CHANNEL = "broadcast"
         private const val NOTIFICATION_ID = 101
+        private const val ALERT_NOTIFICATION_ID = 102
+        private const val ALERT_COOLDOWN_MS = 10_000L
         private const val ACTION_STOP = "com.sangege.moqpublisher.STOP_BROADCAST"
         private const val EXTRA_GENERATION = "broadcast_generation"
         internal fun start(context: Context) {

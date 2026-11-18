@@ -83,7 +83,8 @@ sealed interface StreamState {
         val reconnectCount: Long = 0,
         val endpointDraft: Int? = null,
         val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN,
-        val reconnectedAtNs: Long? = null
+        val reconnectedAtNs: Long? = null,
+        val videoTrackGeneration: Int? = null
     ) : StreamState
     data class Error(val message: UiMessage) : StreamState
 }
@@ -108,6 +109,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private val _healthState = MutableStateFlow(StreamHealthSnapshot())
     val healthState: StateFlow<StreamHealthSnapshot> = _healthState.asStateFlow()
     private val alertManager = StreamAlertManager()
+    private val alertLock = Any()
     private val _alertState = MutableStateFlow(StreamAlertState())
     val alertState: StateFlow<StreamAlertState> = _alertState.asStateFlow()
 
@@ -235,7 +237,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             transitionLifecycle(BroadcastLifecycleEvent.StartRequested)
             _streamState.value = StreamState.Connecting
             _healthState.value = healthEvaluator.reset()
-            _alertState.value = alertManager.reset()
+            publishAlerts { reset(System.currentTimeMillis()) }
             broadcastJob = scope.launch(start = CoroutineStart.ATOMIC) {
                 runBroadcast(
                     relayUrl = relayUrl.trim(),
@@ -296,6 +298,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             monitor?.close()
             handovers.close()
             cleanup()
+            _healthState.value = healthEvaluator.reset()
+            publishAlerts { clearActive(System.currentTimeMillis()) }
             transitionLifecycle(BroadcastLifecycleEvent.CleanedUp)
             synchronized(lifecycleLock) {
                 if (terminalState is StreamState.Idle) _streamState.value = StreamState.Idle
@@ -380,7 +384,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             ConnectionStatus.CONNECTED -> if (lastStatus != null || epoch != initialEpoch) {
                                 markRelayReconnected(epoch, reconnectBase)
                             }
-                            ConnectionStatus.DISCONNECTED, ConnectionStatus.MIGRATING -> markRelayReconnecting()
+                            ConnectionStatus.DISCONNECTED -> {
+                                markRelayReconnecting()
+                                recordAlert(StreamAlertType.RELAY_DISCONNECTED)
+                            }
+                            ConnectionStatus.MIGRATING -> markRelayReconnecting()
                         }
                         lastStatus = status
                         lastEpoch = epoch
@@ -515,6 +523,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         transitionLifecycle(BroadcastLifecycleEvent.SubscriberDemand(requested))
                         if (previous is StreamState.Live && previous.phase == RelayConnectionPhase.RECOVERING) {
                             diagnostics.event("relay_video_resumed", mapOf("epoch" to updated.epoch, "reconnects" to updated.reconnectCount))
+                            scope.launch {
+                                if (videoPublishQueue === queue && isBroadcasting.get()) recordAlert(StreamAlertType.RECOVERY_SUCCEEDED)
+                            }
                         }
                     }
                 }
@@ -923,6 +934,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 ))
                 if (!attempt.allowed) {
                     diagnostics.error("media_recovery_exhausted", request.error)
+                    recordAlert(StreamAlertType.RECOVERY_FAILED)
                     failBroadcast(request.error, request.fallbackMessage)
                     return
                 }
@@ -1002,6 +1014,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             videoGeneration++
             currentVideoWidth = 0
             currentVideoHeight = 0
+            _streamState.update { if (it is StreamState.Live) it.copy(videoTrackGeneration = null) else it }
             videoPublishQueue?.waitForKeyframe()
             diagnostics.event("video_pipeline_reset", mapOf("reason" to reason, "generation" to videoGeneration))
         }
@@ -1078,6 +1091,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         videoTrackCounter++
         currentVideoWidth = width
         currentVideoHeight = height
+        _streamState.update { if (it is StreamState.Live) it.copy(videoTrackGeneration = generation) else it }
     }
 
     private fun startStatsMonitoring(moq: Moq) {
@@ -1173,22 +1187,14 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             _healthState.value = health
                             transitionLifecycle(BroadcastLifecycleEvent.HealthChanged(health.hasAlert))
                         }
-                        val alerts = alertManager.update(health, System.currentTimeMillis())
-                        val previousAlerts = _alertState.value
-                        if (alerts.active.map { it.type } != previousAlerts.active.map { it.type } ||
-                            alerts.history.size != previousAlerts.history.size) {
-                            _alertState.value = alerts
+                        publishAlerts { update(health, System.currentTimeMillis()) }
+                        if (previousHealth.level == StreamHealthLevel.RECOVERING && health.level == StreamHealthLevel.HEALTHY) {
+                            recordAlert(StreamAlertType.RECOVERY_SUCCEEDED)
                         }
                         if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {
                             diagnostics.event("stream_health", mapOf(
                                 "level" to health.level,
                                 "reasons" to health.reasons.map { it.name }
-                            ))
-                        }
-                        if (alerts.active != previousAlerts.active) {
-                            diagnostics.event("stream_alerts", mapOf(
-                                "active" to alerts.active.map { it.type.name },
-                                "history_size" to alerts.history.size
                             ))
                         }
                         diagnostics.event("metrics", frameMetrics + audioMetrics + encoderStatus + diagnostics.performance() + mapOf(
@@ -1225,6 +1231,24 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     diagnostics.error("stats_error", e)
                 }
                 delay(1_000)
+            }
+        }
+    }
+
+    private fun recordAlert(type: StreamAlertType) =
+        publishAlerts { event(type, System.currentTimeMillis()) }
+
+    private fun publishAlerts(change: StreamAlertManager.() -> StreamAlertState) {
+        synchronized(alertLock) {
+            val previous = _alertState.value
+            val next = alertManager.change()
+            if (next != previous) {
+                _alertState.value = next
+                diagnostics.event("stream_alerts", mapOf(
+                    "active" to next.active.map { it.type },
+                    "last_event" to next.history.lastOrNull()?.type,
+                    "history_size" to next.history.size
+                ))
             }
         }
     }

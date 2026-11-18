@@ -6,7 +6,7 @@
 
 1. 安裝相同簽章的 Release APK，確認 MoQ 核心就緒。首次安裝可選 Offline APK 測試啟動。升級回歸應從受影響的 APK 覆蓋安裝，記下原有 codec、解析度、FPS 和碼率。
 2. **moq.pro** 使用測試 Relay URL、已授權的 broadcast path 和該 Relay 要求的 JWT。接收端使用對應的訂閱授權。記錄實際可用的 Browser Source 觀看頁或原生 MoQ Source 版本與協定。
-3. **Cloudflare** 在 Draft 18 Profile 填入 Publish connection token。名稱留空的案例使用同 Relay 的 Subscribe connection token 與相容的原生接收端，依 Cloudflare 文件設定空 namespace。另用具名的 `.hang` 案例測試 App 提供的 moq.watch 連結、OBS Browser Source 和遠端解碼。保留 Publish 與 Subscribe Token 的權限分離。
+3. **Cloudflare** 在 Draft 18 Profile 填入 Publish connection token。名稱留空的案例使用同 Relay 的 Subscribe-only connection token，測試 App 內遠端驗證與相容原生接收端。另用具名的 `.hang` 案例測試 moq.watch 連結與 OBS Browser Source。保留 Publish 與 Subscribe Token 的權限分離。
 4. **OBS Browser Source** 建立瀏覽器來源，填入訂閱用觀看頁並設定寬高。啟用「透過 OBS 控制音訊」後觀察混音器及錄影。若 OBS 的 Chromium 組建缺少 WebTransport 或 HEVC，保留 Source 版本與錯誤，用獨立瀏覽器重試並記錄各自結果。
 5. **OBS 原生 MoQ Source** 使用已安裝、支援實際 Relay Draft 及媒體格式的 Source。依外掛文件填入訂閱端點、路徑及訂閱憑證。若沒有相容外掛，該列記為未驗證並記下外掛名稱、版本或搜尋結果。
 6. 每個可用 Relay 測試 H.264＋Opus、H.265＋Opus，以及原回報可用的解析度與 FPS。至少測試 720p30、1080p30 和裝置支援的 1080p60。確認 Android 設定、診斷中的 `encoder_open`／`video_track_published`、OBS 實際畫面和混音器。記錄選定解析度與 CameraX 實際尺寸。
@@ -18,6 +18,17 @@
 - **端對端延遲**讓推流相機拍攝能顯示毫秒的畫面，並用同一台輔助相機同時拍下計時器和 OBS 畫面。至少在三個時間點讀取兩邊差距，記下最大值與中位數。
 - **音畫同步**在手機前拍手或使用有同步閃光和聲響的已知訊號。用 OBS 錄影逐格比較接觸或閃光畫格與音軌峰值，記錄有正負號的毫秒誤差。以 ±150 ms 作為目標，至少測量開播初期、長時間直播末段與網路恢復後。
 - **重連**依序測試 Wi-Fi → 行動網路、行動網路 → Wi-Fi、短暫斷網、測試 Relay 端主動斷線。記錄網路恢復時間與 OBS 第一張可解碼畫面的差距，目標為 15 秒。核對 `relay_status`、`relay_video_resumed`、關鍵影格與音訊恢復。若 Relay 管理介面無法中斷測試 Session，記錄該案例的限制。
+
+## OBS 相容性矩陣
+
+| Relay 與接收方式 | 需確認的協定與媒體能力 | H.264＋Opus | H.265＋Opus |
+|---|---|---|---|
+| Cloudflare 與 OBS Browser Source | moq.watch 使用具名 `.hang` 路徑，OBS 內嵌 Chromium 需具備 WebTransport 及對應解碼能力 | 未驗證 | 未驗證 |
+| Cloudflare 與 OBS 原生來源 | Draft 18、Hang Catalog、選定 namespace（含空路徑）與對應解碼器 | 未驗證 | 未驗證 |
+| moq.pro 與 OBS Browser Source | 該 Relay 提供的訂閱端點、相容的播放頁與對應的 Hang／Draft | 未驗證 | 未驗證 |
+| moq.pro 與 OBS 原生來源 | 對應的 Relay Draft、Transport、Hang Catalog 及訂閱權限 | 未驗證 | 未驗證 |
+
+Cloudflare 的 App 內檢查透過獨立的訂閱連線記錄 `subscriber_verification_stage`。在 moq.pro 驗收時，先以已知具訂閱權限的憑證，在獨立接收端確認能取得 Hang catalog 與影音。連線或訂閱失敗時分別記錄 Relay URL 的網域、Draft、路徑與失敗階段。
 
 ## 兩小時連續直播與四小時壓測
 

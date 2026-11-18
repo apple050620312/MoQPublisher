@@ -73,11 +73,16 @@ class RelayProfileTest {
         assertEquals("legacy/camera", moqPro.publicationPath(" legacy/camera "))
     }
 
-    @Test fun nonHangPublicationDoesNotEnableHangViewingLinks() {
-        val p = profile().copy(broadcastName = "space/camera")
-        assertFalse(p.canShare())
-        assertThrows(IllegalArgumentException::class.java) { p.watchUrl() }
-        assertThrows(IllegalArgumentException::class.java) { p.obsSubscription() }
+    @Test fun unnamedAndNonHangPublicationsCanSubscribeWithoutAWatchUrl() {
+        for (name in listOf("", "space/camera")) {
+            val p = profile().copy(broadcastName = name)
+            assertTrue(p.canSubscribe())
+            assertFalse(p.canShare())
+            assertThrows(IllegalArgumentException::class.java) { p.watchUrl() }
+            assertTrue(p.obsSubscription().startsWith("Relay:\n${p.subscribeUrl()}"))
+            assertTrue(p.obsSubscription().endsWith("Broadcast:\n$name"))
+            assertFalse(p.obsSubscription().contains(p.publishToken))
+        }
     }
 
     @Test fun legacyMoqProJwtBehaviorIsUnchanged() {

@@ -313,6 +313,8 @@ fun MainScreen(viewModel: MainViewModel) {
         if (showSettings) {
             val videoBitrate by viewModel.videoBitrate.collectAsState()
             val applyingVideoBitrate by viewModel.applyingVideoBitrate.collectAsState()
+            val streamAlertMode by viewModel.streamAlertMode.collectAsState()
+            val streamAlerts by viewModel.streamAlerts.collectAsState()
             SettingsScreen(
                 relayUrl = relayUrl, onRelayUrlChange = viewModel::setRelayUrl,
                 authToken = authToken, onAuthTokenChange = viewModel::setAuthToken,
@@ -344,6 +346,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 theme = theme, onThemeChange = viewModel::setTheme,
                 lockLandscape = lockLandscape, onLockLandscapeChange = viewModel::setLockLandscape,
                 backgroundStreaming = backgroundStreaming, onBackgroundStreamingChange = viewModel::setBackgroundStreaming,
+                streamAlertMode = streamAlertMode, onStreamAlertModeChange = viewModel::setStreamAlertMode,
+                streamAlerts = streamAlerts,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1110,6 +1114,8 @@ internal fun SettingsScreen(
     theme: AppTheme, onThemeChange: (AppTheme) -> Unit,
     lockLandscape: Boolean, onLockLandscapeChange: (Boolean) -> Unit,
     backgroundStreaming: Boolean, onBackgroundStreamingChange: (Boolean) -> Unit,
+    streamAlertMode: StreamAlertMode, onStreamAlertModeChange: (StreamAlertMode) -> Unit,
+    streamAlerts: StreamAlertState,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1198,6 +1204,7 @@ internal fun SettingsScreen(
             if (audioCaptureStatus?.fellBackToMono == true) StatusNotice(stringResource(R.string.stereo_fallback))
             AudioGainControl(audioGain, onAudioGainChange, enableAudio)
         }
+        StreamAlertSettings(streamAlertMode, onStreamAlertModeChange, streamAlerts)
         SettingCard(stringResource(R.string.security_authentication), stringResource(R.string.security_authentication_description)) {
             if (relayProfile.provider == RelayProvider.MOQ_PRO) {
             OutlinedTextField(value = authToken, onValueChange = onAuthTokenChange,
@@ -1228,6 +1235,34 @@ internal fun SettingsScreen(
             Modifier.onGloballyPositioned { aboutOffset = it.positionInParent().y.roundToInt() }) {
             AppUpdateCard(appUpdateState, onAppUpdateCheck, onAppUpdateDownload, onAppUpdateInstall, isStreaming)
             CoreStatusCard(coreState, onCoreCheck)
+        }
+    }
+}
+
+@Composable
+private fun StreamAlertSettings(
+    mode: StreamAlertMode,
+    onModeChange: (StreamAlertMode) -> Unit,
+    alerts: StreamAlertState
+) {
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    SettingCard(stringResource(R.string.alert_title)) {
+        SelectionDropdown(stringResource(R.string.alert_delivery), mode,
+            StreamAlertMode.entries.map { it to stringResource(it.label) }, onModeChange)
+        if (alerts.history.isNotEmpty()) {
+            TextButton(onClick = { showHistory = !showHistory }) {
+                Text(stringResource(if (showHistory) R.string.alert_hide_history else R.string.alert_show_history))
+            }
+            if (showHistory) {
+                val context = LocalContext.current
+                val timeFormat = android.text.format.DateFormat.getTimeFormat(context)
+                for (event in alerts.history.asReversed()) {
+                    val message = stringResource(event.type.label)
+                    val text = if (event.active) message else stringResource(R.string.alert_resolved, message)
+                    Text("${timeFormat.format(java.util.Date(event.lastSeenMs))}  $text",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
         }
     }
 }

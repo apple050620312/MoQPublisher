@@ -39,4 +39,19 @@ class StreamAlertManagerTest {
         }
         assertEquals(3, manager.update(StreamHealthSnapshot(StreamHealthLevel.HEALTHY), 100).history.size)
     }
+
+    @Test
+    fun criticalAlertsComeFirstAndRecoveryEventsRemainInHistoryAfterStop() {
+        val manager = StreamAlertManager()
+        val active = manager.update(StreamHealthSnapshot(
+            StreamHealthLevel.CRITICAL, setOf(StreamHealthReason.LOW_BATTERY, StreamHealthReason.ENCODER_STALLED)
+        ), 1_000)
+        assertEquals(StreamAlertType.VIDEO_ENCODER_FAILURE, active.active.first().type)
+        manager.event(StreamAlertType.RECOVERY_FAILED, 2_000)
+        val stopped = manager.clearActive(2_001)
+        assertTrue(stopped.active.isEmpty())
+        assertTrue(stopped.history.any { it.type == StreamAlertType.RECOVERY_FAILED && it.active })
+        assertEquals(stopped.history.map { it.id }.sorted().distinct(), stopped.history.map { it.id })
+        assertEquals(stopped.history, manager.reset(2_100).history)
+    }
 }

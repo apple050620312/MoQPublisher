@@ -33,6 +33,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
         streamer.beforeVideoEncoderClose = camera::detachEncoder
         streamer.requestCameraRecovery = camera::recover
         var previousConnection: Pair<ULong, Long>? = null
+        var previousVideoGeneration: Int? = null
         scope.launch {
             streamer.streamState.collect { state ->
                 val active = state.isActive()
@@ -40,9 +41,14 @@ internal class BroadcastSession(private val application: MoqApplication) {
                 if (state is StreamState.Live) {
                     val connection = state.epoch to state.reconnectCount
                     if (!state.canVerifyRemoteMedia() ||
-                        (previousConnection != null && previousConnection != connection)) verifier.reset()
+                        (previousConnection != null && previousConnection != connection) ||
+                        (previousVideoGeneration != null && previousVideoGeneration != state.videoTrackGeneration)) verifier.reset()
                     previousConnection = connection
-                } else if (!active) previousConnection = null
+                    previousVideoGeneration = state.videoTrackGeneration
+                } else if (!active) {
+                    previousConnection = null
+                    previousVideoGeneration = null
+                }
                 application.core.setStreaming(active)
                 camera.setStreaming(active)
             }

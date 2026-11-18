@@ -27,18 +27,21 @@ data class RelayProfile(
     fun publishUrl(): String = CloudflareRelay.url(protocolDraft, publishToken)
     fun subscribeUrl(): String = CloudflareRelay.url(protocolDraft, subscribeToken)
 
-    fun canShare(): Boolean = CloudflareRelay.validToken(subscribeToken) &&
-        subscribeToken.trim() != publishToken.trim() && CloudflareRelay.validHangBroadcast(broadcastName)
+    fun canSubscribe(): Boolean = provider == RelayProvider.CLOUDFLARE && protocolDraft == CloudflareRelay.DRAFT &&
+        CloudflareRelay.validToken(subscribeToken) && subscribeToken.trim() != publishToken.trim() &&
+        CloudflareRelay.validPublicationName(broadcastName)
+
+    fun canShare(): Boolean = canSubscribe() && CloudflareRelay.validHangBroadcast(broadcastName)
 
     /** Never fall back to a publish credential, even when no subscription token was supplied. */
     fun watchUrl(): String {
-        require(provider == RelayProvider.CLOUDFLARE && canShare()) { "A separate subscribe-only token is required" }
+        require(canShare()) { "A separate subscribe-only token and Hang name are required" }
         return "https://moq.watch/${CloudflareRelay.segment(subscribeToken.trim())}/" +
             "${CloudflareRelay.broadcastPath(broadcastName)}?cloudflare=draft-$protocolDraft"
     }
 
     fun obsSubscription(): String {
-        require(provider == RelayProvider.CLOUDFLARE && canShare()) { "A separate subscribe-only token is required" }
+        require(canSubscribe()) { "A separate subscribe-only token is required" }
         return "Relay:\n${subscribeUrl()}\n\nBroadcast:\n${broadcastName.trim()}"
     }
 

@@ -66,7 +66,7 @@ internal fun CloudflareProfilePanel(
         Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
         Text(stringResource(R.string.copy_watch_url))
     }
-    OutlinedButton(onClick = { pendingAction = "obs" }, enabled = profile.canShare(), modifier = Modifier.fillMaxWidth()) {
+    OutlinedButton(onClick = { pendingAction = "obs" }, enabled = profile.canSubscribe(), modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
         Text(stringResource(R.string.copy_obs_info))
     }
@@ -77,14 +77,14 @@ internal fun CloudflareProfilePanel(
         TextButton(onClick = { showGuide = "browser" }, enabled = profile.canShare(), modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.browser_source_guide))
         }
-        TextButton(onClick = { showGuide = "native" }, enabled = profile.canShare(), modifier = Modifier.weight(1f)) {
+        TextButton(onClick = { showGuide = "native" }, enabled = profile.canSubscribe(), modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.native_moq_source_guide))
         }
     }
     if (copied) Text(stringResource(R.string.subscription_copied), color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.bodySmall)
     OutlinedButton(onClick = { pendingAction = "verify" },
-        enabled = canVerify && profile.canShare() && verification !is SubscriberVerification.Running,
+        enabled = canVerify && profile.canSubscribe() && verification !is SubscriberVerification.Running,
         modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.Verified, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
         Text(stringResource(R.string.verify_subscription))
@@ -111,16 +111,14 @@ internal fun CloudflareProfilePanel(
             TextButton(onClick = {
                 val action = pendingAction
                 pendingAction = null
-                if (profile.canShare()) {
-                    if (action == "verify") onVerify()
-                    else {
-                        val label = if (action == "obs") obsClipboardLabel else watchClipboardLabel
-                        val clip = ClipData.newPlainText(label, if (action == "obs") profile.obsSubscription() else profile.watchUrl())
-                        // Android 13+ hides the sensitive clipboard preview; older versions ignore this flag.
-                        clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
-                        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
-                        copied = true
-                    }
+                if (action == "verify") {
+                    if (profile.canSubscribe()) onVerify()
+                } else if ((action == "obs" && profile.canSubscribe()) || (action == "watch" && profile.canShare())) {
+                    val label = if (action == "obs") obsClipboardLabel else watchClipboardLabel
+                    val clip = ClipData.newPlainText(label, if (action == "obs") profile.obsSubscription() else profile.watchUrl())
+                    clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+                    context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+                    copied = true
                 }
             }) { Text(stringResource(R.string.confirm_subscribe_only_action)) }
         }, dismissButton = { TextButton(onClick = { pendingAction = null }) { Text(stringResource(R.string.cancel)) } })
@@ -144,10 +142,8 @@ internal fun CloudflareProfilePanel(
             onDismissRequest = { showGuide = null },
             title = { Text(stringResource(if (guide == "browser") R.string.browser_source_guide else R.string.native_moq_source_guide)) },
             text = {
-                Text(stringResource(
-                    if (guide == "browser") R.string.browser_source_guide_text else R.string.native_moq_source_guide_text,
-                    profile.watchUrl(), profile.subscribeUrl(), profile.broadcastName.trim()
-                ))
+                if (guide == "browser") Text(stringResource(R.string.browser_source_guide_text, profile.watchUrl()))
+                else Text(stringResource(R.string.native_moq_source_guide_text, profile.subscribeUrl(), profile.broadcastName.trim()))
             },
             confirmButton = { TextButton(onClick = { showGuide = null }) { Text(stringResource(R.string.close)) } }
         )

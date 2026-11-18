@@ -11,8 +11,8 @@
 | 05 | 網路切換與重連 | DefaultNetworkMonitor 與 QUIC reconnect，共用直播時間基準，清除舊媒體並等新關鍵影格 | 真實網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | `RelayConnectionPolicyTest`、`AudioPublishQueueTest` 涵蓋舊寫入、相同 epoch 重連與關鍵影格 | BLOCKED | 尚未連接可切換 Wi-Fi／4G／5G 的 Android 裝置 |
 | 06 | ABR | VideoBitrateControl 從目標碼率開始，依佇列年齡、深度和網路容量調整，限制於最低及最高設定 | 解析度與 FPS 動態重建見 16 | TESTED | `VideoBitrateControlTest` 涵蓋拒絕動態調整、舊佇列、持續高 RTT 與碼率上下限 | 未驗證 | 動態碼率以 MediaCodec 執行結果為準 |
 | 07 | 音畫同步 | 有 AudioTimeline、VideoTimestampMapper、reset 與 monotonic tests | 接收端延遲與音畫誤差量測 | TESTED | AudioTimeline、VideoTimestampMapper tests | BLOCKED | 端到端誤差不能以 RTT 代替 |
-| 08 | 遠端媒體驗證／OBS | 有 Subscribe-only `SubscriberVerifier`，可驗證 catalog、video、audio decode | moq.pro 接收矩陣、OBS telemetry | TESTED | verifier 編譯與 JVM 規則 | BLOCKED | 無手機、Token、OBS |
-| 09 | 主動異常警報 | 有錯誤 UI、前景通知與 diagnostics events | Alert manager、冷卻、歷史、通知與健康事件 | IMPLEMENTED | `StreamAlertManagerTest`、`StreamHealthTest` | 未驗證 | 目前使用 App 畫面與 diagnostics，背景震動／提示音尚未實測 |
+| 08 | 遠端媒體驗證／OBS | Cloudflare Subscribe-only 檢查分連線、認證、catalog、訂閱、收到關鍵影格及影音解碼，重連或影片 track 重建會失效 | 使用實際 Relay 與 OBS 填寫接收矩陣 | IMPLEMENTED | `RelayProfileTest` 涵蓋空名稱與訂閱憑證分離，編譯驗證解碼流程 | BLOCKED | 無 Android 裝置與測試 Token |
+| 09 | 主動異常警報 | 主畫面健康提示、依嚴重度排序的背景警報、冷卻、可切換提示音／震動、可查看歷史 | 裝置驗證通知、音效、震動與恢復 | IMPLEMENTED | `StreamAlertManagerTest`、`StreamHealthTest`、`SettingsPersistenceTest` 已編譯 | 未驗證 | 通知受 Android 系統權限和頻道設定控制 |
 | 10 | 長時間穩定性 | 有 2／4 小時測試矩陣、資源檢查及診斷合併工具 | 取得正式壓測與 leak 檢查紀錄 | IMPLEMENTED | ZIP 合併腳本以含缺口的資料驗證 | BLOCKED | 需要手機、OBS、Relay 憑證與測試時段 |
 | 11 | 開播前檢查 | PASS／WARNING／ERROR 預檢已串入開播，硬體 surface 清單缺項會提示並允許實際啟動編碼器 | 以原回報裝置驗證 H.264／H.265 開播 | TESTED | `BroadcastPreflightTest` 重現能力清單誤擋，並檢查權限、核心與無效參數 | BLOCKED | 尚無原回報裝置 |
 | 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要裝置實測切換增益時的實際聽感 |
@@ -24,7 +24,7 @@
 | 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | 部分 Android 無 thermal API；熱度／記憶體壓力提供使用者觸發的降低碼率操作，不自動改動品質 |
 | 19 | 畫質 Preset | 內建與自訂 Preset、視訊與音訊設定驗證，套用後使用 CameraX 與實際編碼器檢查 | 明確的複製操作、實機模式驗證 | IN_PROGRESS | `StreamPresetTest`、release compile | 未驗證 | CameraX 依實際支援模式擷取 |
 | 20 | 完整離線 APK | core 快取、checksum、ABI／FFI 驗證與 fallback | 真正內含 compatible core 的離線 variant | IMPLEMENTED | `assembleOffline`、APK v2／zipalign、CoreLibraryFiles tests | 未驗證 | offline APK 約 35 MB，啟動時仍會將 asset 安全安裝到 app-private 目錄；需要 Android 實機確認 native loading |
-| 21 | Release pipeline | 本機 signed release、tag、checksum、GitHub Release | production key 安全遷移策略 | TESTED | publish script、APK checks | BLOCKED | 目前使用 debug key，沒有正式私鑰 |
+| 21 | Release pipeline | 本機簽章、JVM、lint、APK 包名／版本／對齊／簽章檢查、GitHub tag／SHA-256 核對 | 正式簽章與遷移 | IN_PROGRESS | publish script、APK checks | BLOCKED | 目前公開 APK 沿用既有開發簽章 |
 | 22 | 停止／Android lifecycle | Service、generation、wake lock、screen off 已有處理 | stop confirmation、emergency stop、更多 race tests | TESTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
 | 23 | 認證／安全 | Keystore、token 分離、redaction、signature check | token permission probing、clear UI、錯誤分類擴充 | IMPLEMENTED | repository／redaction tests、release compile、lint | 未驗證 | Token 權限由 Relay 回應決定；設定頁可清除加密 JWT 與 Cloudflare Token |
 | 24 | OBS 連接體驗 | Cloudflare watch／OBS text、remote verification | QR、Browser Source、native source guide、moq.pro guidance | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | 真實 OBS／瀏覽器／moq.pro 接收能力仍需實測；QR 僅在獨立 Subscribe Token 與 `.hang` 名稱可用時提供 |

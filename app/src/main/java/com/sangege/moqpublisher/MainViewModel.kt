@@ -92,6 +92,10 @@ class MainViewModel internal constructor(
     val broadcastLifecycle: StateFlow<BroadcastLifecycleState> = streamer.lifecycleState
     val streamHealth: StateFlow<StreamHealthSnapshot> = streamer.healthState
     val streamAlerts: StateFlow<StreamAlertState> = streamer.alertState
+    private val _streamAlertMode = MutableStateFlow(
+        StreamAlertMode.fromPreference(prefs.getString(StreamAlertMode.PREFERENCE, null))
+    )
+    val streamAlertMode = _streamAlertMode.asStateFlow()
     val deviceHealth: StateFlow<DeviceHealthSnapshot> = streamer.deviceHealth
     private val _preflightReport = MutableStateFlow<BroadcastPreflightReport?>(null)
     val preflightReport: StateFlow<BroadcastPreflightReport?> = _preflightReport.asStateFlow()
@@ -329,7 +333,7 @@ class MainViewModel internal constructor(
 
     fun verifySubscription() {
         val profile = _relayProfile.value
-        if (profile.provider == RelayProvider.CLOUDFLARE && profile.canShare() && streamState.value.canVerifyRemoteMedia())
+        if (profile.canSubscribe() && streamState.value.canVerifyRemoteMedia())
             session.verifier.verify(profile, _enableAudio.value)
     }
 
@@ -395,6 +399,11 @@ class MainViewModel internal constructor(
     fun setShowCameraDetails(show: Boolean) {
         _showCameraDetails.value = show
         prefs.edit { putBoolean(KEY_SHOW_CAMERA_DETAILS, show) }
+    }
+
+    fun setStreamAlertMode(mode: StreamAlertMode) {
+        _streamAlertMode.value = mode
+        prefs.edit { putString(StreamAlertMode.PREFERENCE, mode.name) }
     }
 
     fun setVideoCodec(codec: String) {
