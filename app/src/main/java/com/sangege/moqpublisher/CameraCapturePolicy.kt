@@ -1,5 +1,15 @@
 package com.sangege.moqpublisher
 
+enum class VideoDirection(val label: Int) {
+    FIXED_AT_START(R.string.output_direction_fixed),
+    LANDSCAPE(R.string.output_direction_landscape),
+    PORTRAIT(R.string.output_direction_portrait);
+
+    companion object {
+        fun fromPreference(value: String?) = entries.firstOrNull { it.name == value } ?: FIXED_AT_START
+    }
+}
+
 data class CameraCaptureStatus(
     val width: Int,
     val height: Int,
@@ -17,6 +27,13 @@ internal object CameraCapturePolicy {
     }
 
     data class FrameRate(val lower: Int, val upper: Int)
+
+    fun outputRotation(width: Int, height: Int, startRotation: Int, direction: VideoDirection): Int {
+        if (direction == VideoDirection.FIXED_AT_START || width == height) return startRotation
+        val landscapeAtStart = (width > height) == (startRotation % 180 == 0)
+        return if (landscapeAtStart == (direction == VideoDirection.LANDSCAPE)) startRotation
+            else (startRotation + 90) % 360
+    }
 
     fun boundedResolutions(supported: List<Resolution>, requested: Resolution): List<Resolution> {
         val bounded = supported.filter {

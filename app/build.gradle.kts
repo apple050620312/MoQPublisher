@@ -29,8 +29,8 @@ android {
         applicationId = "com.sangege.moqpublisher"
         minSdk = 24
         targetSdk = 37
-        versionCode = 44
-        versionName = "1.0.43"
+        versionCode = 45
+        versionName = "1.0.44"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "GITHUB_APP_UPDATES", "true")

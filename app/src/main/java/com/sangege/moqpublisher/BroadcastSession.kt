@@ -1,7 +1,6 @@
 package com.sangege.moqpublisher
 
 import android.content.Context
-import android.util.Size
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,19 +60,22 @@ internal class BroadcastSession(private val application: MoqApplication) {
         }
     }
 
-    fun configureCamera(front: Boolean, size: Size, fps: Int) {
-        if (pendingVideoMode == null) camera.configure(front, size, fps)
+    fun configureCamera(front: Boolean, mode: VideoMode) {
+        if (pendingVideoMode == null) camera.configure(front, mode)
     }
 
     suspend fun changeVideoMode(front: Boolean, previous: VideoMode, requested: VideoMode): Boolean {
         if (pendingVideoMode != null || !streamer.streamState.value.canVerifyRemoteMedia()) return false
-        val change = LiveVideoModeChange()
+        val change = LiveVideoModeChange(
+            rebuildEncoder = requested.camera.direction != previous.camera.direction ||
+                requested.camera.mirrorFront != previous.camera.mirrorFront
+        )
         pendingVideoMode = change
         mutableChangingVideoMode.value = true
         var applied = false
         try {
             diagnostics.event("live_video_mode_requested", mapOf("size" to requested.size, "fps" to requested.fps))
-            camera.configure(front, requested.size, requested.fps, change)
+            camera.configure(front, requested, change)
             applied = withTimeoutOrNull(8_000L) {
                 change.result.first { it != LiveVideoModeChange.Result.PENDING }
             } == LiveVideoModeChange.Result.APPLIED
@@ -81,7 +83,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
         } finally {
             if (!applied) {
                 change.finish(false)
-                camera.configure(front, previous.size, previous.fps)
+                camera.configure(front, previous)
             }
             pendingVideoMode = null
             mutableChangingVideoMode.value = false

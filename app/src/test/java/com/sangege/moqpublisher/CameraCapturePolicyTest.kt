@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CameraCapturePolicyTest {
+    @Test fun outputOrientationUsesTheRequestedAxesAndPreservesFixedRotation() {
+        assertEquals(90, CameraCapturePolicy.outputRotation(1280, 720, 90, VideoDirection.FIXED_AT_START))
+        assertEquals(90, CameraCapturePolicy.outputRotation(1280, 720, 0, VideoDirection.PORTRAIT))
+        assertEquals(180, CameraCapturePolicy.outputRotation(1280, 720, 90, VideoDirection.LANDSCAPE))
+        assertEquals(270, CameraCapturePolicy.outputRotation(720, 1280, 270, VideoDirection.LANDSCAPE))
+    }
+
     private fun size(width: Int, height: Int) = CameraCapturePolicy.Resolution(width, height)
     private fun fps(lower: Int, upper: Int) = CameraCapturePolicy.FrameRate(lower, upper)
 

@@ -885,7 +885,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         if (!isBroadcasting.get() || resettingVideo ||
             modeChange?.result?.value == LiveVideoModeChange.Result.FAILED) return@synchronized null
         if (hardwareEncoder !is SurfaceVideoEncoder || currentVideoWidth != width || currentVideoHeight != height ||
-            configuredFramerate != framerate) {
+            configuredFramerate != framerate || (modeChange?.rebuildEncoder == true &&
+                modeChange.result.value == LiveVideoModeChange.Result.PENDING && modeChange !== encoderModeChange)) {
             try {
                 createVideoProducerLocked(width, height, surfaceInput = true, framerate = framerate, modeChange = modeChange)
             } catch (error: Exception) {

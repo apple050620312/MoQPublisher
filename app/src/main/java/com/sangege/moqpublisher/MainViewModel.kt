@@ -63,6 +63,10 @@ private const val KEY_LANGUAGE = "app_language"
 private const val KEY_THEME = "app_theme"
 private const val KEY_SHOW_CAMERA_DETAILS = "show_camera_details"
 private const val KEY_CONFIRM_STOP = "confirm_broadcast_stop"
+private const val KEY_CAMERA_LENS = "camera_lens"
+private const val KEY_VIDEO_STABILIZE = "video_stabilize"
+private const val KEY_VIDEO_DIRECTION = "video_direction"
+private const val KEY_VIDEO_MIRROR_FRONT = "video_mirror_front"
 
 private const val DEFAULT_RELAY_URL = "https://cdn.moq.pro/placeholder"
 private const val DEFAULT_STREAM_PATH = "live/camera"
@@ -201,6 +205,16 @@ class MainViewModel internal constructor(
     )
     val videoFps: StateFlow<Int> = _videoFps.asStateFlow()
     val changingVideoMode = session.changingVideoMode
+    private val cameraLensRepository = CameraLensRepository(application)
+    private val _cameraLenses = MutableStateFlow<List<CameraLens>>(emptyList())
+    internal val cameraLenses = _cameraLenses.asStateFlow()
+    private val _cameraVideoSettings = MutableStateFlow(CameraVideoSettings(
+        lensId = prefs.getString(KEY_CAMERA_LENS, null),
+        stabilize = prefs.getBoolean(KEY_VIDEO_STABILIZE, false),
+        direction = VideoDirection.fromPreference(prefs.getString(KEY_VIDEO_DIRECTION, null)),
+        mirrorFront = prefs.getBoolean(KEY_VIDEO_MIRROR_FRONT, false)
+    ))
+    internal val cameraVideoSettings = _cameraVideoSettings.asStateFlow()
 
     private val _videoBitrate = MutableStateFlow(
         VideoBitrateInput.restore(
@@ -231,7 +245,10 @@ class MainViewModel internal constructor(
         streamer.setAudioInputDevice(_audioInputDeviceId.value)
         refreshAvailableResolutions(_useFrontCamera.value)
         syncCamera()
-        viewModelScope.launch(Dispatchers.IO) { _encoderCapabilities.value = capabilityRepository.inspectAll() }
+        viewModelScope.launch(Dispatchers.IO) {
+            _encoderCapabilities.value = capabilityRepository.inspectAll()
+            _cameraLenses.value = cameraLensRepository.list()
+        }
         viewModelScope.launch { session.cameraError.collect { if (it != null) _configurationError.value = it } }
     }
 
@@ -478,10 +495,19 @@ class MainViewModel internal constructor(
     }
 
     fun applyVideoMode(size: Size, fps: Int) {
-        if (size.width < 2 || size.height < 2 || fps !in SUPPORTED_FPS ||
+        applyVideoMode(currentVideoMode().copy(size = size, fps = fps))
+    }
+
+    internal fun applyCameraVideoSettings(settings: CameraVideoSettings) {
+        applyVideoMode(currentVideoMode().copy(camera = settings))
+    }
+
+    private fun currentVideoMode() = VideoMode(_videoResolution.value, _videoFps.value, _cameraVideoSettings.value)
+
+    private fun applyVideoMode(requested: VideoMode) {
+        if (requested.size.width < 2 || requested.size.height < 2 || requested.fps !in SUPPORTED_FPS ||
             changingVideoMode.value || session.pendingStart != null) return
-        val previous = VideoMode(_videoResolution.value, _videoFps.value)
-        val requested = VideoMode(size, fps)
+        val previous = currentVideoMode()
         if (requested == previous) return
         if (!streamState.value.isActive()) {
             saveVideoMode(requested)
@@ -492,20 +518,31 @@ class MainViewModel internal constructor(
         viewModelScope.launch {
             withContext(NonCancellable) {
                 if (session.changeVideoMode(front, previous, requested)) saveVideoMode(requested)
-                else if (streamState.value.isActive()) setConfigurationError(UiMessage(R.string.error_live_video_mode))
+                else if (streamState.value.isActive()) setConfigurationError(UiMessage(
+                    if (requested.camera != previous.camera) R.string.error_live_camera_mode else R.string.error_live_video_mode
+                ))
             }
         }
     }
 
     private fun saveVideoMode(mode: VideoMode) {
+        val sizeOrFpsChanged = mode.size != _videoResolution.value || mode.fps != _videoFps.value
         _videoResolution.value = mode.size
         _videoFps.value = mode.fps
-        markPresetChanged()
+        _cameraVideoSettings.value = mode.camera
+        val lens = _cameraLenses.value.firstOrNull { it.id == mode.camera.lensId }
+        if (lens != null) _useFrontCamera.value = lens.front
+        if (sizeOrFpsChanged) markPresetChanged()
         clearConfigurationError()
         prefs.edit {
             putInt(KEY_VIDEO_WIDTH, mode.size.width)
             putInt(KEY_VIDEO_HEIGHT, mode.size.height)
             putInt(KEY_VIDEO_FPS, mode.fps)
+            putString(KEY_CAMERA_LENS, mode.camera.lensId)
+            putBoolean(KEY_VIDEO_STABILIZE, mode.camera.stabilize)
+            putString(KEY_VIDEO_DIRECTION, mode.camera.direction.name)
+            putBoolean(KEY_VIDEO_MIRROR_FRONT, mode.camera.mirrorFront)
+            putBoolean(KEY_USE_FRONT_CAMERA, _useFrontCamera.value)
         }
     }
 
@@ -754,14 +791,18 @@ class MainViewModel internal constructor(
         if (changingVideoMode.value) return
         val next = !_useFrontCamera.value
         _useFrontCamera.value = next
+        _cameraVideoSettings.value = _cameraVideoSettings.value.copy(lensId = null)
         diagnostics.event("camera_selected", mapOf("front" to next))
         clearConfigurationError()
-        prefs.edit { putBoolean(KEY_USE_FRONT_CAMERA, next) }
+        prefs.edit {
+            putBoolean(KEY_USE_FRONT_CAMERA, next)
+            remove(KEY_CAMERA_LENS)
+        }
         refreshAvailableResolutions(next)
         syncCamera()
     }
 
-    private fun syncCamera() = session.configureCamera(_useFrontCamera.value, _videoResolution.value, _videoFps.value)
+    private fun syncCamera() = session.configureCamera(_useFrontCamera.value, currentVideoMode())
 
     private fun refreshAvailableResolutions(useFront: Boolean) {
         try {

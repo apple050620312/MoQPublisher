@@ -5,6 +5,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 ## Features
 
 - CameraX capture with front/back camera switching, tap-to-focus, pinch/button/slider zoom, torch and saved exposure compensation within each camera's supported range.
+- Advanced camera settings select advertised logical and physical lenses, stabilization, focus and exposure lock, fixed/portrait/landscape output, and front-camera output mirroring.
 - Collapsible camera details, with camera actions on the left and zoom/broadcast controls or statistics on the right in landscape.
 - H.264 and H.265 hardware video encoding. Settings show the Android-reported encoder names and capability ranges. The app keeps the selected codec and FPS, lets CameraX resolve the capture size, and checks whether MediaCodec can start with that configuration.
 - Device-supported resolution selection and 15/24/30/60 FPS targets.
@@ -97,7 +98,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.43)
+## APK variants (v1.0.44)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease assembleOffline testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. Release, compact and debug omit `libmoq_ffi.so`, while offline packages the official core as verified assets for the three supported Android ABIs. The local APKs are signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 
@@ -112,6 +113,8 @@ Available App and MoQ core updates now open an on-screen reminder at startup and
 Version 1.0.19 gives update APKs and diagnostic exports separate FileProvider components. Android caches local providers by component class; sharing one class between the two authorities could send the installer an unreadable APK URI. Installation now includes a ClipData read grant, opens Android's unknown-app-source permission screen when needed, and resumes installation after permission is granted. Before opening the installer, the app rechecks the file size, SHA-256, package name, release version, increasing version code, Android compatibility and signing certificate on an IO dispatcher. If an earlier version reports a package parsing error, download this release APK in a browser and install it over the existing app once; subsequent updates use the repaired flow.
 
 Run `./publish-release.ps1` on the development computer after committing and pushing source changes. The script runs the signed builds, JVM tests and release lint locally, checks package/version, certificate and ZIP alignment, then uploads the release APK, offline APK and both SHA-256 sidecars to the matching GitHub tag. It verifies the uploaded digests. Use `./publish-release.ps1 -ValidateOnly -SkipTests` to validate already built APKs locally.
+
+The desktop backup gateway serves Enhanced RTMP and SRT from a Relay Subscribe connection. [Gateway setup and validation](docs/testing/BACKUP_GATEWAY.md)
 
 For production distribution, provide the keystore path and its credentials through the local `MOQ_PRODUCTION_KEYSTORE`, `MOQ_PRODUCTION_STORE_PASSWORD`, `MOQ_PRODUCTION_KEY_ALIAS` and `MOQ_PRODUCTION_KEY_PASSWORD` environment variables. Run `./gradlew bundleProduction --no-configuration-cache` for a store bundle or `./gradlew assembleProduction --no-configuration-cache` for an APK. Keep the official keystore outside the repository. Production uses the same application ID and receives App updates through its distribution channel. Android requires a fresh install to switch from the sideload certificate to an unrelated production certificate. Before migrating, save the connection and quality settings you need and restore them after reinstalling. Re-enter relay credentials in the new installation.
 

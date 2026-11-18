@@ -22,6 +22,7 @@ local.properties
 *.idsig
 dist/
 /.idea/
+/.kotlin/
 *.jks
 *.keystore
 *.p12

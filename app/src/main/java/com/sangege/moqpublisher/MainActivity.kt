@@ -323,6 +323,8 @@ fun MainScreen(viewModel: MainViewModel) {
             val changingVideoMode by viewModel.changingVideoMode.collectAsState()
             val streamAlertMode by viewModel.streamAlertMode.collectAsState()
             val streamAlerts by viewModel.streamAlerts.collectAsState()
+            val cameraLenses by viewModel.cameraLenses.collectAsState()
+            val cameraVideoSettings by viewModel.cameraVideoSettings.collectAsState()
             SettingsScreen(
                 relayUrl = relayUrl, onRelayUrlChange = viewModel::setRelayUrl,
                 authToken = authToken, onAuthTokenChange = viewModel::setAuthToken,
@@ -346,6 +348,9 @@ fun MainScreen(viewModel: MainViewModel) {
                 onDuplicatePreset = viewModel::duplicatePreset,
                 onDeletePreset = viewModel::deletePreset, onResetPresets = viewModel::resetCustomPresets,
                 encoderCapabilities = encoderCapabilities,
+                cameraLenses = cameraLenses, cameraVideoSettings = cameraVideoSettings,
+                onApplyCameraVideoSettings = viewModel::applyCameraVideoSettings,
+                cameraControls = viewModel.cameraControls, cameraControlState = cameraControlState,
                 enableAudio = enableAudio, onEnableAudioChange = viewModel::setEnableAudio,
                 audioChannel = audioChannel, onAudioChannelChange = viewModel::setAudioChannel,
                 audioGain = audioGain, onAudioGainChange = viewModel::setAudioGain,
@@ -1175,6 +1180,9 @@ internal fun SettingsScreen(
     onSavePreset: (String) -> Boolean, onDeletePreset: (String) -> Boolean, onResetPresets: () -> Unit,
     onDuplicatePreset: (String, String) -> Boolean,
     encoderCapabilities: List<VideoEncoderCapability>,
+    cameraLenses: List<CameraLens>, cameraVideoSettings: CameraVideoSettings,
+    onApplyCameraVideoSettings: (CameraVideoSettings) -> Unit,
+    cameraControls: CameraControlHandle, cameraControlState: CameraControlState,
     enableAudio: Boolean, onEnableAudioChange: (Boolean) -> Unit,
     audioChannel: AudioChannel, onAudioChannelChange: (AudioChannel) -> Unit,
     audioGain: Int, onAudioGainChange: (Int) -> Unit, audioCaptureStatus: AudioCaptureStatus?,
@@ -1270,6 +1278,10 @@ internal fun SettingsScreen(
             }
             VideoBitrateControls(videoBitrate, applyingVideoBitrate, onApplyVideoBitrate)
         }
+        CameraVideoControls(
+            cameraLenses, cameraVideoSettings, onApplyCameraVideoSettings, cameraControls, cameraControlState,
+            !changingVideoMode && (editable || canVerifySubscription)
+        )
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
             SelectionDropdown(
@@ -1331,6 +1343,43 @@ internal fun SettingsScreen(
                 SupportingText(stringResource(R.string.app_update_managed))
             }
             CoreStatusCard(coreState, onCoreCheck)
+        }
+    }
+}
+
+@Composable
+private fun CameraVideoControls(
+    lenses: List<CameraLens>,
+    current: CameraVideoSettings,
+    onApply: (CameraVideoSettings) -> Unit,
+    controls: CameraControlHandle,
+    status: CameraControlState,
+    enabled: Boolean
+) {
+    var draft by remember(current) { mutableStateOf(current) }
+    SettingCard(stringResource(R.string.camera_advanced)) {
+        val lensOptions = listOf("" to stringResource(R.string.lens_default)) + lenses.map { lens ->
+            lens.id to stringResource(R.string.lens_description, stringResource(lens.label), lens.id)
+        }
+        SelectionDropdown(stringResource(R.string.camera_lens), draft.lensId.orEmpty(), lensOptions,
+            { draft = draft.copy(lensId = it.ifEmpty { null }) }, enabled)
+        SelectionDropdown(stringResource(R.string.output_direction), draft.direction,
+            VideoDirection.entries.map { it to stringResource(it.label) },
+            { draft = draft.copy(direction = it) }, enabled)
+        SettingSwitch(stringResource(R.string.video_stabilization), stringResource(R.string.video_stabilization_hint),
+            draft.stabilize, { draft = draft.copy(stabilize = it) }, enabled)
+        SettingSwitch(stringResource(R.string.output_front_mirror), stringResource(R.string.output_front_mirror_hint),
+            draft.mirrorFront, { draft = draft.copy(mirrorFront = it) }, enabled)
+        Button(onClick = { onApply(draft) }, enabled = enabled && draft != current) {
+            Text(stringResource(R.string.apply_camera_settings))
+        }
+        if (status.focusLockSupported) {
+            SettingSwitch(stringResource(R.string.camera_focus_lock), stringResource(R.string.camera_focus_lock_hint),
+                status.focusLocked, controls::setFocusLocked, enabled)
+        }
+        if (status.exposureLockSupported) {
+            SettingSwitch(stringResource(R.string.camera_exposure_lock), stringResource(R.string.camera_exposure_lock_hint),
+                status.exposureLocked, controls::setExposureLocked, enabled)
         }
     }
 }

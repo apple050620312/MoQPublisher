@@ -5,9 +5,20 @@ import dev.moq.VideoCodec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-internal data class VideoMode(val size: Size, val fps: Int)
+internal data class VideoMode(
+    val size: Size,
+    val fps: Int,
+    val camera: CameraVideoSettings = CameraVideoSettings()
+)
 
-internal class LiveVideoModeChange {
+internal data class CameraVideoSettings(
+    val lensId: String? = null,
+    val stabilize: Boolean = false,
+    val direction: VideoDirection = VideoDirection.FIXED_AT_START,
+    val mirrorFront: Boolean = false
+)
+
+internal class LiveVideoModeChange(val rebuildEncoder: Boolean = false) {
     enum class Result { PENDING, APPLIED, FAILED }
 
     private val mutableResult = MutableStateFlow(Result.PENDING)

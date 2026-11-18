@@ -2,11 +2,16 @@ package com.sangege.moqpublisher
 
 import android.content.Context
 import android.graphics.SurfaceTexture
+import android.hardware.camera2.CaptureRequest
+import android.os.Build
 import android.util.Range
 import android.util.Size
 import android.view.Surface
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.Camera
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraState
 import androidx.camera.core.Preview
@@ -47,6 +52,8 @@ internal class CameraCaptureEngine(
     private var front = false
     private var size = Size(1280, 720)
     private var fps = 30
+    private var videoSettings = CameraVideoSettings()
+    private val lenses = CameraLensRepository(context)
     private var videoModeChange: LiveVideoModeChange? = null
     private var viewWidth = 1
     private var viewHeight = 1
@@ -65,9 +72,10 @@ internal class CameraCaptureEngine(
 
     init { lifecycle.currentState = Lifecycle.State.CREATED }
 
-    fun configure(useFront: Boolean, resolution: Size, frameRate: Int, change: LiveVideoModeChange? = null) {
-        if (front == useFront && size == resolution && fps == frameRate && change == null) return
-        front = useFront; size = resolution; fps = frameRate
+    fun configure(useFront: Boolean, mode: VideoMode, change: LiveVideoModeChange? = null) {
+        if (front == useFront && size == mode.size && fps == mode.fps && videoSettings == mode.camera && change == null) return
+        front = useFront; size = mode.size; fps = mode.fps
+        videoSettings = mode.camera
         videoModeChange = change
         if (preview != null || uiActive || streaming) bind()
     }
@@ -141,7 +149,7 @@ internal class CameraCaptureEngine(
         }
     }
 
-    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalMirrorMode::class)
+    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalMirrorMode::class, ExperimentalCamera2Interop::class)
     private fun bind() {
         val ticket = ++generation
         val future = ProcessCameraProvider.getInstance(context)
@@ -152,10 +160,22 @@ internal class CameraCaptureEngine(
                 removeCameraObserver()
                 preview?.let { cameraProvider.unbind(it) }
                 controls.detach()
-                val requested = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
-                val fallback = if (front) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
-                val selector = if (cameraProvider.hasCamera(requested)) requested else fallback
-                actuallyFront = if (selector === requested) front else !front
+                val settings = videoSettings
+                val lens = settings.lensId?.let { id -> lenses.list().firstOrNull { it.id == id } }
+                val requested = if (lens != null) CameraSelector.Builder().addCameraFilter { infos ->
+                    infos.filter { Camera2CameraInfo.from(it).cameraId == lens.logicalId }
+                }.build() else if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                val defaultSelector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+                val fallback = if (cameraProvider.hasCamera(defaultSelector)) defaultSelector
+                    else if (front) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
+                val useRequested = cameraProvider.hasCamera(requested)
+                if (settings.lensId != null && (lens == null || !useRequested) &&
+                    videoModeChange?.result?.value == LiveVideoModeChange.Result.PENDING) {
+                    videoModeChange?.finish(false)
+                    return@addListener
+                }
+                val selector = if (useRequested) requested else fallback
+                actuallyFront = if (useRequested) lens?.front ?: front else fallback === CameraSelector.DEFAULT_FRONT_CAMERA
                 val info = cameraProvider.getCameraInfo(selector)
                 val requestedSize = size
                 val requestedFps = fps
@@ -175,15 +195,28 @@ internal class CameraCaptureEngine(
                         candidates.filter { CameraCapturePolicy.Resolution(it.width, it.height) in allowed }
                     }.build()
                 // Keep encoded video unmirrored; the GPU mirrors the front preview only.
-                val useCase = Preview.Builder().setMirrorMode(androidx.camera.core.MirrorMode.MIRROR_MODE_OFF)
-                    .setTargetRotation(Surface.ROTATION_0).setResolutionSelector(resolutions).build()
+                val previewBuilder = Preview.Builder().setMirrorMode(androidx.camera.core.MirrorMode.MIRROR_MODE_OFF)
+                    .setTargetRotation(Surface.ROTATION_0).setResolutionSelector(resolutions)
+                val interop = Camera2Interop.Extender(previewBuilder)
+                if (Build.VERSION.SDK_INT >= 28 && useRequested && lens?.physicalId != null) {
+                    interop.setPhysicalCameraId(lens.physicalId)
+                }
+                val stabilizationModes = Camera2CameraInfo.from(info).getCameraCharacteristic(
+                    android.hardware.camera2.CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES
+                )
+                val stabilized = settings.stabilize && (lens?.stabilizesVideo ?:
+                    (CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON in (stabilizationModes ?: intArrayOf())))
+                if (stabilized) interop.setCaptureRequestOption(
+                    CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON
+                )
+                val useCase = previewBuilder.build()
                 useCase.setSurfaceProvider(executor) { request ->
                     if (ticket != generation) {
                         request.willNotProvideSurface()
                         return@setSurfaceProvider
                     }
                     sourceWidth = request.resolution.width; sourceHeight = request.resolution.height
-                    renderer.provide(request, requestedFps, modeChange)
+                    renderer.provide(request, requestedFps, modeChange, settings.direction, settings.mirrorFront && actuallyFront)
                 }
                 val sessionRates = runCatching {
                     info.getSupportedFrameRateRanges(SessionConfig.Builder(useCase).build())
@@ -198,10 +231,14 @@ internal class CameraCaptureEngine(
                     if (camera === bound && state.error?.code in setOf(CameraState.ERROR_STREAM_CONFIG,
                             CameraState.ERROR_CAMERA_DISABLED, CameraState.ERROR_CAMERA_FATAL_ERROR)) {
                         val error = IllegalStateException("Camera state error: ${state.error?.code}")
-                        if (modeChange?.result?.value == LiveVideoModeChange.Result.PENDING) {
-                            diagnostics.error("camera_mode_change_failed", error)
-                            modeChange.finish(false)
-                        } else if (streaming) streamer.cameraFailed(error) else onError(error)
+                        when (modeChange?.result?.value) {
+                            LiveVideoModeChange.Result.PENDING -> {
+                                diagnostics.error("camera_mode_change_failed", error)
+                                modeChange.finish(false)
+                            }
+                            LiveVideoModeChange.Result.FAILED -> Unit
+                            else -> if (streaming) streamer.cameraFailed(error) else onError(error)
+                        }
                     }
                 }.also { bound.cameraInfo.cameraState.observe(this, it) }
                 controls.attach(bound, this, { x, y ->
@@ -214,13 +251,21 @@ internal class CameraCaptureEngine(
                 // A camera switch may change sensor orientation; keep the display orientation captured at stream start.
                 if (streaming) renderer.setEncoding(true, bound.cameraInfo.getSensorRotationDegrees(streamDisplayRotation))
                 diagnostics.event("camera_bound", mapOf("front" to actuallyFront, "resolution" to actual,
-                    "requested_fps" to fps, "fps" to "$rate", "path" to "gpu_surface", "owner" to "broadcast_session"))
+                    "requested_fps" to fps, "fps" to "$rate", "path" to "gpu_surface", "owner" to "broadcast_session",
+                    "lens" to lens?.id, "stabilization_requested" to stabilized, "output_direction" to settings.direction))
             } catch (error: Throwable) {
                 preview = null; camera = null; controls.detach(); mutableCapture.value = null
                 diagnostics.error("camera_bind_failed", error)
                 val pendingChange = videoModeChange
-                if (pendingChange?.result?.value == LiveVideoModeChange.Result.PENDING) pendingChange.finish(false)
-                else if (streaming) streamer.cameraFailed(error) else onError(error)
+                when (pendingChange?.result?.value) {
+                    LiveVideoModeChange.Result.PENDING -> pendingChange.finish(false)
+                    LiveVideoModeChange.Result.FAILED -> Unit
+                    else -> if (videoSettings.lensId != null || videoSettings.stabilize) {
+                        videoSettings = videoSettings.copy(lensId = null, stabilize = false)
+                        diagnostics.event("camera_mode_fallback")
+                        bind()
+                    } else if (streaming) streamer.cameraFailed(error) else onError(error)
+                }
             }
         }, executor)
     }

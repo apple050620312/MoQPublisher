@@ -1286,3 +1286,8 @@ P0 > P1 > P2
 
 - `v1.0.43` 加入第 20／21 項的離線單一 ABI 建置及獨立 production variant，GitHub Release 會檢查三種 ABI 與離線核心檔案。第 23／24 項將 moq.pro 內嵌發布 JWT 移至 Keystore，加入獨立觀看 JWT、訂閱端點、QR、OBS 操作指引與遠端解碼。
 - 驗證 `testDebugUnitTest` 214 項通過，Release、Offline、Android Test APK 和 `lintRelease` 通過，APK 包名、版本、簽章、ABI 與 ZIP 對齊均核對。Production 缺少正式金鑰時明確停止，正式簽章與實機 Relay／OBS 尚待驗收。
+
+### 2026-11-19
+
+- `v1.0.44` 完成第 26／31 項的 Camera2／CameraX 產品化。進階設定可選邏輯或實體鏡頭，套用支援的防手震、對焦鎖定、自動曝光鎖定、固定／直向／橫向輸出及前置鏡像。直播中沿用影片 Track 安全重建與失敗回復。
+- 直播畫質調整後的 `testDebugUnitTest` 為 215 項，Release／Offline／Android Test／lintRelease（0 errors）已建置。尚無 Android 實機，未驗證廠商 Camera2 實體鏡頭、光學防手震和 OBS 方向相容性。

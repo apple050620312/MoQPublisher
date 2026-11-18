@@ -55,6 +55,7 @@ internal class CameraSurfaceRenderer(
     private data class Input(
         val texture: SurfaceTexture, val surface: Surface, val id: Int, val width: Int, val height: Int,
         val fps: Int, val modeChange: LiveVideoModeChange?,
+        val direction: VideoDirection, val mirrored: Boolean,
         var lastTimestamp: Long = -1, var transformReported: Boolean = false
     )
     private data class Output(val surface: Surface, val egl: EGLSurface, var width: Int, var height: Int, val ownsSurface: Boolean) {
@@ -63,7 +64,9 @@ internal class CameraSurfaceRenderer(
         var rotation = -1; var mirror = false
     }
 
-    fun provide(request: SurfaceRequest, fps: Int, modeChange: LiveVideoModeChange?) { handler.post {
+    fun provide(
+        request: SurfaceRequest, fps: Int, modeChange: LiveVideoModeChange?, direction: VideoDirection, mirrored: Boolean
+    ) { handler.post {
         try {
             initialize()
             releaseCodec()
@@ -77,7 +80,7 @@ internal class CameraSurfaceRenderer(
             GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
             val size = request.resolution
             val texture = SurfaceTexture(ids[0]).apply { setDefaultBufferSize(size.width, size.height) }
-            val next = Input(texture, Surface(texture), ids[0], size.width, size.height, fps, modeChange)
+            val next = Input(texture, Surface(texture), ids[0], size.width, size.height, fps, modeChange, direction, mirrored)
             input = next
             lastPreviewNs = 0L
             texture.setOnFrameAvailableListener({ render(next) }, handler)
@@ -145,7 +148,8 @@ internal class CameraSurfaceRenderer(
             }
             normalized.copyInto(textureMatrix)
             if (encoding) {
-                val rotated = encodeRotation % 180 != 0
+                val rotation = CameraCapturePolicy.outputRotation(source.width, source.height, encodeRotation, source.direction)
+                val rotated = rotation % 180 != 0
                 val width = if (rotated) source.height else source.width
                 val height = if (rotated) source.width else source.height
                 // A network handover can replace the encoder without replacing the camera input.
@@ -157,7 +161,7 @@ internal class CameraSurfaceRenderer(
                 val target = codec
                 if (target != null) frameTimestamp(timestamp)?.let { pts ->
                     val submittedAt = System.nanoTime()
-                    draw(source, target, encodeRotation, false)
+                    draw(source, target, rotation, source.mirrored)
                     check(EGLExt.eglPresentationTimeANDROID(display, target.egl, pts))
                     check(EGL14.eglSwapBuffers(display, target.egl)) { "Encoder surface swap failed" }
                     onSubmitted(System.nanoTime() - submittedAt)

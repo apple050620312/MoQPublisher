@@ -1,5 +1,11 @@
 package com.sangege.moqpublisher
 
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
+import androidx.camera.camera2.interop.Camera2CameraControl
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.CaptureRequestOptions
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.MeteringPoint
@@ -26,10 +32,15 @@ data class CameraControlState(
     val exposureIndex: Int = 0,
     val minExposureIndex: Int = 0,
     val maxExposureIndex: Int = 0,
-    val exposureStep: Float = 0f
+    val exposureStep: Float = 0f,
+    val focusLockSupported: Boolean = false,
+    val focusLocked: Boolean = false,
+    val exposureLockSupported: Boolean = false,
+    val exposureLocked: Boolean = false
 )
 
 /** Lifecycle-safe bridge between CameraX's bound Camera and Compose camera controls. */
+@androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
 class CameraControlHandle(private val onExposureSaved: (Float) -> Unit = {}) {
     private val _state = MutableStateFlow(CameraControlState())
     val state: StateFlow<CameraControlState> = _state.asStateFlow()
@@ -78,13 +89,24 @@ class CameraControlHandle(private val onExposureSaved: (Float) -> Unit = {}) {
         zoomLiveData.observe(owner, zoomObserver!!)
         torchLiveData.observe(owner, torchObserver!!)
         val exposure = boundCamera.cameraInfo.exposureState
+        val focusLockSupported = runCatching {
+            val (x, y) = centerPoint()
+            val action = FocusMeteringAction.Builder(metering(x, y), FocusMeteringAction.FLAG_AF).disableAutoCancel().build()
+            boundCamera.cameraInfo.isFocusMeteringSupported(action)
+        }.getOrDefault(false)
+        val exposureLockSupported = runCatching {
+            Camera2CameraInfo.from(boundCamera.cameraInfo)
+                .getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE) == true
+        }.getOrDefault(false)
         _state.value = _state.value.copy(
             attached = true, hasFlashUnit = boundCamera.cameraInfo.hasFlashUnit(),
             exposureSupported = exposure.isExposureCompensationSupported,
             exposureIndex = exposure.exposureCompensationIndex,
             minExposureIndex = exposure.exposureCompensationRange.lower,
             maxExposureIndex = exposure.exposureCompensationRange.upper,
-            exposureStep = exposure.exposureCompensationStep.toFloat()
+            exposureStep = exposure.exposureCompensationStep.toFloat(),
+            focusLockSupported = focusLockSupported,
+            exposureLockSupported = exposureLockSupported
         )
         if (exposure.isExposureCompensationSupported && exposure.exposureCompensationStep.toFloat() > 0f)
             setExposureIndex((requestedExposureEv / exposure.exposureCompensationStep.toFloat()).roundToInt())
@@ -123,6 +145,7 @@ class CameraControlHandle(private val onExposureSaved: (Float) -> Unit = {}) {
     }
 
     fun focusAt(x: Float, y: Float) {
+        if (_state.value.focusLocked) return
         val boundCamera = camera ?: return
         val point = meter?.invoke(x, y) ?: return
         val action = FocusMeteringAction.Builder(point)
@@ -134,6 +157,39 @@ class CameraControlHandle(private val onExposureSaved: (Float) -> Unit = {}) {
     fun focusCenter() {
         val (x, y) = center?.invoke() ?: return
         focusAt(x, y)
+    }
+
+    fun setFocusLocked(locked: Boolean) {
+        val bound = camera ?: return
+        val mainExecutor = executor ?: return
+        if (!_state.value.focusLockSupported) return
+        if (!locked) {
+            bound.cameraControl.cancelFocusAndMetering()
+            _state.value = _state.value.copy(focusLocked = false)
+            return
+        }
+        val (x, y) = center?.invoke() ?: return
+        val point = meter?.invoke(x, y) ?: return
+        val request = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).disableAutoCancel().build()
+        val result = bound.cameraControl.startFocusAndMetering(request)
+        result.addListener({
+            if (camera === bound) {
+                _state.value = _state.value.copy(focusLocked = runCatching { result.get().isFocusSuccessful }.getOrDefault(false))
+            }
+        }, mainExecutor)
+    }
+
+    fun setExposureLocked(locked: Boolean) {
+        val bound = camera ?: return
+        val mainExecutor = executor ?: return
+        if (!_state.value.exposureLockSupported) return
+        val options = CaptureRequestOptions.Builder().setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, locked).build()
+        val result = Camera2CameraControl.from(bound.cameraControl).addCaptureRequestOptions(options)
+        result.addListener({
+            if (camera === bound && runCatching { result.get() }.isSuccess) {
+                _state.value = _state.value.copy(exposureLocked = locked)
+            }
+        }, mainExecutor)
     }
 
     internal fun restoreExposure(ev: Float) { requestedExposureEv = ev.takeIf { it.isFinite() } ?: 0f }
