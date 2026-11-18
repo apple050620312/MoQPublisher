@@ -136,6 +136,8 @@ fun MainScreen(viewModel: MainViewModel) {
     val videoFps by viewModel.videoFps.collectAsState()
     val videoBitrateKbps by viewModel.videoBitrateKbps.collectAsState()
     val adaptiveBitrate by viewModel.adaptiveBitrate.collectAsState()
+    val presets by viewModel.presets.collectAsState()
+    val selectedPresetId by viewModel.selectedPresetId.collectAsState()
     val availableResolutions by viewModel.availableResolutions.collectAsState()
     val streamState by viewModel.streamState.collectAsState()
     val configurationError by viewModel.configurationError.collectAsState()
@@ -325,6 +327,9 @@ fun MainScreen(viewModel: MainViewModel) {
                 videoFps = videoFps, onVideoFpsChange = viewModel::setVideoFps,
                 videoBitrateKbps = videoBitrateKbps, onVideoBitrateChange = viewModel::setVideoBitrateKbps,
                 adaptiveBitrate = adaptiveBitrate, onAdaptiveBitrateChange = viewModel::setAdaptiveBitrate,
+                presets = presets, selectedPresetId = selectedPresetId,
+                onApplyPreset = viewModel::applyPreset, onSavePreset = viewModel::saveCurrentPreset,
+                onDeletePreset = viewModel::deletePreset, onResetPresets = viewModel::resetCustomPresets,
                 enableAudio = enableAudio, onEnableAudioChange = viewModel::setEnableAudio,
                 audioChannel = audioChannel, onAudioChannelChange = viewModel::setAudioChannel,
                 audioGain = audioGain, onAudioGainChange = viewModel::setAudioGain,
@@ -1077,6 +1082,8 @@ fun SettingsScreen(
     availableResolutions: List<Size>, videoFps: Int, onVideoFpsChange: (Int) -> Unit,
     videoBitrateKbps: String, onVideoBitrateChange: (String) -> Unit,
     adaptiveBitrate: Boolean, onAdaptiveBitrateChange: (Boolean) -> Unit,
+    presets: List<StreamPreset>, selectedPresetId: String?, onApplyPreset: (String) -> Boolean,
+    onSavePreset: (String) -> Boolean, onDeletePreset: (String) -> Boolean, onResetPresets: () -> Unit,
     enableAudio: Boolean, onEnableAudioChange: (Boolean) -> Unit,
     audioChannel: AudioChannel, onAudioChannelChange: (AudioChannel) -> Unit,
     audioGain: Int, onAudioGainChange: (Int) -> Unit, audioCaptureStatus: AudioCaptureStatus?,
@@ -1140,6 +1147,7 @@ fun SettingsScreen(
             }
         }
         SettingCard(stringResource(R.string.video_configuration)) {
+            StreamPresetCard(presets, selectedPresetId, editable, onApplyPreset, onSavePreset, onDeletePreset, onResetPresets)
             ChoiceOptions(stringResource(R.string.video_codec), videoCodec, listOf(
                 "H264" to stringResource(R.string.codec_h264), "H265" to stringResource(R.string.codec_h265)), onVideoCodecChange, editable)
             SelectionDropdown(stringResource(R.string.camera_resolution), videoResolution,
@@ -1209,6 +1217,73 @@ fun SettingsScreen(
         }
     }
 }
+
+@Composable
+private fun StreamPresetCard(
+    presets: List<StreamPreset>, selectedPresetId: String?, enabled: Boolean,
+    onApply: (String) -> Boolean, onSave: (String) -> Boolean,
+    onDelete: (String) -> Boolean, onReset: () -> Unit
+) {
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var presetName by rememberSaveable { mutableStateOf("") }
+    val selected = presets.firstOrNull { it.id == selectedPresetId }
+    val options = listOf(StreamPresetPolicy.CUSTOM_ID to stringResource(R.string.preset_custom)) +
+        presets.map { it.id to presetDisplayName(it) }
+    SettingCard(stringResource(R.string.video_preset), stringResource(R.string.video_preset_description)) {
+        SelectionDropdown(
+            stringResource(R.string.video_preset), selectedPresetId ?: StreamPresetPolicy.CUSTOM_ID,
+            options, { id -> if (id != StreamPresetPolicy.CUSTOM_ID) onApply(id) }, enabled
+        )
+        selected?.let { preset ->
+            SupportingText(stringResource(
+                R.string.preset_summary, preset.videoCodec, preset.width, preset.height, preset.fps,
+                preset.videoBitrateKbps
+            ))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { presetName = selected?.name ?: ""; showSaveDialog = true },
+                enabled = enabled, modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small
+            ) { Text(stringResource(R.string.preset_save)) }
+            OutlinedButton(
+                onClick = { selected?.let { onDelete(it.id) } },
+                enabled = enabled && selected?.builtIn == false,
+                modifier = Modifier.weight(1f), shape = MaterialTheme.shapes.small
+            ) { Text(stringResource(R.string.preset_delete)) }
+        }
+        TextButton(onClick = onReset, enabled = enabled && presets.any { !it.builtIn }, modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.preset_reset))
+        }
+    }
+    if (showSaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveDialog = false },
+            title = { Text(stringResource(R.string.preset_save_title)) },
+            text = {
+                OutlinedTextField(
+                    value = presetName, onValueChange = { presetName = it.take(64) },
+                    label = { Text(stringResource(R.string.preset_name)) }, singleLine = true,
+                    supportingText = { Text(stringResource(R.string.preset_name_hint)) }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { if (onSave(presetName)) showSaveDialog = false }) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text(stringResource(R.string.cancel)) } }
+        )
+    }
+}
+
+@Composable
+private fun presetDisplayName(preset: StreamPreset): String = stringResource(when (preset.id) {
+    "data_saver" -> R.string.preset_data_saver
+    "mobile_streaming" -> R.string.preset_mobile_streaming
+    "high_quality" -> R.string.preset_high_quality
+    "high_fps" -> R.string.preset_high_fps
+    else -> R.string.preset_custom
+})
 
 @Composable
 private fun AppUpdateCard(

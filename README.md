@@ -15,6 +15,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 - Live RTT, measured send rate, bytes-sent statistics, actual published FPS, encoder bitrate, queue depth/media age, packet loss, battery, memory and thermal status are shown during a broadcast. Low battery, thermal pressure and memory pressure produce health warnings and background notification updates.
 - On-device diagnostic ZIP export with sharing and saving to the phone, without USB or adb.
 - Configurable video bitrate in Kbps (default 8000 Kbps), optional congestion-aware bitrate adaptation and sensor-timestamp frame pacing.
+- Built-in Data Saver, Mobile Streaming, High Quality and High FPS presets, plus named custom presets for reusable video and audio settings. Preset application checks the selected hardware encoder before changing the stream configuration.
 - Settings and the last selected camera/video options are persisted locally.
 - Traditional Chinese and dark mode by default, with instant English/system-language and dark/light theme selection.
 - The screen stays awake during connection and streaming.
@@ -30,7 +31,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
    For Cloudflare, enter a **Publish + Subscribe connection token** and a broadcast name
    (default `twcam.hang`). You can clear the broadcast name to publish an unnamed broadcast, matching the official `moq-pub` example. Cloudflare publication accepts any valid namespace path, so `.hang` is optional for publishing. Use a `.hang` name when you need the app's moq.watch link, OBS information or Hang remote verification. This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`;
    do not use a Management API token, Project ID, Relay ID or `?jwt=`.
-4. Select the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. **Adaptive bitrate** enables network adaptation; disable it to retain the configured encoder target.
+4. Select a stream quality preset or configure the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. Save a named custom preset when you want to reuse the video and audio choices. **Adaptive bitrate** enables network adaptation; disable it to retain the configured encoder target.
 5. Press **Start broadcast** while the app is visible. The app runs a preflight over permissions, camera and audio availability, selected encoder mode, resolution/FPS, Relay settings, network, MoQ core, battery and thermal state. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
 6. The core must be ready before streaming. Later APK updates reuse the saved core; compatible core updates apply on the next cold app launch. Downloads defer while broadcasting. Stop broadcasting before changing stream parameters. Language, theme and landscape lock can change while live; opening Settings keeps capture running. A new broadcast fixes its encoding orientation at start, while the preview continues to follow the display.
 
@@ -93,7 +94,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.31)
+## APK variants (v1.0.32)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

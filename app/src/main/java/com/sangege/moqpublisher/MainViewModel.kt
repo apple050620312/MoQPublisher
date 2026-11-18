@@ -12,9 +12,6 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
-import android.media.MediaFormat
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -52,6 +49,7 @@ private const val KEY_VIDEO_FPS = "video_fps"
 private const val KEY_LEGACY_VIDEO_BITRATE = "video_bitrate_mbps"
 private const val KEY_VIDEO_BITRATE = "video_bitrate_kbps"
 private const val KEY_ADAPTIVE_BITRATE = "adaptive_bitrate"
+private const val KEY_ACTIVE_PRESET = "active_stream_preset"
 private const val KEY_AUDIO_CHANNEL = "audio_channel"
 private const val KEY_AUDIO_GAIN = "audio_gain_percent"
 private const val KEY_AUDIO_QUALITY = "audio_quality"
@@ -80,6 +78,9 @@ class MainViewModel internal constructor(
     private val diagnostics = session.diagnostics
     private val core = (application as MoqApplication).core
     private val appUpdates = (application as MoqApplication).appUpdates
+    private val presetRepository = StreamPresetRepository(prefs)
+    private val capabilityRepository = DeviceCapabilityRepository()
+    private var applyingPreset = false
     val coreState = core.state
     val appUpdateState = appUpdates.state
     val cameraControls = session.controls
@@ -193,6 +194,10 @@ class MainViewModel internal constructor(
     val videoBitrateKbps: StateFlow<String> = _videoBitrateKbps.asStateFlow()
     private val _adaptiveBitrate = MutableStateFlow(prefs.getBoolean(KEY_ADAPTIVE_BITRATE, true))
     val adaptiveBitrate: StateFlow<Boolean> = _adaptiveBitrate.asStateFlow()
+    private val _presets = MutableStateFlow(StreamPresetPolicy.builtIns() + presetRepository.loadCustom())
+    val presets: StateFlow<List<StreamPreset>> = _presets.asStateFlow()
+    private val _selectedPresetId = MutableStateFlow(prefs.getString(KEY_ACTIVE_PRESET, null))
+    val selectedPresetId: StateFlow<String?> = _selectedPresetId.asStateFlow()
 
     val cameraCaptureStatus = session.camera.captureStatus
 
@@ -324,12 +329,14 @@ class MainViewModel internal constructor(
 
     fun setEnableAudio(enabled: Boolean) {
         _enableAudio.value = enabled
+        markPresetChanged()
         clearConfigurationError()
         prefs.edit { putBoolean(KEY_ENABLE_AUDIO, enabled) }
     }
 
     fun setAudioChannel(channel: AudioChannel) {
         _audioChannel.value = channel
+        markPresetChanged()
         clearConfigurationError()
         prefs.edit { putString(KEY_AUDIO_CHANNEL, channel.name) }
     }
@@ -343,6 +350,7 @@ class MainViewModel internal constructor(
 
     fun setAudioQuality(quality: AudioQuality) {
         _audioQuality.value = quality
+        markPresetChanged()
         prefs.edit { putString(KEY_AUDIO_QUALITY, quality.name) }
     }
 
@@ -374,6 +382,7 @@ class MainViewModel internal constructor(
     fun setVideoCodec(codec: String) {
         val normalized = codec.uppercase().takeIf { it == "H264" || it == "H265" } ?: return
         _videoCodec.value = normalized
+        markPresetChanged()
         clearConfigurationError()
         prefs.edit { putString(KEY_VIDEO_CODEC, normalized) }
     }
@@ -381,6 +390,7 @@ class MainViewModel internal constructor(
     fun setVideoResolution(size: Size) {
         if (size.width < 2 || size.height < 2) return
         _videoResolution.value = size
+        markPresetChanged()
         clearConfigurationError()
         prefs.edit {
             putInt(KEY_VIDEO_WIDTH, size.width)
@@ -392,6 +402,7 @@ class MainViewModel internal constructor(
     fun setVideoFps(fps: Int) {
         if (fps !in SUPPORTED_FPS) return
         _videoFps.value = fps
+        markPresetChanged()
         clearConfigurationError()
         prefs.edit { putInt(KEY_VIDEO_FPS, fps) }
         syncCamera()
@@ -399,6 +410,7 @@ class MainViewModel internal constructor(
 
     fun setVideoBitrateKbps(value: String) {
         _videoBitrateKbps.value = value
+        markPresetChanged()
         VideoBitrateSettings.parseKbps(value)?.let(streamer::setVideoBitrate)
         clearConfigurationError()
         prefs.edit { putString(KEY_VIDEO_BITRATE, value) }
@@ -406,6 +418,7 @@ class MainViewModel internal constructor(
 
     fun setAdaptiveBitrate(enabled: Boolean) {
         _adaptiveBitrate.value = enabled
+        markPresetChanged()
         streamer.setAdaptiveBitrate(enabled)
         clearConfigurationError()
         prefs.edit { putBoolean(KEY_ADAPTIVE_BITRATE, enabled) }
@@ -414,6 +427,125 @@ class MainViewModel internal constructor(
     fun setConfigurationError(message: UiMessage?) {
         _configurationError.value = message
         if (message != null) diagnostics.event("configuration_error", mapOf("message" to message))
+    }
+
+    fun applyPreset(id: String): Boolean {
+        if (streamState.value.isActive()) {
+            setConfigurationError(UiMessage(R.string.streaming_settings_locked))
+            return false
+        }
+        val preset = _presets.value.firstOrNull { it.id == id } ?: return false
+        val validationError = StreamPresetPolicy.validate(preset)
+        if (validationError != null || !capabilityRepository.supportsHardwareSurfaceEncoder(preset.videoCodec)) {
+            setConfigurationError(UiMessage(R.string.error_preset_unsupported, listOf(preset.videoCodec)))
+            diagnostics.event("preset_rejected", mapOf("id" to id, "codec" to preset.videoCodec, "reason" to (validationError ?: "encoder")))
+            return false
+        }
+        applyingPreset = true
+        try {
+            _videoCodec.value = preset.videoCodec
+            _videoResolution.value = android.util.Size(preset.width, preset.height)
+            _videoFps.value = preset.fps
+            _videoBitrateKbps.value = preset.videoBitrateKbps
+            _adaptiveBitrate.value = preset.adaptiveBitrate
+            _enableAudio.value = preset.enableAudio
+            _audioChannel.value = preset.audioChannel
+            _audioQuality.value = preset.audioQuality
+            prefs.edit {
+                putString(KEY_VIDEO_CODEC, preset.videoCodec)
+                putInt(KEY_VIDEO_WIDTH, preset.width)
+                putInt(KEY_VIDEO_HEIGHT, preset.height)
+                putInt(KEY_VIDEO_FPS, preset.fps)
+                putString(KEY_VIDEO_BITRATE, preset.videoBitrateKbps)
+                putBoolean(KEY_ADAPTIVE_BITRATE, preset.adaptiveBitrate)
+                putBoolean(KEY_ENABLE_AUDIO, preset.enableAudio)
+                putString(KEY_AUDIO_CHANNEL, preset.audioChannel.name)
+                putString(KEY_AUDIO_QUALITY, preset.audioQuality.name)
+                putString(KEY_ACTIVE_PRESET, preset.id)
+            }
+            _selectedPresetId.value = preset.id
+            streamer.setVideoBitrate(checkNotNull(VideoBitrateSettings.parseKbps(preset.videoBitrateKbps)))
+            syncCamera()
+            clearConfigurationError()
+            diagnostics.event("preset_applied", mapOf("id" to preset.id, "name" to preset.name))
+            return true
+        } finally {
+            applyingPreset = false
+        }
+    }
+
+    fun saveCurrentPreset(name: String): Boolean {
+        if (streamState.value.isActive()) {
+            setConfigurationError(UiMessage(R.string.streaming_settings_locked))
+            return false
+        }
+        val cleanName = name.trim().take(64)
+        if (cleanName.isEmpty()) {
+            setConfigurationError(UiMessage(R.string.error_preset_name))
+            return false
+        }
+        val saved = runCatching {
+            val existingId = _presets.value.firstOrNull { it.id == _selectedPresetId.value && !it.builtIn }?.id
+            presetRepository.saveCustom(currentPreset(cleanName), existingId)
+        }.getOrElse {
+            diagnostics.error("preset_save_failed", it)
+            setConfigurationError(UiMessage(R.string.error_preset_save))
+            return false
+        }
+        refreshPresets()
+        _selectedPresetId.value = saved.id
+        prefs.edit { putString(KEY_ACTIVE_PRESET, saved.id) }
+        clearConfigurationError()
+        diagnostics.event("preset_saved", mapOf("id" to saved.id, "name" to saved.name))
+        return true
+    }
+
+    fun deletePreset(id: String): Boolean {
+        if (streamState.value.isActive() || _presets.value.firstOrNull { it.id == id }?.builtIn != false) return false
+        val deleted = presetRepository.delete(id)
+        if (!deleted) return false
+        refreshPresets()
+        if (_selectedPresetId.value == id) {
+            _selectedPresetId.value = null
+            prefs.edit { remove(KEY_ACTIVE_PRESET) }
+        }
+        diagnostics.event("preset_deleted", mapOf("id" to id))
+        return true
+    }
+
+    fun resetCustomPresets() {
+        if (streamState.value.isActive()) return
+        presetRepository.deleteAll()
+        refreshPresets()
+        if (_selectedPresetId.value != null && _presets.value.none { it.id == _selectedPresetId.value }) {
+            _selectedPresetId.value = null
+            prefs.edit { remove(KEY_ACTIVE_PRESET) }
+        }
+        diagnostics.event("presets_reset")
+    }
+
+    private fun refreshPresets() {
+        _presets.value = StreamPresetPolicy.builtIns() + presetRepository.loadCustom()
+    }
+
+    private fun currentPreset(name: String): StreamPreset = StreamPreset(
+        id = StreamPresetPolicy.CUSTOM_ID,
+        name = name,
+        videoCodec = _videoCodec.value,
+        width = _videoResolution.value.width,
+        height = _videoResolution.value.height,
+        fps = _videoFps.value,
+        videoBitrateKbps = _videoBitrateKbps.value,
+        adaptiveBitrate = _adaptiveBitrate.value,
+        enableAudio = _enableAudio.value,
+        audioChannel = _audioChannel.value,
+        audioQuality = _audioQuality.value
+    )
+
+    private fun markPresetChanged() {
+        if (applyingPreset || _selectedPresetId.value == null) return
+        _selectedPresetId.value = null
+        prefs.edit { remove(KEY_ACTIVE_PRESET) }
     }
 
     fun onLifecycleEvent(event: String) {
@@ -639,28 +771,7 @@ class MainViewModel internal constructor(
         return AudioRecord.getMinBufferSize(AudioSettings.SAMPLE_RATE, mask, AudioFormat.ENCODING_PCM_16BIT) > 0
     }
 
-    private fun encoderAvailable(): Boolean = runCatching {
-        val codecName = _videoCodec.value
-        val mime = if (codecName == "H265") MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
-        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-            if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, ignoreCase = true) } || !isHardwareEncoder(info)) return@any false
-            runCatching {
-                val capabilities = info.getCapabilitiesForType(mime)
-                // The normal CameraX path feeds a MediaCodec input surface.
-                // Do not call isFormatSupported here. Vendor implementations
-                // often reject a probe format with optional keys even though
-                // configure() accepts the same requested stream settings.
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in capabilities.colorFormats
-            }.getOrDefault(false)
-        }
-    }.getOrDefault(false)
-
-    private fun isHardwareEncoder(info: android.media.MediaCodecInfo): Boolean {
-        if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
-        val name = info.name.lowercase()
-        return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") &&
-            "ffmpeg" !in name && "sw.encoder" !in name && ".sw." !in name
-    }
+    private fun encoderAvailable(): Boolean = capabilityRepository.supportsHardwareSurfaceEncoder(_videoCodec.value)
 
     private fun networkAvailable(context: Context): Boolean = runCatching {
         val manager = context.getSystemService(ConnectivityManager::class.java)

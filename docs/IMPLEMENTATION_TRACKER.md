@@ -22,7 +22,7 @@
 | 16 | 直播中調整畫質 | bitrate／ABR 可在 encoder 支援時更新 | min／max 設定與解析度／FPS 安全重建 | PARTIAL | bitrate tests、release compile | 未驗證 | MediaCodec 動態能力不同；目前支援直播中 target／ABR，解析度與 FPS 仍需重新開播 |
 | 17 | 直播儀表板 | LiveStats 有 RTT、bitrate、bytes、FPS、codec | health、audio、queue、thermal 的簡易／專業模式 | PARTIAL | metrics tests、release compile | 未驗證 | 沒有 OBS 接收數據；目前已顯示 publisher queue、encoder bitrate 與 packet loss |
 | 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | PARTIAL | `DeviceHealthTest`、release compile | 未驗證 | 部分 Android 無 thermal API；目前提供警報與狀態顯示，未自動降低品質 |
-| 19 | 畫質 Preset | 持久化個別 video／audio 設定 | Preset CRUD 與能力檢查 | NOT_STARTED | — | 未驗證 | — |
+| 19 | 畫質 Preset | 持久化個別 video／audio 設定 | Preset CRUD 與能力檢查 | IMPLEMENTED | `StreamPresetTest`、release compile | 未驗證 | 真實硬體 encoder 與相機模式需在 Android 裝置確認；內建 Preset 會使用 CameraX 的最近可用模式 |
 | 20 | 完整離線 APK | core 快取、checksum、ABI／FFI 驗證與 fallback | 真正內含 compatible core 的離線 variant | PARTIAL | CoreUpdatePolicy tests | 未驗證 | native artifact 與 APK 大小需評估 |
 | 21 | Release pipeline | 本機 signed release、tag、checksum、GitHub Release | production key 安全遷移策略 | TESTED | publish script、APK checks | BLOCKED | 目前使用 debug key，沒有正式私鑰 |
 | 22 | 停止／Android lifecycle | Service、generation、wake lock、screen off 已有處理 | stop confirmation、emergency stop、更多 race tests | TESTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
