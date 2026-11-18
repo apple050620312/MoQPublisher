@@ -1211,3 +1211,4 @@ P0 > P1 > P2
 
 - `v1.0.31`：修復 `v1.0.30` 對 H.264／H.265 的硬體能力誤判。預檢不再以含 optional MediaCodec keys 的 `isFormatSupported()` 探測格式，也不以相機能力清單阻擋解析度／幀率，保留使用者選定的 codec。`SurfaceVideoEncoder` 與 `HardwareVideoEncoder` 改由實際 `MediaCodec.configure()` 作為最後判斷，讓裝置可使用原本可用的 H.264 與 H.265 組合。
 - 驗證：`testDebugUnitTest`、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease` 通過；尚未連接 Android 裝置確認原截圖裝置的 H.264／H.265 開播與任意解析度／幀率組合。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.31` GitHub Release；檔案為 `MoQPublisher-1.0.31-release.apk`，SHA-256 為 `420cfa53d0eb8e26ee72ac700e7ee3e8455c60fd72838134ffef8777baf21c83`。
