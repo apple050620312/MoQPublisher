@@ -5,7 +5,10 @@ enum class StreamAlertType {
     STREAM_STALLED,
     VIDEO_ENCODER_FAILURE,
     AUDIO_CAPTURE_FAILURE,
-    QUEUE_PRESSURE
+    QUEUE_PRESSURE,
+    DEVICE_OVERHEATING,
+    LOW_BATTERY,
+    MEMORY_PRESSURE
 }
 
 data class StreamAlert(
@@ -69,6 +72,9 @@ internal class StreamAlertManager(
         StreamHealthReason.ENCODER_STALLED -> StreamAlertType.VIDEO_ENCODER_FAILURE
         StreamHealthReason.AUDIO_STALLED -> StreamAlertType.AUDIO_CAPTURE_FAILURE
         StreamHealthReason.QUEUE_PRESSURE -> StreamAlertType.QUEUE_PRESSURE
+        StreamHealthReason.THERMAL -> StreamAlertType.DEVICE_OVERHEATING
+        StreamHealthReason.LOW_BATTERY -> StreamAlertType.LOW_BATTERY
+        StreamHealthReason.MEMORY_PRESSURE -> StreamAlertType.MEMORY_PRESSURE
         StreamHealthReason.LOW_FPS -> if (level == StreamHealthLevel.CRITICAL) StreamAlertType.STREAM_STALLED else StreamAlertType.NETWORK_DEGRADED
     }
 }

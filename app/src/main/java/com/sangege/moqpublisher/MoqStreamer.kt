@@ -94,6 +94,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private val _audioLevel = MutableStateFlow(AudioLevel(0f, 0f, 0f, false))
     val audioLevel: StateFlow<AudioLevel> = _audioLevel.asStateFlow()
     private val healthEvaluator = StreamHealthEvaluator()
+    private val deviceHealthMonitor = DeviceHealthMonitor(context)
+    private val _deviceHealth = MutableStateFlow(DeviceHealthSnapshot())
+    val deviceHealth: StateFlow<DeviceHealthSnapshot> = _deviceHealth.asStateFlow()
     private val _healthState = MutableStateFlow(StreamHealthSnapshot())
     val healthState: StateFlow<StreamHealthSnapshot> = _healthState.asStateFlow()
     private val alertManager = StreamAlertManager()
@@ -1039,6 +1042,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     val rttMs = stats.rttUs?.let { (it / 1000uL).toLong() }
                     val videoQueueDepth = videoPublishQueue?.depth() ?: 0
                     val videoQueueAgeMs = videoPublishQueue?.mediaAgeMs()
+                    val deviceHealth = deviceHealthMonitor.sample()
+                    _deviceHealth.value = deviceHealth
                     var bitrateChanged: Long? = null
                     var bitrateError: Throwable? = null
                     if (isActive && isBroadcasting.get() && moqSession === moq) {
@@ -1101,7 +1106,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             targetFps = configuredFramerate,
                             publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
                             queueDepth = videoQueueDepth,
-                            queueMediaAgeMs = videoQueueAgeMs
+                            queueMediaAgeMs = videoQueueAgeMs,
+                            deviceHealthIssues = deviceHealth.issues
                         ))
                         val previousHealth = _healthState.value
                         if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {

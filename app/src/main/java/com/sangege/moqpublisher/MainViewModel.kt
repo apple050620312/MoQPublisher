@@ -12,6 +12,7 @@ import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.net.ConnectivityManager
@@ -87,6 +88,7 @@ class MainViewModel internal constructor(
     val broadcastLifecycle: StateFlow<BroadcastLifecycleState> = streamer.lifecycleState
     val streamHealth: StateFlow<StreamHealthSnapshot> = streamer.healthState
     val streamAlerts: StateFlow<StreamAlertState> = streamer.alertState
+    val deviceHealth: StateFlow<DeviceHealthSnapshot> = streamer.deviceHealth
     private val _preflightReport = MutableStateFlow<BroadcastPreflightReport?>(null)
     val preflightReport: StateFlow<BroadcastPreflightReport?> = _preflightReport.asStateFlow()
     internal val cameraEngine = session.camera
@@ -636,13 +638,39 @@ class MainViewModel internal constructor(
     private fun encoderAvailable(): Boolean = runCatching {
         val mime = if (_videoCodec.value == "H265") MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         val bitrate = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)?.times(1_000L) ?: return@runCatching false
-        val format = MediaFormat.createVideoFormat(mime, _videoResolution.value.width, _videoResolution.value.height).apply {
-            setInteger(MediaFormat.KEY_FRAME_RATE, _videoFps.value)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-        }
         MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-            info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
-                isHardwareEncoder(info) && runCatching { info.getCapabilitiesForType(mime).isFormatSupported(format) }.getOrDefault(false)
+            if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, ignoreCase = true) } || !isHardwareEncoder(info)) return@any false
+            runCatching {
+                val capabilities = info.getCapabilitiesForType(mime)
+                val color = when {
+                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in capabilities.colorFormats ->
+                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible in capabilities.colorFormats ->
+                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
+                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar in capabilities.colorFormats ->
+                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
+                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar in capabilities.colorFormats ->
+                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
+                    else -> null
+                } ?: return@runCatching false
+                val format = MediaFormat.createVideoFormat(mime, _videoResolution.value.width, _videoResolution.value.height).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT, color)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, _videoFps.value)
+                    setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                    setInteger(MediaFormat.KEY_PRIORITY, 0)
+                    if (Build.VERSION.SDK_INT >= 26) setInteger(MediaFormat.KEY_LATENCY, 0)
+                    if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+                    val profile = if (_videoCodec.value == "H265") MediaCodecInfo.CodecProfileLevel.HEVCProfileMain
+                    else MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
+                    if (capabilities.profileLevels.any { it.profile == profile }) setInteger(MediaFormat.KEY_PROFILE, profile)
+                    if (capabilities.encoderCapabilities?.isBitrateModeSupported(
+                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true) {
+                        setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                    }
+                }
+                capabilities.isFormatSupported(format)
+            }.getOrDefault(false)
         }
     }.getOrDefault(false)
 

@@ -146,11 +146,17 @@ class BroadcastService : Service() {
             StreamHealthLevel.RECOVERING -> localized.getString(R.string.health_recovering)
             else -> null
         }
+        val issueText = when {
+            StreamHealthReason.THERMAL in health.reasons -> localized.getString(R.string.health_thermal)
+            StreamHealthReason.LOW_BATTERY in health.reasons -> localized.getString(R.string.health_low_battery)
+            StreamHealthReason.MEMORY_PRESSURE in health.reasons -> localized.getString(R.string.health_memory_pressure)
+            else -> null
+        }
         val audioText = if (session.streamer.audioMuted.value) localized.getString(R.string.broadcast_notification_muted) else null
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_broadcast_notification)
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))
-            .setContentText(healthText ?: audioText ?: baseText)
+            .setContentText(healthText ?: issueText ?: audioText ?: baseText)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(0, localized.getString(R.string.stop_broadcast), stop).build()
     }

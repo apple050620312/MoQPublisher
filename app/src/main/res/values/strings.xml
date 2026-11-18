@@ -173,6 +173,10 @@
     <string name="health_audio_stalled">Audio capture has stalled.</string>
     <string name="health_low_fps">Published FPS is below the target.</string>
     <string name="health_queue_pressure">Video queue pressure is high.</string>
+    <string name="health_thermal">Device thermal pressure is high.</string>
+    <string name="health_low_battery">Battery level is low.</string>
+    <string name="health_memory_pressure">Available memory is low.</string>
+    <string name="stat_device_health">Battery %1$d%% · Memory %2$d%% · Thermal %3$d</string>
     <string name="about">About</string>
     <string name="about_description">MoQ Publisher version, app updates and the downloaded MoQ core.</string>
     <string name="core_title">MoQ core</string>

@@ -12,7 +12,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 - Relay URL, broadcast path, JWT and TLS certificate verification settings.
 - Switchable moq.pro and Cloudflare MoQ Draft 18 profiles, with encrypted connection tokens,
   separate Subscribe-only viewing/OBS links, connection phases and an opt-in remote decoder check.
-- Live RTT, measured send rate, bytes-sent statistics, actual published FPS, encoder bitrate, queue depth/media age, packet loss and stream health warnings are shown during a broadcast.
+- Live RTT, measured send rate, bytes-sent statistics, actual published FPS, encoder bitrate, queue depth/media age, packet loss, battery, memory and thermal status are shown during a broadcast. Low battery, thermal pressure and memory pressure produce health warnings and background notification updates.
 - On-device diagnostic ZIP export with sharing and saving to the phone, without USB or adb.
 - Configurable video bitrate in Kbps (default 8000 Kbps), optional congestion-aware bitrate adaptation and sensor-timestamp frame pacing.
 - Settings and the last selected camera/video options are persisted locally.
@@ -93,7 +93,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.28)
+## APK variants (v1.0.30)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

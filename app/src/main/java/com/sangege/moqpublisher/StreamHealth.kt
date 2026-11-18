@@ -10,7 +10,10 @@ enum class StreamHealthReason {
     PUBLISH_STALLED,
     AUDIO_STALLED,
     LOW_FPS,
-    QUEUE_PRESSURE
+    QUEUE_PRESSURE,
+    LOW_BATTERY,
+    THERMAL,
+    MEMORY_PRESSURE
 }
 
 data class StreamHealthSnapshot(
@@ -33,7 +36,8 @@ data class StreamHealthInput(
     val targetFps: Int = 0,
     val publishedFps: Double? = null,
     val queueDepth: Int = 0,
-    val queueMediaAgeMs: Long? = null
+    val queueMediaAgeMs: Long? = null,
+    val deviceHealthIssues: Set<DeviceHealthIssue> = emptySet()
 )
 
 /** Pure evaluator used by the streamer and JVM tests. */
@@ -69,6 +73,9 @@ internal class StreamHealthEvaluator(private val cleanSamplesToRecover: Int = 3)
         if (input.queueDepth >= 6 || input.queueMediaAgeMs != null && input.queueMediaAgeMs > 400L) {
             reasons += StreamHealthReason.QUEUE_PRESSURE
         }
+        if (DeviceHealthIssue.LOW_BATTERY in input.deviceHealthIssues) reasons += StreamHealthReason.LOW_BATTERY
+        if (DeviceHealthIssue.THERMAL in input.deviceHealthIssues) reasons += StreamHealthReason.THERMAL
+        if (DeviceHealthIssue.MEMORY_PRESSURE in input.deviceHealthIssues) reasons += StreamHealthReason.MEMORY_PRESSURE
 
         val critical = reasons.any {
             it == StreamHealthReason.ENCODER_STALLED || it == StreamHealthReason.PUBLISH_STALLED

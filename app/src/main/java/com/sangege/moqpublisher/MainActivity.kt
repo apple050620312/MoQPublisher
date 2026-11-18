@@ -392,6 +392,9 @@ private fun StreamHealthNotice(snapshot: StreamHealthSnapshot, modifier: Modifie
         StreamHealthReason.AUDIO_STALLED in snapshot.reasons -> R.string.health_audio_stalled
         StreamHealthReason.LOW_FPS in snapshot.reasons -> R.string.health_low_fps
         StreamHealthReason.QUEUE_PRESSURE in snapshot.reasons -> R.string.health_queue_pressure
+        StreamHealthReason.THERMAL in snapshot.reasons -> R.string.health_thermal
+        StreamHealthReason.LOW_BATTERY in snapshot.reasons -> R.string.health_low_battery
+        StreamHealthReason.MEMORY_PRESSURE in snapshot.reasons -> R.string.health_memory_pressure
         snapshot.level == StreamHealthLevel.RECOVERING -> R.string.health_recovering
         snapshot.level == StreamHealthLevel.CRITICAL -> R.string.health_critical
         else -> R.string.health_warning
@@ -899,7 +902,8 @@ private fun StreamControls(
                 StatusNotice(stringResource(R.string.status_reconnecting), loading = true)
             else if (state.phase == RelayConnectionPhase.CONNECTED)
                 StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
-            LiveStats(state, codec, fps)
+            val deviceHealth by viewModel.deviceHealth.collectAsState()
+            LiveStats(state, codec, fps, deviceHealth)
         }
         else -> SettingCard(stringResource(R.string.effective_url)) {
             Text(relay, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -953,7 +957,7 @@ private fun AudioLevelMeter(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int) {
+private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int, deviceHealth: DeviceHealthSnapshot) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.live_stats), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -979,6 +983,9 @@ private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int) {
                     stats.videoQueueDepth, stats.videoQueueAgeMs ?: 0L), Modifier.weight(1f))
                 StatItem(stringResource(R.string.stat_lost), stats.packetsLost?.toString() ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
             }
+            Text(stringResource(R.string.stat_device_health,
+                deviceHealth.batteryPercent ?: -1, deviceHealth.memoryAvailablePercent ?: -1,
+                deviceHealth.thermalStatus ?: 0), style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
             stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)
