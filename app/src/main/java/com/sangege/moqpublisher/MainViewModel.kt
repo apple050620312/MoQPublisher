@@ -30,12 +30,12 @@ import androidx.lifecycle.viewModelScope
 import dev.moq.VideoCodec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.math.BigDecimal
 
 private const val PREFS_NAME = "moq_stream_prefs"
 private const val KEY_RELAY_URL = "relay_url"
@@ -190,28 +190,22 @@ class MainViewModel internal constructor(
     )
     val videoFps: StateFlow<Int> = _videoFps.asStateFlow()
 
-    private val _videoBitrateKbps = MutableStateFlow(
-        prefs.getString(KEY_VIDEO_BITRATE, null) ?: VideoBitrateSettings.migrateMbps(prefs.getString(KEY_LEGACY_VIDEO_BITRATE, null))
-            .also { migrated -> prefs.edit { putString(KEY_VIDEO_BITRATE, migrated) } }
+    private val _videoBitrate = MutableStateFlow(
+        VideoBitrateInput.restore(
+            target = prefs.getString(KEY_VIDEO_BITRATE, null)
+                ?: VideoBitrateSettings.migrateMbps(prefs.getString(KEY_LEGACY_VIDEO_BITRATE, null))
+                    .also { migrated -> prefs.edit { putString(KEY_VIDEO_BITRATE, migrated) } },
+            minimum = prefs.getString(KEY_VIDEO_MIN_BITRATE, null),
+            maximum = prefs.getString(KEY_VIDEO_MAX_BITRATE, null),
+            adaptive = prefs.getBoolean(KEY_ADAPTIVE_BITRATE, true)
+        )
     )
-    val videoBitrateKbps: StateFlow<String> = _videoBitrateKbps.asStateFlow()
-    private val _videoMinBitrateKbps = MutableStateFlow(run {
-        val targetBps = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value) ?: VideoBitrateSettings.DEFAULT_BPS
-        val defaultMinimum = VideoBitrateSettings.parseKbps(VideoBitrateSettings.DEFAULT_MIN_KBPS)
-            ?.takeIf { it <= targetBps }?.let { VideoBitrateSettings.DEFAULT_MIN_KBPS }
-            ?: _videoBitrateKbps.value
-        prefs.getString(KEY_VIDEO_MIN_BITRATE, defaultMinimum) ?: defaultMinimum
-    })
-    val videoMinBitrateKbps: StateFlow<String> = _videoMinBitrateKbps.asStateFlow()
-    private val _videoMaxBitrateKbps = MutableStateFlow(
-        prefs.getString(KEY_VIDEO_MAX_BITRATE, _videoBitrateKbps.value) ?: _videoBitrateKbps.value
-    )
-    val videoMaxBitrateKbps: StateFlow<String> = _videoMaxBitrateKbps.asStateFlow()
-    private val _adaptiveBitrate = MutableStateFlow(prefs.getBoolean(KEY_ADAPTIVE_BITRATE, true))
-    val adaptiveBitrate: StateFlow<Boolean> = _adaptiveBitrate.asStateFlow()
+    internal val videoBitrate = _videoBitrate.asStateFlow()
+    private val _applyingVideoBitrate = MutableStateFlow(false)
+    internal val applyingVideoBitrate = _applyingVideoBitrate.asStateFlow()
     private val _presets = MutableStateFlow(StreamPresetPolicy.builtIns() + presetRepository.loadCustom())
     val presets: StateFlow<List<StreamPreset>> = _presets.asStateFlow()
-    private val _encoderCapabilities = MutableStateFlow(capabilityRepository.inspectAll())
+    private val _encoderCapabilities = MutableStateFlow<List<VideoEncoderCapability>>(emptyList())
     val encoderCapabilities: StateFlow<List<VideoEncoderCapability>> = _encoderCapabilities.asStateFlow()
     private val _selectedPresetId = MutableStateFlow(prefs.getString(KEY_ACTIVE_PRESET, null))
     val selectedPresetId: StateFlow<String?> = _selectedPresetId.asStateFlow()
@@ -225,7 +219,7 @@ class MainViewModel internal constructor(
         streamer.setAudioInputDevice(_audioInputDeviceId.value)
         refreshAvailableResolutions(_useFrontCamera.value)
         syncCamera()
-        viewModelScope.launch(Dispatchers.Default) { _encoderCapabilities.value = capabilityRepository.inspectAll() }
+        viewModelScope.launch(Dispatchers.IO) { _encoderCapabilities.value = capabilityRepository.inspectAll() }
         viewModelScope.launch { session.cameraError.collect { if (it != null) _configurationError.value = it } }
     }
 
@@ -236,18 +230,9 @@ class MainViewModel internal constructor(
     fun setAudioMuted(muted: Boolean) = streamer.setAudioMuted(muted)
 
     fun applyDeviceHealthRecommendation() {
-        if (!streamState.value.isActive()) return
-        if (streamer.deviceHealth.value.recommendation != DeviceQualityRecommendation.REDUCE_BITRATE) return
-        val target = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value) ?: return
-        val minimum = VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value) ?: VideoBitrateSettings.MIN_BPS
-        val reduced = (target * 0.75).toLong().coerceAtLeast(minimum)
-        val reducedKbps = BigDecimal.valueOf(reduced).divide(BigDecimal(1_000)).stripTrailingZeros().toPlainString()
-        setVideoMaxBitrateKbps(reducedKbps)
-        setVideoBitrateKbps(reducedKbps)
-        diagnostics.event("device_health_quality_recommendation_applied", mapOf(
-            "old_target_bps" to target, "new_target_bps" to reduced,
-            "issues" to streamer.deviceHealth.value.issues.map { it.name }
-        ))
+        if (streamState.value !is StreamState.Live) return
+        val generation = broadcastLifecycle.value.generation
+        runVideoBitrateChange { streamer.lowerVideoBitrateForDeviceHealth(generation) }
     }
 
     fun refreshAudioInputDevices() {
@@ -441,60 +426,53 @@ class MainViewModel internal constructor(
         syncCamera()
     }
 
-    fun setVideoBitrateKbps(value: String) {
-        _videoBitrateKbps.value = value
-        markPresetChanged()
-        VideoBitrateSettings.parseKbps(value)?.let { target ->
-            val minimum = VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value) ?: VideoBitrateSettings.MIN_BPS
-            val maximum = VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value) ?: target
-            if (target < minimum) {
-                _videoMinBitrateKbps.value = value
-                prefs.edit { putString(KEY_VIDEO_MIN_BITRATE, value) }
+    internal fun applyVideoBitrate(input: VideoBitrateInput) {
+        if (_applyingVideoBitrate.value || session.pendingStart != null) return
+        val settings = input.configuration() ?: return
+        if (!streamState.value.isActive()) {
+            saveVideoBitrate(input)
+            clearConfigurationError()
+            return
+        }
+        val generation = broadcastLifecycle.value.generation
+        runVideoBitrateChange {
+            streamer.changeVideoBitrate(generation, settings).also { applied ->
+                if (applied) saveVideoBitrate(input)
             }
-            if (target > maximum) {
-                _videoMaxBitrateKbps.value = value
-                prefs.edit { putString(KEY_VIDEO_MAX_BITRATE, value) }
+        }
+    }
+
+    private fun runVideoBitrateChange(change: suspend () -> Boolean) {
+        if (_applyingVideoBitrate.value) return
+        _applyingVideoBitrate.value = true
+        viewModelScope.launch {
+            // Finish a submitted codec update and its preference write even if the Activity closes.
+            withContext(NonCancellable) {
+                try {
+                    if (change()) clearConfigurationError()
+                } catch (error: UiException) {
+                    setConfigurationError(error.uiMessage)
+                } catch (error: RuntimeException) {
+                    diagnostics.error("video_bitrate_settings_rejected", error)
+                    setConfigurationError(UiMessage(R.string.error_bitrate_codec_change))
+                } finally {
+                    _applyingVideoBitrate.value = false
+                }
             }
-            streamer.setVideoBitrateRange(
-                minimumBps = minOf(minimum, target),
-                maximumBps = maxOf(maximum, target)
-            )
-            streamer.setVideoBitrate(target)
         }
-        clearConfigurationError()
-        prefs.edit { putString(KEY_VIDEO_BITRATE, value) }
     }
 
-    fun setVideoMinBitrateKbps(value: String) {
-        _videoMinBitrateKbps.value = value
-        val minimum = VideoBitrateSettings.parseKbps(value)
-        val target = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)
-        val maximum = VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value)
-        if (minimum != null && target != null && maximum != null && minimum <= target && minimum <= maximum) {
-            streamer.setVideoBitrateRange(minimum, maximum)
-        }
-        clearConfigurationError()
-        prefs.edit { putString(KEY_VIDEO_MIN_BITRATE, value) }
-    }
-
-    fun setVideoMaxBitrateKbps(value: String) {
-        _videoMaxBitrateKbps.value = value
-        val minimum = VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value)
-        val target = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)
-        val maximum = VideoBitrateSettings.parseKbps(value)
-        if (minimum != null && target != null && maximum != null && maximum >= target && maximum >= minimum) {
-            streamer.setVideoBitrateRange(minimum, maximum)
-        }
-        clearConfigurationError()
-        prefs.edit { putString(KEY_VIDEO_MAX_BITRATE, value) }
-    }
-
-    fun setAdaptiveBitrate(enabled: Boolean) {
-        _adaptiveBitrate.value = enabled
+    private fun saveVideoBitrate(input: VideoBitrateInput) {
+        _videoBitrate.value = input
         markPresetChanged()
-        streamer.setAdaptiveBitrate(enabled)
-        clearConfigurationError()
-        prefs.edit { putBoolean(KEY_ADAPTIVE_BITRATE, enabled) }
+        prefs.edit { writeVideoBitrate(input) }
+    }
+
+    private fun SharedPreferences.Editor.writeVideoBitrate(input: VideoBitrateInput) {
+        putString(KEY_VIDEO_BITRATE, input.targetKbps)
+        putString(KEY_VIDEO_MIN_BITRATE, input.minimumKbps)
+        putString(KEY_VIDEO_MAX_BITRATE, input.maximumKbps)
+        putBoolean(KEY_ADAPTIVE_BITRATE, input.adaptive)
     }
 
     fun setConfigurationError(message: UiMessage?) {
@@ -503,15 +481,15 @@ class MainViewModel internal constructor(
     }
 
     fun applyPreset(id: String): Boolean {
-        if (streamState.value.isActive()) {
+        if (streamState.value.isActive() || session.pendingStart != null || _applyingVideoBitrate.value) {
             setConfigurationError(UiMessage(R.string.streaming_settings_locked))
             return false
         }
         val preset = _presets.value.firstOrNull { it.id == id } ?: return false
         val validationError = StreamPresetPolicy.validate(preset)
-        if (validationError != null || !capabilityRepository.supportsHardwareSurfaceEncoder(preset.videoCodec)) {
-            setConfigurationError(UiMessage(R.string.error_preset_unsupported, listOf(preset.videoCodec)))
-            diagnostics.event("preset_rejected", mapOf("id" to id, "codec" to preset.videoCodec, "reason" to (validationError ?: "encoder")))
+        if (validationError != null) {
+            setConfigurationError(UiMessage(R.string.error_preset_invalid))
+            diagnostics.event("preset_rejected", mapOf("id" to id, "codec" to preset.videoCodec, "reason" to validationError))
             return false
         }
         applyingPreset = true
@@ -519,15 +497,11 @@ class MainViewModel internal constructor(
             _videoCodec.value = preset.videoCodec
             _videoResolution.value = android.util.Size(preset.width, preset.height)
             _videoFps.value = preset.fps
-            _videoBitrateKbps.value = preset.videoBitrateKbps
-            val presetTarget = checkNotNull(VideoBitrateSettings.parseKbps(preset.videoBitrateKbps))
-            if (VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value)?.let { presetTarget >= it } != true) {
-                _videoMinBitrateKbps.value = preset.videoBitrateKbps
-            }
-            if (VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value)?.let { presetTarget <= it } != true) {
-                _videoMaxBitrateKbps.value = preset.videoBitrateKbps
-            }
-            _adaptiveBitrate.value = preset.adaptiveBitrate
+            val bitrate = VideoBitrateInput.restore(
+                target = preset.videoBitrateKbps, minimum = _videoBitrate.value.minimumKbps,
+                maximum = preset.videoBitrateKbps, adaptive = preset.adaptiveBitrate
+            )
+            _videoBitrate.value = bitrate
             _enableAudio.value = preset.enableAudio
             _audioChannel.value = preset.audioChannel
             _audioQuality.value = preset.audioQuality
@@ -536,21 +510,13 @@ class MainViewModel internal constructor(
                 putInt(KEY_VIDEO_WIDTH, preset.width)
                 putInt(KEY_VIDEO_HEIGHT, preset.height)
                 putInt(KEY_VIDEO_FPS, preset.fps)
-                putString(KEY_VIDEO_BITRATE, preset.videoBitrateKbps)
-                putString(KEY_VIDEO_MIN_BITRATE, _videoMinBitrateKbps.value)
-                putString(KEY_VIDEO_MAX_BITRATE, _videoMaxBitrateKbps.value)
-                putBoolean(KEY_ADAPTIVE_BITRATE, preset.adaptiveBitrate)
+                writeVideoBitrate(bitrate)
                 putBoolean(KEY_ENABLE_AUDIO, preset.enableAudio)
                 putString(KEY_AUDIO_CHANNEL, preset.audioChannel.name)
                 putString(KEY_AUDIO_QUALITY, preset.audioQuality.name)
                 putString(KEY_ACTIVE_PRESET, preset.id)
             }
             _selectedPresetId.value = preset.id
-            streamer.setVideoBitrateRange(
-                checkNotNull(VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value)),
-                checkNotNull(VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value))
-            )
-            streamer.setVideoBitrate(presetTarget)
             syncCamera()
             clearConfigurationError()
             diagnostics.event("preset_applied", mapOf("id" to preset.id, "name" to preset.name))
@@ -621,8 +587,8 @@ class MainViewModel internal constructor(
         width = _videoResolution.value.width,
         height = _videoResolution.value.height,
         fps = _videoFps.value,
-        videoBitrateKbps = _videoBitrateKbps.value,
-        adaptiveBitrate = _adaptiveBitrate.value,
+        videoBitrateKbps = _videoBitrate.value.targetKbps,
+        adaptiveBitrate = _videoBitrate.value.adaptive,
         enableAudio = _enableAudio.value,
         audioChannel = _audioChannel.value,
         audioQuality = _audioQuality.value
@@ -663,11 +629,12 @@ class MainViewModel internal constructor(
         "codec" to videoCodec.value,
         "resolution" to videoResolution.value,
         "fps" to videoFps.value,
-        "target_bitrate_kbps" to videoBitrateKbps.value,
-        "min_bitrate_kbps" to videoMinBitrateKbps.value,
-        "max_bitrate_kbps" to videoMaxBitrateKbps.value,
+        "target_bitrate_kbps" to videoBitrate.value.targetKbps,
+        "min_bitrate_kbps" to videoBitrate.value.minimumKbps,
+        "max_bitrate_kbps" to videoBitrate.value.maximumKbps,
         "encoder_capabilities" to encoderCapabilities.value.map { it.toDiagnosticMap() },
-        "adaptive_bitrate" to adaptiveBitrate.value,
+        "adaptive_bitrate" to videoBitrate.value.adaptive,
+        "runtime_bitrate" to (streamState.value as? StreamState.Live)?.runtimeBitrateSupport,
         "camera_capture" to cameraCaptureStatus.value,
         "audio_enabled" to enableAudio.value,
         "audio_channel_requested" to audioChannel.value,
@@ -721,9 +688,6 @@ class MainViewModel internal constructor(
 
                     if (sortedSizes.isNotEmpty()) {
                         _availableResolutions.value = sortedSizes
-                        if (!sortedSizes.any { it.width == _videoResolution.value.width && it.height == _videoResolution.value.height }) {
-                            setVideoResolution(sortedSizes.firstOrNull { it.width == 1280 && it.height == 720 } ?: sortedSizes.first())
-                        }
                         return
                     }
                 }
@@ -760,7 +724,7 @@ class MainViewModel internal constructor(
 
     /** Starts a broadcast only when the current settings are usable. */
     fun startBroadcast(): Boolean {
-        if (streamState.value.isActive()) return false
+        if (streamState.value.isActive() || session.pendingStart != null || _applyingVideoBitrate.value) return false
         if (!streamer.canStart) {
             _configurationError.value = UiMessage(R.string.error_stream_stopping)
             return false
@@ -786,10 +750,7 @@ class MainViewModel internal constructor(
             audioGainPercent = _audioGain.value,
             codec = codec,
             framerate = _videoFps.value,
-            bitrateBps = checkNotNull(VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)),
-            minBitrateBps = checkNotNull(VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value)),
-            maxBitrateBps = checkNotNull(VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value)),
-            adaptiveBitrate = _adaptiveBitrate.value,
+            videoBitrate = checkNotNull(_videoBitrate.value.configuration()),
             provider = _relayProfile.value.provider,
             protocolDraft = _relayProfile.value.protocolDraft.takeIf { _relayProfile.value.provider == RelayProvider.CLOUDFLARE }
         )) } catch (error: Throwable) {
@@ -812,12 +773,12 @@ class MainViewModel internal constructor(
             audioEnabled = _enableAudio.value,
             cameraAvailable = cameraAvailable(context),
             audioAvailable = audioAvailable(),
-            encoderAvailable = encoderAvailable(),
+            hardwareSurfaceEncoderReported = _encoderCapabilities.value.any { it.codec == _videoCodec.value && it.available },
             // CameraX may choose the nearest supported sensor mode. The actual
             // camera size and MediaCodec configuration are validated when the
             // stream encoder is opened, so a stale capability list must not
             // block an otherwise valid user selection here.
-            resolutionFpsSupported = _videoResolution.value.width >= 2 &&
+            resolutionFpsValid = _videoResolution.value.width >= 2 &&
                 _videoResolution.value.height >= 2 && _videoFps.value in SUPPORTED_FPS,
             relayConfigured = settingsError == null,
             publishTokenConfigured = profile.provider != RelayProvider.CLOUDFLARE || CloudflareRelay.validToken(profile.publishToken),
@@ -841,10 +802,6 @@ class MainViewModel internal constructor(
     private fun preflightError(id: PreflightCheckId): UiMessage = when (id) {
         PreflightCheckId.CAMERA_PERMISSION, PreflightCheckId.CAMERA_AVAILABILITY -> UiMessage(R.string.error_camera)
         PreflightCheckId.MICROPHONE_PERMISSION, PreflightCheckId.AUDIO_AVAILABILITY -> UiMessage(R.string.error_microphone_permission)
-        PreflightCheckId.ENCODER_CAPABILITY -> UiMessage(
-            R.string.error_encoder_unsupported,
-            listOf(_videoCodec.value, _videoResolution.value.width, _videoResolution.value.height, _videoFps.value)
-        )
         PreflightCheckId.RESOLUTION_FPS -> UiMessage(R.string.error_resolution_invalid)
         PreflightCheckId.PUBLISH_TOKEN -> UiMessage(R.string.error_cloudflare_publish_token)
         PreflightCheckId.MOQ_CORE -> UiMessage(R.string.core_required)
@@ -861,8 +818,6 @@ class MainViewModel internal constructor(
         val mask = if (_audioChannel.value == AudioChannel.STEREO) AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
         return AudioRecord.getMinBufferSize(AudioSettings.SAMPLE_RATE, mask, AudioFormat.ENCODING_PCM_16BIT) > 0
     }
-
-    private fun encoderAvailable(): Boolean = capabilityRepository.supportsHardwareSurfaceEncoder(_videoCodec.value)
 
     private fun networkAvailable(context: Context): Boolean = runCatching {
         val manager = context.getSystemService(ConnectivityManager::class.java)
@@ -905,16 +860,6 @@ class MainViewModel internal constructor(
 
         if (_videoFps.value !in SUPPORTED_FPS) {
             return UiMessage(R.string.error_fps_invalid)
-        }
-
-        if (VideoBitrateSettings.parseKbps(_videoBitrateKbps.value) == null) {
-            return UiMessage(R.string.error_bitrate_invalid)
-        }
-        val minimum = VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value)
-        val maximum = VideoBitrateSettings.parseKbps(_videoMaxBitrateKbps.value)
-        val target = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)
-        if (minimum == null || maximum == null || target == null || minimum > target || target > maximum) {
-            return UiMessage(R.string.error_bitrate_range_invalid)
         }
 
         val resolution = _videoResolution.value

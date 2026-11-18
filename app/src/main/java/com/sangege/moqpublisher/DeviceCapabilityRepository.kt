@@ -6,8 +6,6 @@ import android.media.MediaFormat
 import android.os.Build
 import android.util.Range
 
-enum class RuntimeBitrateSupport { UNKNOWN }
-
 data class VideoEncoderCapability(
     val codec: String,
     val encoderNames: List<String> = emptyList(),
@@ -16,8 +14,7 @@ data class VideoEncoderCapability(
     val heightRange: Range<Int>? = null,
     val frameRateRange: Range<Int>? = null,
     val bitrateRange: Range<Int>? = null,
-    val cbrSupported: Boolean = false,
-    val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN
+    val cbrSupported: Boolean = false
 ) {
     val available: Boolean get() = encoderNames.isNotEmpty() && surfaceInput
 
@@ -29,8 +26,7 @@ data class VideoEncoderCapability(
         "heights" to heightRange?.toString(),
         "fps" to frameRateRange?.toString(),
         "bitrate" to bitrateRange?.toString(),
-        "cbr" to cbrSupported,
-        "runtime_bitrate" to runtimeBitrateSupport.name
+        "cbr" to cbrSupported
     )
 }
 
@@ -70,8 +66,6 @@ internal class DeviceCapabilityRepository {
         }
         VideoEncoderCapability(normalized, names.distinct(), surface, widths, heights, frameRates, bitrates, cbr)
     }.getOrDefault(VideoEncoderCapability(codec.uppercase()))
-
-    fun supportsHardwareSurfaceEncoder(codec: String): Boolean = inspect(codec).available
 
     private fun isHardware(info: MediaCodecInfo): Boolean {
         if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated

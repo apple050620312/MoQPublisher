@@ -38,8 +38,8 @@ data class BroadcastPreflightInput(
     val audioEnabled: Boolean,
     val cameraAvailable: Boolean,
     val audioAvailable: Boolean,
-    val encoderAvailable: Boolean,
-    val resolutionFpsSupported: Boolean,
+    val hardwareSurfaceEncoderReported: Boolean,
+    val resolutionFpsValid: Boolean,
     val relayConfigured: Boolean,
     val publishTokenConfigured: Boolean,
     val subscribeTokenConfigured: Boolean,
@@ -65,10 +65,12 @@ internal object BroadcastPreflightPolicy {
             "A camera is available", "No camera is available")
         checks += check(PreflightCheckId.AUDIO_AVAILABILITY, !input.audioEnabled || input.audioAvailable,
             "An audio input is available", "No compatible microphone input is available")
-        checks += check(PreflightCheckId.ENCODER_CAPABILITY, input.encoderAvailable,
-            "The selected hardware encoder is available", "The selected hardware encoder is unavailable")
-        checks += check(PreflightCheckId.RESOLUTION_FPS, input.resolutionFpsSupported,
-            "The selected resolution and FPS are supported", "The selected resolution and FPS combination is unavailable")
+        checks += check(PreflightCheckId.ENCODER_CAPABILITY, input.hardwareSurfaceEncoderReported,
+            "Android reports a hardware surface encoder for this codec",
+            "Android did not report a hardware surface encoder for this codec. The app will try to configure it",
+            warningWhenFalse = true)
+        checks += check(PreflightCheckId.RESOLUTION_FPS, input.resolutionFpsValid,
+            "The requested resolution and FPS are valid", "The requested resolution or FPS is invalid")
         checks += check(PreflightCheckId.RELAY_CONFIGURATION, input.relayConfigured,
             "Relay settings are valid", "Relay settings need correction")
         checks += check(PreflightCheckId.PUBLISH_TOKEN, input.publishTokenConfigured,

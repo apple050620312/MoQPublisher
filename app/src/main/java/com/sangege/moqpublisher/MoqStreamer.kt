@@ -40,6 +40,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
 import uniffi.moq.MoqException
@@ -75,7 +76,8 @@ sealed interface StreamState {
         val epoch: ULong = 1u,
         val phase: RelayConnectionPhase = RelayConnectionPhase.CONNECTED,
         val reconnectCount: Long = 0,
-        val endpointDraft: Int? = null
+        val endpointDraft: Int? = null,
+        val runtimeBitrateSupport: RuntimeBitrateSupport = RuntimeBitrateSupport.UNKNOWN
     ) : StreamState
     data class Error(val message: UiMessage) : StreamState
 }
@@ -123,7 +125,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var videoTimestampMapper: VideoTimestampMapper? = null
     @Volatile
     private var videoGeneration = 0
-    private var bitrateAdaptationEnabled = true
 
     private var videoPublishQueue: VideoPublishQueue? = null
     private var videoPublishExecutor: ExecutorService? = null
@@ -161,9 +162,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var videoTrackCounter: Int = 0
     private var configuredCodec: VideoCodec = VideoCodec.H264
     private var configuredFramerate: Int = 30
-    private var configuredBitrate: Long = VideoBitrateSettings.DEFAULT_BPS
-    private var configuredMinBitrate: Long = VideoBitrateSettings.MIN_BPS
-    private var configuredMaxBitrate: Long = VideoBitrateSettings.DEFAULT_BPS
     private var configuredAudioChannel = AudioChannel.MONO
     private var configuredAudioQuality = AudioQuality.STANDARD
     private var configuredAudioGain = AudioSettings.DEFAULT_GAIN
@@ -178,7 +176,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     internal var requestCameraRecovery: () -> Unit = {}
     internal val canStart: Boolean get() = synchronized(lifecycleLock) { !closed && broadcastJob == null }
 
-    fun startBroadcast(
+    internal fun startBroadcast(
         relayUrl: String,
         streamPath: String,
         tlsVerify: Boolean,
@@ -188,10 +186,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         audioGainPercent: Int = AudioSettings.DEFAULT_GAIN,
         codec: VideoCodec = VideoCodec.H264,
         framerate: Int = 30,
-        bitrateBps: Long = VideoBitrateSettings.DEFAULT_BPS,
-        minBitrateBps: Long = VideoBitrateSettings.MIN_BPS,
-        maxBitrateBps: Long = VideoBitrateSettings.DEFAULT_BPS,
-        adaptiveBitrate: Boolean = true,
+        videoBitrate: VideoBitrateConfiguration,
         provider: RelayProvider = RelayProvider.MOQ_PRO,
         protocolDraft: Int? = null
     ) {
@@ -207,18 +202,15 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             diagnostics.event("broadcast_start_requested", mapOf(
                 "relay" to RelayUrl.maskJwt(relayUrl), "path" to streamPath, "tls_verify" to tlsVerify,
                 "provider" to provider, "endpoint_draft" to protocolDraft,
-                "audio" to enableAudio, "codec" to codec, "fps" to framerate, "bitrate_bps" to bitrateBps,
-                "min_bitrate_bps" to minBitrateBps, "max_bitrate_bps" to maxBitrateBps,
-                "adaptive_bitrate" to adaptiveBitrate,
+                "audio" to enableAudio, "codec" to codec, "fps" to framerate, "bitrate_bps" to videoBitrate.targetBps,
+                "min_bitrate_bps" to videoBitrate.minimumBps, "max_bitrate_bps" to videoBitrate.maximumBps,
+                "adaptive_bitrate" to videoBitrate.adaptive,
                 "audio_channel" to audioChannel, "audio_gain_percent" to audioGainPercent,
                 "network" to diagnostics.networkDescription()
             ))
 
             configuredCodec = codec
             configuredFramerate = framerate.coerceIn(1, 120)
-            configuredMinBitrate = minBitrateBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
-            configuredMaxBitrate = maxBitrateBps.coerceIn(configuredMinBitrate, Int.MAX_VALUE.toLong())
-            configuredBitrate = bitrateBps.coerceIn(configuredMinBitrate, configuredMaxBitrate)
             configuredAudioChannel = audioChannel
             configuredAudioQuality = audioQuality
             configuredAudioGain = AudioSettings.normalizeGain(audioGainPercent)
@@ -230,13 +222,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredDraft = protocolDraft
             _audioCaptureStatus.value = null
             _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
-            videoBitrateControl = VideoBitrateControl(configuredBitrate,
-                if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L,
-                configuredMinBitrate)
-            videoBitrateControl?.setCeiling(configuredMaxBitrate)
-            bitrateAdaptationEnabled = adaptiveBitrate
-            _streamState.value = StreamState.Connecting
+            videoBitrateControl = VideoBitrateControl(
+                videoBitrate, if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L
+            )
             transitionLifecycle(BroadcastLifecycleEvent.StartRequested)
+            _streamState.value = StreamState.Connecting
             _healthState.value = healthEvaluator.reset()
             _alertState.value = alertManager.reset()
             broadcastJob = scope.launch {
@@ -535,14 +525,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 }
                 record = createdRecord
                 val frameBytes = AudioSettings.frameBytes(actualChannel)
+                val actualBitrate = configuredAudioQuality.bitrateBps(actualChannel)
                 // Account for the actual Opus channel configuration, including a mono fallback.
                 synchronized(videoLock) {
-                    videoBitrateControl = VideoBitrateControl(configuredBitrate,
-                        configuredAudioQuality.bitrateBps(actualChannel), configuredMinBitrate)
-                    videoBitrateControl?.setCeiling(configuredMaxBitrate)
+                    videoBitrateControl?.audioBps = actualBitrate
                 }
                 Log.d(TAG, "Encoding audio with Opus (48kHz, $actualChannel)...")
-                val actualBitrate = configuredAudioQuality.bitrateBps(actualChannel)
                 val audio = MoqAudioPublisher.open(broadcast, actualChannel, bandwidth, actualBitrate, trackName)
                 producer = audio
 
@@ -984,7 +972,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private fun createVideoProducerLocked(width: Int, height: Int, surfaceInput: Boolean = false) {
         require(width > 0 && height > 0) { "Invalid video dimensions: ${width}x$height" }
 
-        val lastAcceptedBitrate = hardwareEncoder?.bitrateBps
         runCatching { hardwareEncoder?.close() }
         hardwareEncoder = null
         runCatching { videoDemand?.close() }
@@ -1000,7 +987,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         val trackName = if (videoTrackCounter == 0) "camera" else "camera_${videoTrackCounter}"
         val generation = videoGeneration + 1
         videoGeneration = generation
-        val bitrateBps = lastAcceptedBitrate ?: configuredBitrate
+        val bitrateControl = checkNotNull(videoBitrateControl)
+        val bitrateBps = bitrateControl.currentBps
         Log.d(
             TAG,
             "Setting up Android hardware encoder: ${width}x${height} @ ${configuredFramerate}fps " +
@@ -1034,6 +1022,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics,
             onFailure = ::cameraFailed, onEncoded = encoded
         ) else HardwareVideoEncoder.open(width, height, configuredFramerate, bitrateBps, configuredCodec, diagnostics, encoded)
+        bitrateControl.encoderOpened()
         videoPublishQueue?.clear()
         videoTrackCounter++
         currentVideoWidth = width
@@ -1060,20 +1049,17 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     var bitrateError: Throwable? = null
                     if (isActive && isBroadcasting.get() && moqSession === moq) {
                         synchronized(videoLock) {
-                            if (isBroadcasting.get() && bitrateAdaptationEnabled && hardwareEncoder != null) {
-                                videoBitrateControl?.update(
-                                    capacityBps = stats.estimatedSendRateBps,
-                                    queueDepth = videoQueueDepth,
-                                    rttMs = rttMs
-                                )?.let { rate ->
-                                    runCatching { hardwareEncoder?.setBitrate(rate) }.onSuccess {
-                                        bitrateChanged = rate
-                                    }.onFailure {
-                                        bitrateAdaptationEnabled = false
-                                        Log.w(TAG, "Hardware encoder cannot change bitrate while running: ${DiagnosticRedactor.redact(it.toString())}")
-                                        bitrateError = it
-                                    }
-                                }
+                            val encoder = hardwareEncoder
+                            if (isBroadcasting.get() && encoder != null) {
+                                runCatching {
+                                    videoBitrateControl?.update(
+                                        capacityBps = stats.estimatedSendRateBps,
+                                        queueDepth = videoQueueDepth,
+                                        queueAgeMs = videoQueueAgeMs,
+                                        rttMs = rttMs,
+                                        apply = encoder::setBitrate
+                                    )
+                                }.onSuccess { bitrateChanged = it }.onFailure { bitrateError = it }
                             }
                         }
                     }
@@ -1099,7 +1085,11 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             mapOf("encoder_pending" to hardwareEncoder?.pendingFrames,
                                 "encoder_name" to hardwareEncoder?.name,
                                 "video_budget_bps" to hardwareEncoder?.bitrateBps,
-                                "bitrate_adaptation" to bitrateAdaptationEnabled,
+                                "bitrate_adaptation" to videoBitrateControl?.settings?.adaptive,
+                                "runtime_bitrate" to videoBitrateControl?.runtimeSupport,
+                                "min_bitrate_bps" to videoBitrateControl?.settings?.minimumBps,
+                                "target_bitrate_bps" to videoBitrateControl?.settings?.targetBps,
+                                "max_bitrate_bps" to videoBitrateControl?.settings?.maximumBps,
                                 "video_used" to videoDemand?.isUsed(),
                                 "video_queue_depth" to videoQueueDepth,
                                 "audio_queue_depth" to (audioPublishQueue?.depth() ?: 0))
@@ -1160,6 +1150,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 bytesSentMb = sentMb,
                                 publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
                                 videoBitrateBps = encoderStatus["video_budget_bps"] as? Long,
+                                runtimeBitrateSupport = encoderStatus["runtime_bitrate"] as? RuntimeBitrateSupport
+                                    ?: RuntimeBitrateSupport.UNKNOWN,
                                 encoderName = encoderStatus["encoder_name"] as? String,
                                 videoQueueDepth = videoQueueDepth,
                                 videoQueueAgeMs = videoQueueAgeMs,
@@ -1211,50 +1203,35 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
     }
 
-    fun setVideoBitrate(bitrateBps: Long) {
-        val normalized = bitrateBps.coerceIn(configuredMinBitrate, configuredMaxBitrate)
-        configuredBitrate = normalized
-        videoBitrateControl?.setCeiling(configuredMaxBitrate)
-        videoBitrateControl?.let { if (!bitrateAdaptationEnabled) it.setTarget(normalized) }
-        if (isBroadcasting.get()) {
-            synchronized(videoLock) {
-                if (!bitrateAdaptationEnabled) {
-                    runCatching { hardwareEncoder?.setBitrate(normalized) }
-                        .onSuccess { diagnostics.event("video_bitrate_manual_changed", mapOf("bitrate_bps" to normalized)) }
-                        .onFailure { diagnostics.error("video_bitrate_manual_change_failed", it) }
-                }
-            }
-        }
+    internal suspend fun changeVideoBitrate(generation: Long, settings: VideoBitrateConfiguration): Boolean =
+        changeVideoBitrate(generation) { settings }
+
+    internal suspend fun lowerVideoBitrateForDeviceHealth(generation: Long): Boolean = changeVideoBitrate(generation) { control ->
+        if (deviceHealth.value.recommendation != DeviceQualityRecommendation.REDUCE_BITRATE) return@changeVideoBitrate null
+        val settings = control.settings
+        val current = minOf(control.currentBps, settings.targetBps)
+        val reduced = (current * 75 / 100).coerceAtLeast(settings.minimumBps)
+        settings.copy(targetBps = reduced, maximumBps = reduced).takeIf { reduced < current }
     }
 
-    fun setVideoBitrateRange(minimumBps: Long, maximumBps: Long) {
-        val minimum = minimumBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
-        val maximum = maximumBps.coerceIn(minimum, Int.MAX_VALUE.toLong())
-        configuredMinBitrate = minimum
-        configuredMaxBitrate = maximum
-        configuredBitrate = configuredBitrate.coerceIn(minimum, maximum)
-        videoBitrateControl?.setRange(minimum, maximum)
-        if (isBroadcasting.get() && !bitrateAdaptationEnabled) {
-            synchronized(videoLock) {
-                runCatching { hardwareEncoder?.setBitrate(configuredBitrate) }
-                    .onFailure { diagnostics.error("video_bitrate_range_change_failed", it) }
-            }
+    private suspend fun changeVideoBitrate(
+        generation: Long, settingsFor: (VideoBitrateControl) -> VideoBitrateConfiguration?
+    ): Boolean = withContext(Dispatchers.IO) {
+        val applied = synchronized(videoLock) {
+            val state = lifecycleState.value
+            if (state.generation != generation || !streamState.value.isActive() ||
+                state.phase in setOf(BroadcastPhase.STOPPING, BroadcastPhase.FAILED, BroadcastPhase.IDLE)) return@synchronized null
+            val control = videoBitrateControl ?: return@synchronized null
+            val next = settingsFor(control) ?: return@synchronized null
+            val encoder = hardwareEncoder ?: throw UiException(UiMessage(R.string.error_bitrate_encoder_not_ready))
+            control.changeSettings(next, encoder::setBitrate)
+            next
         }
-        diagnostics.event("video_bitrate_range_changed", mapOf(
-            "min_bitrate_bps" to minimum, "max_bitrate_bps" to maximum, "target_bitrate_bps" to configuredBitrate
+        if (applied != null) diagnostics.event("video_bitrate_settings_applied", mapOf(
+            "min_bitrate_bps" to applied.minimumBps, "target_bitrate_bps" to applied.targetBps,
+            "max_bitrate_bps" to applied.maximumBps, "adaptive_bitrate" to applied.adaptive
         ))
-    }
-
-    fun setAdaptiveBitrate(enabled: Boolean) {
-        bitrateAdaptationEnabled = enabled
-        if (isBroadcasting.get()) {
-            synchronized(videoLock) {
-                if (!enabled) runCatching { hardwareEncoder?.setBitrate(configuredBitrate) }
-                    .onSuccess { diagnostics.event("video_bitrate_adaptation_disabled", mapOf("bitrate_bps" to configuredBitrate)) }
-                    .onFailure { diagnostics.error("video_bitrate_manual_change_failed", it) }
-            }
-        }
-        diagnostics.event("video_bitrate_adaptation", mapOf("enabled" to enabled))
+        applied != null
     }
 
     private fun failBroadcast(error: Throwable, fallbackMessage: Int = R.string.error_audio_capture) {

@@ -2,6 +2,7 @@ package com.sangege.moqpublisher
 
 import android.app.Application
 import android.content.Context
+import android.util.Size
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -26,10 +27,13 @@ class SettingsPersistenceTest {
         try {
             assertTrue(prefs.edit().clear().putString("video_bitrate_mbps", "8").commit())
             val first = create("first")
-            assertEquals("8000", first.videoBitrateKbps.value)
+            assertEquals("8000", first.videoBitrate.value.targetKbps)
             assertEquals(AppLanguage.TRADITIONAL_CHINESE, first.language.value)
             assertEquals(AppTheme.DARK, first.theme.value)
-            first.setVideoBitrateKbps("12345.678")
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                first.applyVideoBitrate(VideoBitrateInput("750", "12345.678", "14000", adaptive = false))
+                first.applyVideoBitrate(VideoBitrateInput("16000", "9000", "12000", adaptive = true))
+            }
             first.setAudioChannel(AudioChannel.STEREO)
             first.setAudioGain(230)
             first.setAudioQuality(AudioQuality.HIGH)
@@ -38,15 +42,15 @@ class SettingsPersistenceTest {
             first.setLanguage(AppLanguage.ENGLISH)
             first.setTheme(AppTheme.LIGHT)
             first.setEnableAudio(false)
-            first.setAdaptiveBitrate(false)
             first.setTlsVerify(true)
             first.setVideoCodec("H265")
+            first.setVideoResolution(Size(432, 240))
             first.setVideoFps(60)
             // Flush pending apply() operations to disk, as happens when Android stops the activity.
             assertTrue(prefs.edit().putString("video_bitrate_mbps", "40").commit())
             val second = create("second")
-            assertEquals("12345.678", second.videoBitrateKbps.value)
-            assertEquals(12_345_678L, VideoBitrateSettings.parseKbps(second.videoBitrateKbps.value))
+            assertEquals(VideoBitrateInput("750", "12345.678", "14000", adaptive = false), second.videoBitrate.value)
+            assertEquals(12_345_678L, second.videoBitrate.value.configuration()?.targetBps)
             assertEquals(AudioChannel.STEREO, second.audioChannel.value)
             assertEquals(230, second.audioGain.value)
             assertEquals(AudioQuality.HIGH, second.audioQuality.value)
@@ -55,9 +59,9 @@ class SettingsPersistenceTest {
             assertEquals(AppLanguage.ENGLISH, second.language.value)
             assertEquals(AppTheme.LIGHT, second.theme.value)
             assertFalse(second.enableAudio.value)
-            assertFalse(second.adaptiveBitrate.value)
             assertTrue(second.tlsVerify.value)
             assertEquals("H265", second.videoCodec.value)
+            assertEquals(Size(432, 240), second.videoResolution.value)
             assertEquals(60, second.videoFps.value)
             assertEquals(230, prefs.getInt("audio_gain_percent", -1))
             assertEquals("ENGLISH", prefs.getString("app_language", null))

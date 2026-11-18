@@ -1254,3 +1254,9 @@ P0 > P1 > P2
 - `v1.0.38`：完成第 23 項憑證清除流程。設定頁可直接移除加密保存的 moq.pro JWT 與 Cloudflare Publish／Subscribe Token，沿用 Keystore ciphertext removal，不寫入明文，也不改變既有 Token 分離與遮罩流程。
 - 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認 Keystore 清除後的系統行為。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.38` GitHub Release。Release APK SHA-256 為 `9791956ce6dfa6560823096d19cdc62ba29e258f47ed5ea30012fe760d740a26`，Offline APK SHA-256 為 `bfcecf15e71d1909ff465b226d5ad6269809e66cdeca2b6dc8750ec0298a7092`。
+
+### 2026-11-19
+
+- `v1.0.39` 修復第 11／15 項的開播相容性回歸。硬體 surface 能力清單缺項時，保留所選 H.264／H.265、解析度與 FPS，由 CameraX 與實際 MediaCodec 啟動確認。能力查詢移至 IO dispatcher，診斷保存編碼器候選與實際啟動錯誤。
+- 強化第 06／16 項的碼率控制。佇列深度與媒體年齡可觸發快速降碼率，持續高 RTT 使用容量估計保留額外餘裕，變更受最低與最高碼率限制。MediaCodec 拒絕時保留上次接受的碼率與設定。熱度降碼率操作限於當場直播。解析度與 FPS 的直播中重配置仍待實作。
+- 驗證結果為 `testDebugUnitTest` 201 項通過。`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML、APK v2 簽章與 zipalign 檢查通過，兩個 APK 的簽章與 v1.0.38 相同。原回報手機、Relay 與 OBS 尚未連接，仍需實測兩種 codec 與既有解析度／FPS。

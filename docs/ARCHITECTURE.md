@@ -28,20 +28,20 @@ flowchart LR
 - `MainActivity` 負責 Compose 畫面、權限、設定與更新提示。它觀察 `MainViewModel` 的 `StateFlow`。
 - `CloudflareProfilePanel` 只在獨立 Subscribe Token 與 Hang namespace 可用時產生觀看 QR Code，並提供 Browser Source／原生 MoQ 指引。QR Code 與複製操作都使用 Subscribe URL，不會把 Publish Token 放入觀看資訊。
 - `MainViewModel` 保存使用者設定、驗證開播參數，並把啟停請求交給 application-owned `BroadcastSession`。
-- `StreamPresetRepository` 將自訂畫質 Preset 與 Relay Profile 分開持久化。`StreamPresetPolicy` 驗證視訊／音訊設定，`DeviceCapabilityRepository` 在套用前確認硬體 surface encoder，套用時由 `MainViewModel` 一次更新設定並重新同步 CameraX。
-- `BroadcastPreflight` 在開播前以 PASS、WARNING、ERROR 分級檢查權限、設備能力、Relay、網路、核心與裝置狀態，結果寫入 `MainViewModel` 的 diagnostics。
+- `StreamPresetRepository` 將自訂畫質 Preset 與 Relay Profile 分開持久化。`StreamPresetPolicy` 驗證視訊和音訊參數，`MainViewModel` 套用後同步 CameraX。
+- `BroadcastPreflight` 檢查權限、設備、Relay、網路、核心與裝置狀態。Android 未回報所選硬體 surface encoder 時，預檢記錄 WARNING 並允許啟動影片管線。
 - `BroadcastSession` 管理直播 generation、相機、MoQ streamer、遠端驗證與前景服務的生命週期。舊 generation 的停止事件不能停止新直播。
 - `BroadcastService` 在 Android 前景服務中持有相機／麥克風直播與短期續期 WakeLock，通知提供停止操作。
 - `BroadcastService` 也觀察即時靜音狀態，背景通知會反映音訊是否已靜音。
 - `CameraCaptureEngine` 管理 CameraX。`CameraSurfaceRenderer` 將相機紋理送到預覽與 MediaCodec input surface，避免在正常路徑複製 YUV。
 - `SurfaceVideoEncoder` 和 `HardwareVideoEncoder` 封裝 MediaCodec。正常路徑使用 surface encoder，輸出在 callback 執行緒排入有上限的 `VideoPublishQueue`。
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
-- `VideoBitrateControl` 以最低／目標／最高碼率分離控制 ABR。下降使用即時容量與 queue／RTT 壓力，恢復使用平滑容量估計，並將實際變更交給 MediaCodec。設定與直播中變更都經 `MoqStreamer` 的 video lock。
+- `VideoBitrateControl` 從目標碼率開始，以最低與最高設定限制 ABR。佇列深度或媒體年齡可在缺少容量估計時獨立觸發降碼率。直播設定與 ABR 操作經 `MoqStreamer` 的 video lock，MediaCodec 接受後才提交新碼率及設定。重連與影片編碼器重建沿用當場最後接受的碼率。
 - 音訊 capture worker 以每個 20 ms frame 的 ramp gain 套用增益，`AudioHealthMetrics` 在 capture thread 計算 RMS、dBFS、peak hold、聲道峰值與削波，UI 只讀取 `StateFlow`。
 - `AudioInputDeviceRepository` 透過 `AudioManager` 列出可選輸入，`MoqStreamer` 對 `AudioDeviceCallback` 做拔除監控。選定設備消失時，AudioRecord 回退系統路由並由元件恢復協調器重建音訊 track。
 - `HardwareVideoEncoder` 與 `SurfaceVideoEncoder` 將實際 MediaCodec 名稱保存到 `StreamState.Live`，主畫面與每秒 diagnostics 都能區分實際硬體實作。動態碼率若被 codec 拒絕，ABR 會停用並保留最後有效碼率。
-- `DeviceCapabilityRepository` 讀取 H.264／H.265 的硬體 encoder 名稱、surface input、寬高／FPS／碼率範圍與 CBR 能力。這些資料只描述系統回報的能力，runtime bitrate 是否接受仍以實際 MediaCodec `setParameters` 結果為準。
-- `DeviceHealthPolicy` 在熱度或記憶體壓力時產生降低碼率建議。主畫面的明確操作會把目前 target／maximum 降至約 75%，不會在背景自動改變使用者品質設定。
+- `DeviceCapabilityRepository` 在 IO dispatcher 查詢 H.264／H.265 的硬體 encoder 名稱、surface input、寬高／FPS／碼率範圍與 CBR 能力。直播以選定 codec 與 FPS 嘗試啟動 MediaCodec，輸入尺寸採 CameraX 實際取得的畫面幾何。
+- `DeviceHealthPolicy` 在熱度或記憶體壓力時產生降低碼率建議。主畫面的降低碼率按鈕套用約 25% 降幅，範圍限於當場直播且受最低碼率限制。
 - `BroadcastRecoveryCoordinator` 以元件為單位限制恢復次數並套用指數退避。`MoqStreamer` 可重建相機綁定、MediaCodec、影片發布 worker 或 AudioRecord，而不立即結束整場直播。
 - `MoqCoreManager` 下載、驗證、選擇與快取官方相容的 native core。直播期間不替換正在使用的 native library。
 - `offline` APK 由 Gradle 從官方 `moq-ffi` AAR 產生 ABI 分層 assets。`MoqCoreManager` 在啟動時把對應 asset 安裝到 app-private 目錄，執行相同 ELF、SHA-256 與 UniFFI symbol 驗證後才設定 library override。一般 release／compact APK 維持首次啟動下載流程。

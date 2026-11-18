@@ -116,6 +116,7 @@ internal class SurfaceVideoEncoder private constructor(
         ): SurfaceVideoEncoder {
             val hevc = type == VideoCodec.H265
             val mime = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+            var lastFailure: Exception? = null
             for (info in MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos) {
                 if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, true) }) continue
                 if (Build.VERSION.SDK_INT >= 29 && !info.isHardwareAccelerated) continue
@@ -124,8 +125,11 @@ internal class SurfaceVideoEncoder private constructor(
                 var surface: Surface? = null
                 var worker: HandlerThread? = null
                 try {
-                    val caps = info.getCapabilitiesForType(mime)
-                    if (MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface !in caps.colorFormats) continue
+                    // Vendor capability metadata can omit surface input. Let the codec
+                    // test the requested format when it configures and creates the surface.
+                    val caps = runCatching { info.getCapabilitiesForType(mime) }
+                        .onFailure { diagnostics.error("surface_encoder_capabilities_unavailable", it) }
+                        .getOrNull()
                     val format = MediaFormat.createVideoFormat(mime, width, height).apply {
                         setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                         setInteger(MediaFormat.KEY_BIT_RATE, bitrate.toInt())
@@ -135,8 +139,8 @@ internal class SurfaceVideoEncoder private constructor(
                         if (Build.VERSION.SDK_INT >= 26) setInteger(MediaFormat.KEY_LATENCY, 0)
                         if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
                         val profile = if (hevc) MediaCodecInfo.CodecProfileLevel.HEVCProfileMain else MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
-                        if (caps.profileLevels.any { it.profile == profile }) setInteger(MediaFormat.KEY_PROFILE, profile)
-                        if (caps.encoderCapabilities?.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true)
+                        if (caps?.profileLevels?.any { it.profile == profile } == true) setInteger(MediaFormat.KEY_PROFILE, profile)
+                        if (caps?.encoderCapabilities?.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true)
                             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
                     }
                     codec = MediaCodec.createByCodecName(info.name)
@@ -145,12 +149,19 @@ internal class SurfaceVideoEncoder private constructor(
                     worker = HandlerThread("MoqCodecOutput", android.os.Process.THREAD_PRIORITY_DISPLAY).apply { start() }
                     return SurfaceVideoEncoder(codec, surface, worker, info.name, width, height, bitrate, AnnexB(hevc), diagnostics, onEncoded, onFailure)
                         .also { it.start(); diagnostics.event("encoder_open", mapOf("name" to info.name, "input" to "surface", "format" to format)) }
-                } catch (error: Throwable) {
+                } catch (error: Exception) {
                     runCatching { codec?.release() }; runCatching { surface?.release() }; worker?.quitSafely()
-                    diagnostics.error("surface_encoder_candidate_failed", error)
+                    diagnostics.event("surface_encoder_candidate_failed", mapOf(
+                        "name" to info.name, "codec" to type, "width" to width, "height" to height,
+                        "fps" to fps, "bitrate_bps" to bitrate, "error" to error.toString()
+                    ))
+                    lastFailure = error
                 }
             }
-            throw UiException(UiMessage(R.string.error_encoder_unsupported, listOf(type.name, width, height, fps)))
+            throw UiException(
+                UiMessage(R.string.error_encoder_unsupported, listOf(if (hevc) "H.265" else "H.264", width, height, fps)),
+                lastFailure
+            )
         }
     }
 }

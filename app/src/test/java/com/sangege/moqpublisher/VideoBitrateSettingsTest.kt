@@ -49,4 +49,12 @@ class VideoBitrateSettingsTest {
         }
         assertEquals(VideoBitrateSettings.DEFAULT_BPS, VideoBitrateSettings.parseKbps(VideoBitrateSettings.DEFAULT_KBPS))
     }
+
+    @Test fun restoresAnExistingTargetEvenIfOlderVersionsPersistedInvalidBounds() {
+        val legacy = VideoBitrateInput.restore("12345.678", "oops", "8000", adaptive = true)
+        assertEquals(VideoBitrateConfiguration(600_000, 12_345_678, 12_345_678, true), legacy.configuration())
+        val low = VideoBitrateInput.restore("200", null, null, adaptive = false)
+        assertEquals(VideoBitrateConfiguration(200_000, 200_000, 200_000, false), low.configuration())
+        assertNull(low.copy(minimumKbps = "500").configuration())
+    }
 }

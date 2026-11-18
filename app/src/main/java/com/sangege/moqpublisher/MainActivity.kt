@@ -134,10 +134,6 @@ fun MainScreen(viewModel: MainViewModel) {
     val videoCodec by viewModel.videoCodec.collectAsState()
     val videoResolution by viewModel.videoResolution.collectAsState()
     val videoFps by viewModel.videoFps.collectAsState()
-    val videoBitrateKbps by viewModel.videoBitrateKbps.collectAsState()
-    val videoMinBitrateKbps by viewModel.videoMinBitrateKbps.collectAsState()
-    val videoMaxBitrateKbps by viewModel.videoMaxBitrateKbps.collectAsState()
-    val adaptiveBitrate by viewModel.adaptiveBitrate.collectAsState()
     val encoderCapabilities by viewModel.encoderCapabilities.collectAsState()
     val presets by viewModel.presets.collectAsState()
     val selectedPresetId by viewModel.selectedPresetId.collectAsState()
@@ -315,6 +311,8 @@ fun MainScreen(viewModel: MainViewModel) {
         }
         // Preserve camera/session ownership behind Settings, including during locale/theme changes.
         if (showSettings) {
+            val videoBitrate by viewModel.videoBitrate.collectAsState()
+            val applyingVideoBitrate by viewModel.applyingVideoBitrate.collectAsState()
             SettingsScreen(
                 relayUrl = relayUrl, onRelayUrlChange = viewModel::setRelayUrl,
                 authToken = authToken, onAuthTokenChange = viewModel::setAuthToken,
@@ -328,10 +326,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 videoResolution = videoResolution, onVideoResolutionChange = viewModel::setVideoResolution,
                 availableResolutions = availableResolutions,
                 videoFps = videoFps, onVideoFpsChange = viewModel::setVideoFps,
-                videoBitrateKbps = videoBitrateKbps, onVideoBitrateChange = viewModel::setVideoBitrateKbps,
-                videoMinBitrateKbps = videoMinBitrateKbps, onVideoMinBitrateChange = viewModel::setVideoMinBitrateKbps,
-                videoMaxBitrateKbps = videoMaxBitrateKbps, onVideoMaxBitrateChange = viewModel::setVideoMaxBitrateKbps,
-                adaptiveBitrate = adaptiveBitrate, onAdaptiveBitrateChange = viewModel::setAdaptiveBitrate,
+                videoBitrate = videoBitrate, applyingVideoBitrate = applyingVideoBitrate,
+                onApplyVideoBitrate = viewModel::applyVideoBitrate,
                 presets = presets, selectedPresetId = selectedPresetId,
                 onApplyPreset = viewModel::applyPreset, onSavePreset = viewModel::saveCurrentPreset,
                 onDeletePreset = viewModel::deletePreset, onResetPresets = viewModel::resetCustomPresets,
@@ -992,6 +988,9 @@ private fun LiveStats(
             stats.videoBitrateBps?.let { bitrate ->
                 StatItem(stringResource(R.string.stat_encoder_bitrate), stringResource(R.string.value_mbps, bitrate / 1_000_000.0), Modifier.fillMaxWidth())
             }
+            if (stats.runtimeBitrateSupport == RuntimeBitrateSupport.REJECTED) {
+                SupportingText(stringResource(R.string.error_bitrate_codec_change))
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatItem(stringResource(R.string.stat_queue), stringResource(R.string.value_queue_age,
                     stats.videoQueueDepth, stats.videoQueueAgeMs ?: 0L), Modifier.weight(1f))
@@ -1085,7 +1084,7 @@ internal fun StatusNotice(
 }
 
 @Composable
-fun SettingsScreen(
+internal fun SettingsScreen(
     relayUrl: String, onRelayUrlChange: (String) -> Unit,
     authToken: String, onAuthTokenChange: (String) -> Unit,
     effectiveUrl: String, streamPath: String, onStreamPathChange: (String) -> Unit,
@@ -1095,10 +1094,7 @@ fun SettingsScreen(
     videoCodec: String, onVideoCodecChange: (String) -> Unit,
     videoResolution: Size, onVideoResolutionChange: (Size) -> Unit,
     availableResolutions: List<Size>, videoFps: Int, onVideoFpsChange: (Int) -> Unit,
-    videoBitrateKbps: String, onVideoBitrateChange: (String) -> Unit,
-    videoMinBitrateKbps: String, onVideoMinBitrateChange: (String) -> Unit,
-    videoMaxBitrateKbps: String, onVideoMaxBitrateChange: (String) -> Unit,
-    adaptiveBitrate: Boolean, onAdaptiveBitrateChange: (Boolean) -> Unit,
+    videoBitrate: VideoBitrateInput, applyingVideoBitrate: Boolean, onApplyVideoBitrate: (VideoBitrateInput) -> Unit,
     presets: List<StreamPreset>, selectedPresetId: String?, onApplyPreset: (String) -> Boolean,
     onSavePreset: (String) -> Boolean, onDeletePreset: (String) -> Boolean, onResetPresets: () -> Unit,
     encoderCapabilities: List<VideoEncoderCapability>,
@@ -1119,13 +1115,6 @@ fun SettingsScreen(
 ) {
     val focusManager = LocalFocusManager.current
     val editable = !isStreaming
-    val bitrateValid = VideoBitrateSettings.parseKbps(videoBitrateKbps) != null
-    val bitrateRangeValid = run {
-        val minimum = VideoBitrateSettings.parseKbps(videoMinBitrateKbps)
-        val target = VideoBitrateSettings.parseKbps(videoBitrateKbps)
-        val maximum = VideoBitrateSettings.parseKbps(videoMaxBitrateKbps)
-        minimum != null && target != null && maximum != null && minimum <= target && target <= maximum
-    }
     val scroll = rememberScrollState()
     var aboutOffset by remember { mutableIntStateOf(-1) }
     var scrolledToAbout by remember { mutableStateOf(false) }
@@ -1176,30 +1165,11 @@ fun SettingsScreen(
             ChoiceOptions(stringResource(R.string.video_codec), videoCodec, listOf(
                 "H264" to stringResource(R.string.codec_h264), "H265" to stringResource(R.string.codec_h265)), onVideoCodecChange, editable)
             SelectionDropdown(stringResource(R.string.camera_resolution), videoResolution,
-                availableResolutions.map { it to formatResolutionLabel(it) }, onVideoResolutionChange, editable)
+                (availableResolutions + videoResolution).distinct().map { it to formatResolutionLabel(it) },
+                onVideoResolutionChange, editable)
             ChoiceOptions(stringResource(R.string.target_framerate), videoFps,
                 listOf(15, 24, 30, 60).map { it to stringResource(R.string.fps_value, it) }, onVideoFpsChange, editable)
-            OutlinedTextField(value = videoBitrateKbps, onValueChange = { onVideoBitrateChange(it.take(32)) },
-                label = { Text(stringResource(R.string.target_bitrate)) },
-                supportingText = { Text(stringResource(if (bitrateRangeValid) R.string.bitrate_hint else R.string.error_bitrate_range_invalid)) },
-                isError = !bitrateValid || !bitrateRangeValid, enabled = true, singleLine = true, shape = MaterialTheme.shapes.small,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = videoMinBitrateKbps, onValueChange = { onVideoMinBitrateChange(it.take(32)) },
-                label = { Text(stringResource(R.string.minimum_bitrate)) },
-                supportingText = { Text(stringResource(R.string.bitrate_range_hint)) },
-                enabled = true, singleLine = true, shape = MaterialTheme.shapes.small,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-                modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(value = videoMaxBitrateKbps, onValueChange = { onVideoMaxBitrateChange(it.take(32)) },
-                label = { Text(stringResource(R.string.maximum_bitrate)) },
-                supportingText = { Text(stringResource(R.string.bitrate_range_hint)) },
-                enabled = true, singleLine = true, shape = MaterialTheme.shapes.small,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }), modifier = Modifier.fillMaxWidth())
-            SettingSwitch(stringResource(R.string.adaptive_bitrate),
-                stringResource(if (adaptiveBitrate) R.string.adaptive_bitrate_on else R.string.adaptive_bitrate_off),
-                adaptiveBitrate, onAdaptiveBitrateChange, true)
+            VideoBitrateControls(videoBitrate, applyingVideoBitrate, onApplyVideoBitrate)
         }
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
@@ -1258,6 +1228,41 @@ fun SettingsScreen(
             CoreStatusCard(coreState, onCoreCheck)
         }
     }
+}
+
+@Composable
+private fun VideoBitrateControls(
+    current: VideoBitrateInput, applying: Boolean, onApply: (VideoBitrateInput) -> Unit
+) {
+    val focus = LocalFocusManager.current
+    var minimum by rememberSaveable(current) { mutableStateOf(current.minimumKbps) }
+    var target by rememberSaveable(current) { mutableStateOf(current.targetKbps) }
+    var maximum by rememberSaveable(current) { mutableStateOf(current.maximumKbps) }
+    var adaptive by rememberSaveable(current) { mutableStateOf(current.adaptive) }
+    val edited = VideoBitrateInput(minimum, target, maximum, adaptive)
+    val valid = edited.configuration() != null
+    BitrateField(R.string.minimum_bitrate, minimum, !applying) { minimum = it }
+    BitrateField(R.string.target_bitrate, target, !applying) { target = it }
+    BitrateField(R.string.maximum_bitrate, maximum, !applying) { maximum = it }
+    if (!valid) StatusNotice(stringResource(R.string.error_bitrate_range_invalid), error = true)
+    SettingSwitch(
+        stringResource(R.string.adaptive_bitrate),
+        stringResource(if (adaptive) R.string.adaptive_bitrate_on else R.string.adaptive_bitrate_off),
+        adaptive, { adaptive = it }, enabled = !applying
+    )
+    OutlinedButton(
+        onClick = { focus.clearFocus(); onApply(edited) },
+        enabled = valid && !applying && edited != current, modifier = Modifier.fillMaxWidth()
+    ) { Text(stringResource(R.string.apply_video_bitrate)) }
+}
+
+@Composable
+private fun BitrateField(label: Int, value: String, enabled: Boolean, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = { onChange(it.take(32)) }, label = { Text(stringResource(label)) },
+        enabled = enabled, singleLine = true, shape = MaterialTheme.shapes.small,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable

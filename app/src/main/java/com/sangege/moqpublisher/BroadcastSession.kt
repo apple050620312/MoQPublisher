@@ -72,8 +72,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
         streamer.startBroadcast(
             config.relayUrl, config.streamPath, config.tlsVerify, config.enableAudio,
             config.audioChannel, config.audioQuality, config.audioGainPercent,
-            config.codec, config.framerate, config.bitrateBps, config.minBitrateBps, config.maxBitrateBps,
-            config.adaptiveBitrate,
+            config.codec, config.framerate, config.videoBitrate,
             config.provider, config.protocolDraft
         )
         return config

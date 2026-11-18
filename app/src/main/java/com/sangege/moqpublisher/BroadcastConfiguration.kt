@@ -13,10 +13,7 @@ internal data class BroadcastConfiguration(
     val audioGainPercent: Int,
     val codec: VideoCodec,
     val framerate: Int,
-    val bitrateBps: Long,
-    val minBitrateBps: Long,
-    val maxBitrateBps: Long,
-    val adaptiveBitrate: Boolean,
+    val videoBitrate: VideoBitrateConfiguration,
     val provider: RelayProvider = RelayProvider.MOQ_PRO,
     val protocolDraft: Int? = null
 ) {

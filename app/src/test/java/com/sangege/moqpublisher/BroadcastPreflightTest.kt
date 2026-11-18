@@ -13,8 +13,8 @@ class BroadcastPreflightTest {
         audioEnabled = true,
         cameraAvailable = true,
         audioAvailable = true,
-        encoderAvailable = true,
-        resolutionFpsSupported = true,
+        hardwareSurfaceEncoderReported = true,
+        resolutionFpsValid = true,
         relayConfigured = true,
         publishTokenConfigured = true,
         subscribeTokenConfigured = true,
@@ -33,14 +33,27 @@ class BroadcastPreflightTest {
     }
 
     @Test
-    fun permissionsCoreAndEncoderBlockStart() {
+    fun permissionsAndCoreBlockStart() {
         val report = BroadcastPreflightPolicy.evaluate(ready.copy(
             cameraPermission = false,
-            moqCoreReady = false,
-            encoderAvailable = false
+            moqCoreReady = false
         ))
         assertFalse(report.canStart)
-        assertEquals(3, report.errors.size)
+        assertEquals(listOf(PreflightCheckId.CAMERA_PERMISSION, PreflightCheckId.MOQ_CORE), report.errors.map { it.id })
+    }
+
+    @Test
+    fun unreportedHardwareSurfaceSupportStillAllowsAnEncoderAttempt() {
+        val report = BroadcastPreflightPolicy.evaluate(ready.copy(hardwareSurfaceEncoderReported = false))
+        assertTrue(report.canStart)
+        assertEquals(PreflightCheckId.ENCODER_CAPABILITY, report.warnings.single().id)
+    }
+
+    @Test
+    fun invalidVideoSettingsStillBlockStart() {
+        val report = BroadcastPreflightPolicy.evaluate(ready.copy(resolutionFpsValid = false))
+        assertFalse(report.canStart)
+        assertEquals(PreflightCheckId.RESOLUTION_FPS, report.errors.single().id)
     }
 
     @Test
