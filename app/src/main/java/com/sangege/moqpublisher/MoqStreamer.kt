@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Process
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Surface
 import android.util.Log
 import androidx.camera.core.ImageProxy
@@ -189,6 +190,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var currentVideoHeight: Int = 0
     private var encodingScreen = false
     private var cameraRequired = true
+    @Volatile internal var screenVideoSource = false
     @Volatile private var playbackProjection: MediaProjection? = null
     private var videoTrackCounter: Int = 0
     private var configuredCodec: VideoCodec = VideoCodec.H264
@@ -464,9 +466,14 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             launch {
                 var lastEpoch = initialEpoch
                 var lastStatus: ConnectionStatus? = null
+                val reconnectDeadline = RelayReconnectDeadline()
                 while (isActive) {
                     val status = moq.session.status()
                     val epoch = moq.epoch()
+                    if (reconnectDeadline.expired(status == ConnectionStatus.CONNECTED, SystemClock.elapsedRealtime())) {
+                        diagnostics.event("relay_reconnect_timed_out", mapOf("epoch" to epoch))
+                        throw UiException(UiMessage(R.string.error_relay_timeout))
+                    }
                     if (status != lastStatus || epoch != lastEpoch) {
                         diagnostics.event("relay_status", mapOf("status" to status, "epoch" to epoch))
                         when (status) {
@@ -826,7 +833,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 // Cleanup interrupts the worker after closing its queue.
             } catch (error: Throwable) {
                 if (isBroadcasting.get() && queue === audioPublishQueue) {
-                    scheduleMediaRecovery(RecoveryComponent.AUDIO_CAPTURE, error, R.string.error_audio_capture)
+                    scheduleMediaRecovery(RecoveryComponent.AUDIO_PUBLISHER, error, R.string.error_audio_capture)
                 }
             } finally {
                 audio.close()
@@ -1050,11 +1057,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
     }
 
-    private fun scheduleMediaRecovery(component: RecoveryComponent, error: Throwable, fallbackMessage: Int) {
+    private fun scheduleMediaRecovery(component: RecoveryComponent, error: Throwable, fallbackMessage: Int, watchdog: Boolean = false) {
         if (closed || !isBroadcasting.get()) return
         val request = RecoveryRequest(component, error, fallbackMessage)
         val started = synchronized(recoveryLock) {
             if (!isBroadcasting.get()) return
+            if (watchdog && (recoveryPaused || recoveryWorker != null)) return
             pendingRecoveries[component] = request
             if (recoveryPaused || recoveryWorker != null) false else {
                 recoveryWorker = scope.launch { runRecoveryWorker() }
@@ -1136,6 +1144,15 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 if (isBroadcasting.get()) startVideoPublisher(broadcast)
             }
             RecoveryComponent.AUDIO_CAPTURE -> recoverAudioCapture()
+            RecoveryComponent.AUDIO_PUBLISHER -> recoverAudioPublisher()
+        }
+    }
+
+    private fun recoverAudioPublisher() {
+        val (broadcast, bandwidth) = synchronized(streamLock) { broadcastProducer to sessionBandwidth }
+        synchronized(audioLock) {
+            stopAudioPublisher()
+            if (isBroadcasting.get() && broadcast != null) startAudioPublisherIfReady(broadcast, bandwidth)
         }
     }
 
@@ -1293,6 +1310,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private fun startStatsMonitoring(moq: Moq) {
+        val stallRecovery = StreamStallRecovery()
         statsJob?.cancel()
         val startedAtNs = System.nanoTime()
         val durationStartNs = advertisedAtNs ?: startedAtNs
@@ -1398,6 +1416,17 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                             transitionLifecycle(BroadcastLifecycleEvent.HealthChanged(health.hasAlert))
                         }
                         publishAlerts { update(health, System.currentTimeMillis()) }
+                        val videoChanging = synchronized(videoLock) {
+                            encoderModeChange?.result?.value == LiveVideoModeChange.Result.PENDING
+                        }
+                        stallRecovery.observe(health, sampleTimeNanos / 1_000_000L, !screenVideoSource, videoChanging)?.let { component ->
+                            val message = when (component) {
+                                RecoveryComponent.AUDIO_CAPTURE, RecoveryComponent.AUDIO_PUBLISHER -> R.string.error_audio_capture
+                                else -> R.string.error_video
+                            }
+                            scheduleMediaRecovery(component, IllegalStateException("Watchdog detected a stall in $component"), message,
+                                watchdog = true)
+                        }
                         if (previousHealth.level == StreamHealthLevel.RECOVERING && health.level == StreamHealthLevel.HEALTHY) {
                             recordAlert(StreamAlertType.RECOVERY_SUCCEEDED)
                         }

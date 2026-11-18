@@ -4,20 +4,20 @@
 
 | 編號 | 功能 | 原始狀態與已有能力 | 缺少能力／本批次範圍 | 實作狀態 | 自動測試 | 實機驗證 | 已知限制 |
 |---|---|---|---|---|---|---|---|
-| 01 | 端對端直播測試基礎 | 有 moq.pro／Cloudflare、OBS、認證、codec、延遲與音畫量測流程，支援合併匯出的診斷樣本 | 取得實際端對端矩陣 | IMPLEMENTED | ZIP 合併腳本以重疊樣本驗證去重、排序、期間篩選 | BLOCKED | 未連接 Android 裝置或測試 Relay |
+| 01 | 端對端直播測試基礎 | 有 moq.pro／Cloudflare、OBS、認證、codec、延遲與音畫量測流程，支援合併匯出的診斷樣本 | 手機、外部 Relay、OBS Browser Source／原生 MoQ 來源 | IMPLEMENTED | ZIP 合併腳本；本機 Draft 18 到 OBS SRT 的 H.264／H.265＋Opus | BLOCKED | 未連接 Android 手機，尚缺外部 Relay 測試憑證 |
 | 02 | 完整直播狀態機 | 補齊 handover → connecting → announced，從健康事件進入 Degraded，遠端驗證在等待關鍵影格期間停用 | 各種 Relay 與 Service 生命週期實測 | IMPLEMENTED | `BroadcastLifecycleTest`、`RelayConnectionPolicyTest` | 未驗證 | 遠端解碼結果使用獨立 verifier |
 | 03 | 直播 Watchdog | 每秒監控相機、GPU 提交、編碼、發布、音訊擷取和發布、Relay 與佇列。低 FPS 採十秒門檻 | 長時間裝置資料校準 | IMPLEMENTED | `StreamHealthTest`、`StreamMetricsTest`、`VideoPublishQueueTest` | 未驗證 | 裝置和畫質影響實際門檻 |
-| 04 | 媒體管線自動恢復 | 元件級重試採穩定窗口與有限退避，分流 Codec callback，停止／切線先等恢復 worker 結束 | 驗證元件重新輸出及真實故障情境 | IMPLEMENTED | `BroadcastRecoveryTest`、`BroadcastLifecycleTest` | 未驗證 | Codec／CameraX／AudioRecord 需實機故障驗收 |
-| 05 | 網路切換與重連 | DefaultNetworkMonitor 與 QUIC reconnect，共用直播時間基準，清除舊媒體並等新關鍵影格 | 真實網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | `RelayConnectionPolicyTest`、`AudioPublishQueueTest` 涵蓋舊寫入、相同 epoch 重連與關鍵影格 | BLOCKED | 尚未連接可切換 Wi-Fi／4G／5G 的 Android 裝置 |
+| 04 | 媒體管線自動恢復 | Codec callback 與 Watchdog 可觸發有界復原；音訊擷取與發布可分開重建 | 注入故障並驗證裝置恢復輸出 | IMPLEMENTED | `BroadcastRecoveryTest`、`BroadcastLifecycleTest` | 未驗證 | Codec／CameraX／AudioRecord 需實機故障驗收 |
+| 05 | 網路切換與重連 | DefaultNetworkMonitor 偵測切線及位址更換，QUIC 重連有限時，清除舊媒體並等關鍵影格 | 真實網路異常矩陣與 15 秒恢復量測 | IMPLEMENTED | `RelayConnectionPolicyTest`、`AudioPublishQueueTest` | BLOCKED | 尚未連接可切換 Wi-Fi／4G／5G 的 Android 裝置 |
 | 06 | ABR | VideoBitrateControl 從目標碼率開始，依佇列年齡、深度和網路容量調整，限制於最低及最高設定 | 解析度與 FPS 動態重建見 16 | TESTED | `VideoBitrateControlTest` 涵蓋拒絕動態調整、舊佇列、持續高 RTT 與碼率上下限 | 未驗證 | 動態碼率以 MediaCodec 執行結果為準 |
 | 07 | 音畫同步 | 有 AudioTimeline、VideoTimestampMapper、reset 與 monotonic tests | 接收端延遲與音畫誤差量測 | TESTED | AudioTimeline、VideoTimestampMapper tests | BLOCKED | 端到端誤差不能以 RTT 代替 |
-| 08 | 遠端媒體驗證／OBS | Cloudflare Subscribe-only 檢查分連線、認證、catalog、訂閱、收到關鍵影格及影音解碼，重連或影片 track 重建會失效 | 使用實際 Relay 與 OBS 填寫接收矩陣 | IMPLEMENTED | `RelayProfileTest` 涵蓋空名稱與訂閱憑證分離，編譯驗證解碼流程 | BLOCKED | 無 Android 裝置與測試 Token |
+| 08 | 遠端媒體驗證／OBS | Cloudflare 與 moq.pro 的獨立訂閱檢查連線、認證、catalog、訂閱、關鍵影格及影音解碼，重連或影片 Track 重建會失效 | 使用外部 Relay 與 OBS 填寫接收矩陣 | IMPLEMENTED | `RelayProfileTest` 涵蓋空名稱與訂閱憑證分離，編譯驗證解碼流程 | BLOCKED | 無 Android 裝置與測試 Token |
 | 09 | 主動異常警報 | 主畫面健康提示、依嚴重度排序的背景警報、冷卻、可切換提示音／震動、可查看歷史 | 裝置驗證通知、音效、震動與恢復 | IMPLEMENTED | `StreamAlertManagerTest`、`StreamHealthTest`、`SettingsPersistenceTest` 已編譯 | 未驗證 | 通知受 Android 系統權限和頻道設定控制 |
 | 10 | 長時間穩定性 | 有 2／4 小時測試矩陣、資源檢查及診斷合併工具 | 取得正式壓測與 leak 檢查紀錄 | IMPLEMENTED | ZIP 合併腳本以含缺口的資料驗證 | BLOCKED | 需要手機、OBS、Relay 憑證與測試時段 |
 | 11 | 開播前檢查 | PASS／WARNING／ERROR 預檢已串入開播，硬體 surface 清單缺項會提示並允許實際啟動編碼器 | 以原回報裝置驗證 H.264／H.265 開播 | TESTED | `BroadcastPreflightTest` 重現能力清單誤擋，並檢查權限、核心與無效參數 | BLOCKED | 尚無原回報裝置 |
-| 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要裝置實測切換增益時的實際聽感 |
-| 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 聲道與削波顯示需要不同硬體麥克風實測 |
-| 14 | 音訊輸入設備 | AudioRecord 使用預設裝置 | AudioManager 列表、偏好與拔除處理 | IMPLEMENTED | `AudioInputDeviceTest` 與 AudioRecord 編譯驗證 | 未驗證 | 需要多種實體音訊裝置實測路由與拔除回退 |
+| 12 | 直播中靜音／增益 | 靜音、增益漸變、PCM saturation、背景通知狀態 | 測試增益調整聽感與通知 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要手機實測 |
+| 13 | 麥克風音量表 | 顯示各聲道音量、peak、RMS、dBFS、peak hold 和削波 | 實體輸入校驗與長時音量監測 | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 需要不同硬體麥克風 |
+| 14 | 音訊輸入設備 | AudioManager 列表、偏好路由、實際輸入與拔除恢復 | 測試 USB、藍牙及耳麥 | IMPLEMENTED | `AudioInputDeviceTest` 與 AudioRecord 編譯驗證 | 未驗證 | 需要多種實體音訊裝置 |
 | 15 | 硬體編碼相容性 | DeviceCapabilityRepository 提供能力摘要；預檢允許實際啟動，選用參數遭拒時以同 codec、尺寸與 FPS 重試 | 以原手機逐一驗證原有畫質組合 | IMPLEMENTED | `BroadcastPreflightTest`、`SurfaceEncoderModeTest` 已編譯、Release build、lint | BLOCKED | 原回報手機未連接，CameraX 依支援模式取得實際擷取尺寸 |
 | 16 | 直播中調整畫質 | 最低／目標／最高碼率與 ABR 可整組套用。解析度／FPS 重建 CameraX 與影片 Track，收到新的關鍵影格才保存 | 驗證成功套用、編碼器拒絕、逾時復原及接收端解碼 | IMPLEMENTED | `VideoBitrateControlTest`、`LiveVideoModeChangeTest`、`VideoPublishQueueTest` | BLOCKED | 動態碼率與畫質組合由 MediaCodec 啟動及實際輸出確認 |
 | 17 | 直播儀表板 | 簡易模式顯示直播時間、幀率、傳輸碼率與網路，專業模式顯示實際編碼器、尺寸、丟幀、佇列、RTT、電量、熱度與解碼結果 | 實機驗證版面與連續資料 | IMPLEMENTED | metrics tests、release compile | 未驗證 | 遠端解碼資料來自 App 的獨立訂閱連線 |
@@ -33,7 +33,7 @@
 | 27 | 遠端監控／控制 | 區域網路 TLS 配對、僅查看或控制、會話內撤銷、靜音／碼率／驗證／停止 | 實機配對及 Android 區域網路授權驗收 | IMPLEMENTED | 桌面 TLS 本機驗證、Android build、lint | 未驗證 | 需 Wi-Fi／乙太網路 IPv4；桌面使用隨專案的 Python 用戶端 |
 | 28 | Android 螢幕直播 | 開播前選擇相機或螢幕，直播中可切換，MediaProjection／共用 EGL、旋轉、Android 10+ 播放音訊 | 實測授權、旋轉、視窗大小與投影撤銷 | IMPLEMENTED | `ScreenCaptureSizeTest`、`BroadcastPreflightTest`、Android build、lint | 未驗證 | 播放音訊受來源 App 的擷取政策限制 |
 | 29 | 直播疊圖 | 共用 EGL 合成標誌、文字、浮水印、時鐘、計時；可調角落、縮放及不透明度 | 比對手機預覽、錄影與 OBS 畫面及 GPU 成本 | IMPLEMENTED | `OverlayGeometryTest`、Release build、lint | 未驗證 | 文字與圖片只在內容更新時產生新紋理，動態內容每秒更新 |
-| 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道以獨立程序輸出 Enhanced RTMP 與 SRT | 真實 Relay、Android 與 OBS 相容性及長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 實測 H.264／H.265＋Opus 雙路解碼 | 未驗證 | 需支援對應影音格式的接收端 |
+| 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道獨立輸出 Enhanced RTMP 與 SRT，支援具名及空名稱 | 外部 Relay 與長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 9.0.2 的雙路影音解碼 | OBS 32.1.2 SRT 影音已驗證 | OBS 32.1.2 的 RTMP 握手拒絕 Opus FourCC |
 | 31 | 輸出方向／進階相機 | 固定方向、手動直向／橫向、前置輸出鏡像，直播中更新 GPU 與影片 Track | Android 旋轉、輸出切換與 OBS 解碼 | IMPLEMENTED | geometry、camera policy、mode change tests | 未驗證 | 需確認兩種 codec 在 OBS 的新畫質 Track |
 
 ## 本輪基線

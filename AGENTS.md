@@ -877,21 +877,7 @@ P2 的功能必須模組化，不能因新增功能破壞 P0／P1 的穩定性�
 
 【30】RTMP / SRT 備援
 
-保留 MoQ 為主要輸出。
-
-優先研究並整合已有的 MoQ → RTMP / SRT Gateway 方案。
-
-若需 Android 原生多協定推流，才建立額外 Publisher。
-
-要求：
-
-- 每個輸出獨立連線管理。
-- 獨立佇列。
-- 獨立錯誤處理。
-- 避免重複編碼。
-- 避免次要輸出阻塞 MoQ。
-- 顯示總上傳頻寬。
-- 不增加不必要的雲端或自架伺服器依賴。
+此待辦已完成！請做其他項
 
 【31】直播輸出方向與進階相機控制
 
@@ -1340,3 +1326,11 @@ P0 > P1 > P2
 - Android 測試 APK 增加可指定 H.264／H.265、尺寸和 FPS 的 MediaCodec 測試。它使用 GPU 提交測試畫面，檢查編碼器能否產生含參數集的關鍵影格。
 - 226 項 JVM 測試通過。Release、Offline 與 Android Test APK 建置完成，lint 為 0 errors。UTF-8／XML、版本、ABI、簽章及 ZIP 對齊通過。原回報手機尚未連接，指定畫質、疊圖 GPU 輸出及長時間直播仍待實機驗收。
 - Release APK SHA-256 為 `c667791cb09d0bcd2e7fedbc462e61d11017e27366e9338eee02313ebb3f830f`，Offline APK 為 `c7b80f18fc3aaaa425f226f12064d781b71c0fcc7c5f80511f6880334d908657`。
+
+### 2026-11-19
+
+- `v1.0.50` 將連續停滯的 Watchdog 樣本接上有限重試的元件恢復。音訊發布失敗可單獨重建發布器。預設網路的位址更換時重連，Relay 連續無法連上達重試期限時呈現錯誤。
+- 第 30 項桌面備援已交付。閘道的 RTMP 和 SRT 可訂閱空的 Draft 18 名稱。RTMP 透過本機重新封裝供上游監聽器使用；外部 Relay 收到的訂閱名稱仍是空字串。
+- 本機 Draft 18 Relay 與 FFmpeg 9.0.2 驗證具名及空名稱的 Enhanced RTMP／SRT 可解碼 H.264、H.265 和 Opus。OBS 32.1.2 的 SRT Media Source 確認活動影像與音訊；OBS 內建 FFmpeg 7.1.1 拒絕 Enhanced RTMP 協商中的 Opus FourCC。
+- 230 項 JVM 測試、Release／Offline／Android Test APK、lint（0 errors）、UTF-8／XML、簽章、ABI 和 ZIP 對齊通過。原回報手機的編碼模式、外部 Relay 與 OBS、2／4 小時測試，以及 production 簽章尚待外部驗收。
+- Release APK SHA-256 為 `36a42394a85f97ad217c2d7c2ccf4f757b32b09d24d687265751df013108c9b0`，Offline APK 為 `3c56bc7ccdcb68e3b2a64dde4f557f5bf781e42c44329c72bb4f95bb90ee6251`。

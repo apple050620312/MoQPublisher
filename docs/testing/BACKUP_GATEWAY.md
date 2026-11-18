@@ -11,6 +11,14 @@
 python tools/moq-backup-gateway.py --broadcast live.hang --version moq-transport-18
 ```
 
+Cloudflare 發布時留空的名稱同樣以空名稱訂閱。
+
+```powershell
+python tools/moq-backup-gateway.py --broadcast= --version moq-transport-18
+```
+
+空名稱的 RTMP 會將已訂閱的影音重新封裝到同一電腦上的 MoQ CLI，供需要具名來源的 RTMP 監聽器使用。
+
 3. 在同一台電腦的接收端開啟閘道印出的本機網址。RTMP 客戶端須支援 Enhanced RTMP 與實際的視訊／Opus 音訊。以下命令可檢查影音解碼。
 
 ```powershell
@@ -29,6 +37,13 @@ Windows 上使用 MoQ CLI 0.14.17、MoQ Relay 0.17.17 與 FFmpeg 9.0.2。以本�
 | Enhanced RTMP | 通過 | 通過 |
 | SRT | 通過 | 通過 |
 
-待驗證項目涵蓋 Android 實機、外部 Relay、OBS 來源，以及兩路輸出在長時間斷線與重連時的表現。
+上表包含具名 `test.hang` 與空名稱兩種 Draft 18 案例。
+
+| 實際 OBS 接收方式 | H.264＋Opus | H.265＋Opus |
+|---|---|---|
+| OBS 32.1.2 Media Source → SRT | 取得連續影格及音訊電平 | 取得連續影格及音訊電平 |
+| OBS 32.1.2 Media Source → Enhanced RTMP | 內建 FFmpeg 7.1.1 拒絕 Opus FourCC | 內建 FFmpeg 7.1.1 拒絕 Opus FourCC |
+
+在 OBS 32.1.2 使用 Media Source 接收時，取消勾選本機檔案並填入閘道顯示的 SRT 網址。Android 發布、外部 Relay 和長時間斷線重連尚待驗收。
 
 [MoQ CLI 與 Relay 發佈](https://github.com/moq-dev/moq/releases) · [FFmpeg Windows 發佈](https://github.com/GyanD/codexffmpeg/releases)

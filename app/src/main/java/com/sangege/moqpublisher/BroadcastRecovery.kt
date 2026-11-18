@@ -4,7 +4,34 @@ enum class RecoveryComponent {
     CAMERA,
     VIDEO_ENCODER,
     VIDEO_PUBLISH_QUEUE,
-    AUDIO_CAPTURE
+    AUDIO_CAPTURE,
+    AUDIO_PUBLISHER
+}
+
+/** A second stalled sample confirms the watchdog reading before it requests repair. */
+internal class StreamStallRecovery(private val graceMs: Long = 5_000L) {
+    private var previous: RecoveryComponent? = null
+    private var resumeAtMs = 0L
+
+    fun observe(health: StreamHealthSnapshot, nowMs: Long, cameraSource: Boolean, videoChanging: Boolean): RecoveryComponent? {
+        val reasons = health.reasons
+        val stalled = when {
+            StreamHealthReason.RECONNECTING in reasons -> null
+            !videoChanging && cameraSource && (StreamHealthReason.CAMERA_STALLED in reasons ||
+                StreamHealthReason.GPU_STALLED in reasons) -> RecoveryComponent.CAMERA
+            !videoChanging && StreamHealthReason.ENCODER_STALLED in reasons -> RecoveryComponent.VIDEO_ENCODER
+            !videoChanging && StreamHealthReason.PUBLISH_STALLED in reasons -> RecoveryComponent.VIDEO_PUBLISH_QUEUE
+            StreamHealthReason.AUDIO_STALLED in reasons -> RecoveryComponent.AUDIO_CAPTURE
+            StreamHealthReason.AUDIO_PUBLISH_STALLED in reasons -> RecoveryComponent.AUDIO_PUBLISHER
+            else -> null
+        }
+        val confirmed = stalled != null && stalled == previous && nowMs >= resumeAtMs
+        previous = stalled
+        if (!confirmed) return null
+        previous = null
+        resumeAtMs = nowMs + graceMs
+        return stalled
+    }
 }
 
 enum class RecoveryClassification {

@@ -21,6 +21,19 @@ internal fun StreamState.Live.statusResource(): Int = if (recordingOnly) R.strin
 internal fun StreamState.Live.acceptsMedia(enqueuedAtNs: Long): Boolean =
     !recordingOnly && phase != RelayConnectionPhase.RECONNECTING && (reconnectedAtNs == null || enqueuedAtNs >= reconnectedAtNs)
 
+internal class RelayReconnectDeadline(private val retryMs: Long = RelayConnectionPolicy.RETRY_WINDOW_US.toLong() / 1_000L) {
+    private var disconnectedAtMs: Long? = null
+
+    fun expired(connected: Boolean, nowMs: Long): Boolean {
+        if (connected) {
+            disconnectedAtMs = null
+            return false
+        }
+        val start = disconnectedAtMs ?: nowMs.also { disconnectedAtMs = it }
+        return nowMs - start >= retryMs
+    }
+}
+
 internal object RelayConnectionPolicy {
     const val CONNECT_TIMEOUT_MS = 45_000L
     // Status changes are event-like; polling at 4 Hz is responsive to handovers

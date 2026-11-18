@@ -130,6 +130,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
 
     private fun updateCameraSource(active: Boolean = streamer.streamState.value.isActive()) {
         val screen = if (active) screenOnly || screenCaptureState.value.busy else preferScreen.value
+        streamer.screenVideoSource = screen
         camera.setScreenSource(screen)
         camera.setStreaming(active && !screen)
     }

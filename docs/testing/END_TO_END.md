@@ -96,3 +96,5 @@ python docs/testing/summarize_run.py $exports --from-utc 2026-11-19T03:00:00Z --
 | App 版本 | 裝置 | Relay 與 OBS | 結果 |
 |---|---|---|---|
 | v1.0.39 | 原回報手機尚未連接 | 尚無測試憑證及接收端 | 端對端與長時間直播未驗證 |
+| 本機桌面測試 | FFmpeg 測試影像與音訊 | 本機 Draft 18 Relay、OBS 32.1.2 Media Source | SRT 的 H.264／H.265＋Opus 有活動影像及音訊電平。RTMP 由獨立 FFmpeg 解碼通過。OBS 的 RTMP 協商受內建 FFmpeg 版本限制 |
+| v1.0.50 | 原回報手機尚未連接 | Cloudflare 與 moq.pro 測試憑證尚缺 | 指定解析度及 FPS 的 Android 執行、外部 Relay、OBS Browser Source／原生 MoQ 來源與 2／4 小時壓測尚待驗收 |
