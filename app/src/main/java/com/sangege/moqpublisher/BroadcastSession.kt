@@ -1,6 +1,7 @@
 package com.sangege.moqpublisher
 
 import android.content.Context
+import android.content.Intent
 import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,6 @@ internal class BroadcastSession(private val application: MoqApplication) {
     private val prefs = application.getSharedPreferences("moq_stream_prefs", Context.MODE_PRIVATE)
     val diagnostics = AppDiagnostics(application)
     val streamer = MoqStreamer(application, diagnostics)
-    val screenCapture = ScreenCaptureEngine(application, streamer, diagnostics)
     val verifier = SubscriberVerifier(diagnostics)
     val controls = CameraControlHandle { ev -> prefs.edit { putFloat("camera_exposure_ev", ev) } }.apply {
         restoreExposure(prefs.getFloat("camera_exposure_ev", 0f))
@@ -34,6 +34,13 @@ internal class BroadcastSession(private val application: MoqApplication) {
     private var pendingVideoMode: LiveVideoModeChange? = null
     private val mutableChangingVideoMode = MutableStateFlow(false)
     val changingVideoMode = mutableChangingVideoMode.asStateFlow()
+    private var screenOnly = false
+    private val mutablePreferScreen = MutableStateFlow(prefs.getBoolean("prefer_screen_source", false))
+    val preferScreen = mutablePreferScreen.asStateFlow()
+    val screenCapture = ScreenCaptureEngine(application, camera, diagnostics) { error ->
+        if (error != null) cameraError.value = error
+        if (screenOnly) stop() else updateCameraSource()
+    }
     val screenCaptureState = screenCapture.state
 
     init {
@@ -44,7 +51,11 @@ internal class BroadcastSession(private val application: MoqApplication) {
         scope.launch {
             streamer.streamState.collect { state ->
                 val active = state.isActive()
-                if (!active) verifier.reset()
+                if (!active) {
+                    verifier.reset()
+                    screenCapture.stopForBroadcastEnd()
+                    screenOnly = false
+                }
                 if (state is StreamState.Live) {
                     val connection = state.epoch to state.reconnectCount
                     if (!state.canVerifyRemoteMedia() ||
@@ -57,7 +68,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
                     previousVideoGeneration = null
                 }
                 application.core.setStreaming(active)
-                camera.setStreaming(active)
+                updateCameraSource(active)
             }
         }
     }
@@ -67,7 +78,8 @@ internal class BroadcastSession(private val application: MoqApplication) {
     }
 
     suspend fun changeVideoMode(front: Boolean, previous: VideoMode, requested: VideoMode): Boolean {
-        if (pendingVideoMode != null || !streamer.streamState.value.canVerifyRemoteMedia()) return false
+        if (screenCaptureState.value.busy || pendingVideoMode != null ||
+            !streamer.streamState.value.canVerifyRemoteMedia()) return false
         val change = LiveVideoModeChange(
             rebuildEncoder = requested.camera.direction != previous.camera.direction ||
                 requested.camera.mirrorFront != previous.camera.mirrorFront
@@ -98,19 +110,37 @@ internal class BroadcastSession(private val application: MoqApplication) {
         if (!active && !prefs.getBoolean("background_streaming", true)) stop()
     }
 
-    fun startScreenCapture(resultCode: Int, data: android.content.Intent, width: Int, height: Int, fps: Int, densityDpi: Int): Boolean {
-        if (!streamer.streamState.value.isActive()) return false
-        camera.setStreaming(false)
-        val started = screenCapture.start(resultCode, data, width, height, fps, densityDpi)
-        if (!started) camera.setStreaming(true)
-        else BroadcastService.updateScreenCaptureType(application)
+    fun setPreferScreen(enabled: Boolean) {
+        if (streamer.streamState.value.isActive() || pendingStart != null) return
+        mutablePreferScreen.value = enabled
+        prefs.edit { putBoolean("prefer_screen_source", enabled) }
+        updateCameraSource()
+    }
+
+    private fun updateCameraSource(active: Boolean = streamer.streamState.value.isActive()) {
+        val screen = if (active) screenOnly || screenCaptureState.value.busy else preferScreen.value
+        camera.setScreenSource(screen)
+        camera.setStreaming(active && !screen)
+    }
+
+    fun canSwitchToScreen(expectedGeneration: Long): Boolean =
+        expectedGeneration == generation && !screenOnly && streamer.streamState.value.isActive() &&
+            !screenCaptureState.value.busy && pendingVideoMode == null
+
+    fun requestScreenCapture(expectedGeneration: Long, request: ScreenCaptureRequest): Boolean {
+        if (!canSwitchToScreen(expectedGeneration)) return false
+        return runCatching {
+            BroadcastService.requestScreenCapture(application, expectedGeneration, request)
+        }.onFailure { diagnostics.error("screen_capture_service_request_failed", it) }.isSuccess
+    }
+
+    fun startScreenCapture(request: ScreenCaptureRequest): Boolean {
+        val started = screenCapture.start(request) != null
+        updateCameraSource()
         return started
     }
 
-    fun stopScreenCapture() {
-        screenCapture.stop()
-        if (streamer.streamState.value.isActive()) camera.setStreaming(true)
-    }
+    fun stopScreenCapture() = screenCapture.stop()
 
     fun requestStart(config: BroadcastConfiguration) {
         if (streamer.streamState.value is StreamState.Live || streamer.streamState.value is StreamState.Connecting) return
@@ -125,11 +155,17 @@ internal class BroadcastSession(private val application: MoqApplication) {
         val config = pendingStart ?: return null
         pendingStart = null
         cameraError.value = null
+        val request = config.screen
+        val projection = if (request != null) {
+            screenCapture.start(request) ?: throw UiException(UiMessage(R.string.screen_capture_start_failed))
+        } else null
+        screenOnly = projection != null
         streamer.startBroadcast(
             config.relayUrl, config.streamPath, config.tlsVerify, config.enableAudio,
             config.audioChannel, config.audioQuality, config.audioGainPercent,
             config.codec, config.framerate, config.videoBitrate, config.recording,
-            config.provider, config.protocolDraft
+            config.provider, config.protocolDraft, screenOnly,
+            projection.takeIf { config.capturePlaybackAudio }
         )
         return config
     }
@@ -137,7 +173,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
     fun stop() {
         pendingStart = null
         pendingVideoMode?.finish(false)
-        screenCapture.stop("broadcast_stopped")
+        screenCapture.stopForBroadcastEnd()
         verifier.reset()
         streamer.stopBroadcast()
     }

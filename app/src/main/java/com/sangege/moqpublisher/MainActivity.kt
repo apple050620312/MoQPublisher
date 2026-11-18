@@ -150,6 +150,8 @@ fun MainScreen(viewModel: MainViewModel) {
     val recordingPreferences by viewModel.recordingPreferences.collectAsState()
     val recordingState by viewModel.recordingState.collectAsState()
     val screenCaptureState by viewModel.screenCaptureState.collectAsState()
+    val preferScreen by viewModel.preferScreen.collectAsState()
+    val capturePlaybackAudio by viewModel.capturePlaybackAudio.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var stopConfirmationGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
@@ -166,19 +168,49 @@ fun MainScreen(viewModel: MainViewModel) {
     var resetRemindersOnStart by remember { mutableStateOf(false) }
     var pendingInstallPermission by rememberSaveable { mutableStateOf(false) }
     var preparingAppInstall by remember { mutableStateOf(false) }
+    var projectionGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
+    var projectionStartsBroadcast by rememberSaveable { mutableStateOf(false) }
     var dismissedAppUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
     var dismissedCoreUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
     val updateReminder = updateReminderFor(appUpdateState, coreState)
         ?.withoutDismissed(dismissedAppUpdateKey, dismissedCoreUpdateKey)
+    val screenCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val generation = projectionGeneration
+        projectionGeneration = null
+        val data = result.data
+        if (generation != null && result.resultCode == Activity.RESULT_OK && data != null) {
+            val started = viewModel.startScreenCapture(data, generation, projectionStartsBroadcast)
+            if (!started && (!projectionStartsBroadcast || viewModel.configurationError.value == null)) {
+                viewModel.setConfigurationError(UiMessage(R.string.screen_capture_start_failed))
+            }
+        }
+    }
+    val requestScreenConsent: (Boolean) -> Unit = { start ->
+        if (projectionGeneration == null) {
+            projectionGeneration = viewModel.screenConsentGeneration()
+            projectionStartsBroadcast = start
+            try {
+                screenCaptureLauncher.launch(viewModel.screenCapturePermissionIntent())
+            } catch (_: ActivityNotFoundException) {
+                projectionGeneration = null
+                viewModel.setConfigurationError(UiMessage(R.string.screen_capture_start_failed))
+            }
+        }
+    }
+    val startWithSource: () -> Unit = {
+        if (preferScreen) {
+            if (viewModel.checkStartSettings()) requestScreenConsent(true)
+        } else viewModel.startBroadcast()
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        viewModel.startBroadcast()
+        startWithSource()
     }
     val startWithNotification: () -> Unit = {
         if (Build.VERSION.SDK_INT >= 33 && !notificationsRequested &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             notificationsRequested = true
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else viewModel.startBroadcast()
+        } else startWithSource()
     }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         hasCameraPermission = it
@@ -191,19 +223,6 @@ fun MainScreen(viewModel: MainViewModel) {
             if (granted) startWithNotification()
             else viewModel.setConfigurationError(UiMessage(R.string.error_microphone_permission))
         }
-    }
-    val screenCaptureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null) {
-            val metrics = context.resources.displayMetrics
-            if (!viewModel.startScreenCapture(
-                    result.resultCode, data, metrics.widthPixels, metrics.heightPixels, videoFps, metrics.densityDpi
-                )) viewModel.setConfigurationError(UiMessage(R.string.screen_capture_start_failed))
-        }
-    }
-    val requestScreenCapture: () -> Unit = {
-        if (streamState.isActive()) screenCaptureLauncher.launch(viewModel.screenCapturePermissionIntent())
-        else viewModel.setConfigurationError(UiMessage(R.string.screen_capture_requires_stream))
     }
     val active = streamState is StreamState.Live || streamState is StreamState.Connecting
     val scope = rememberCoroutineScope()
@@ -275,7 +294,7 @@ fun MainScreen(viewModel: MainViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        if (!hasCameraPermission && !preferScreen) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
     }
     val onToggleBroadcast: () -> Unit = {
         when {
@@ -293,7 +312,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val openSettings = { openAboutOnEntry = false; showSettings = true }
     BackHandler(enabled = showSettings) { showSettings = false }
     Box(Modifier.fillMaxSize()) {
-        if (!hasCameraPermission) {
+        if (!hasCameraPermission && !preferScreen && !screenCaptureState.busy) {
             PermissionScreen(viewModel, openSettings) {
                 cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             }
@@ -385,8 +404,10 @@ fun MainScreen(viewModel: MainViewModel) {
                 streamAlerts = streamAlerts,
                 recordingPreferences = recordingPreferences, recordingState = recordingState,
                 onRecordingPreferencesChange = viewModel::setRecordingPreferences,
-                screenCaptureState = screenCaptureState, onRequestScreenCapture = requestScreenCapture,
+                screenCaptureState = screenCaptureState, onRequestScreenCapture = { requestScreenConsent(false) },
                 onStopScreenCapture = viewModel::stopScreenCapture,
+                preferScreen = preferScreen, onPreferScreenChange = viewModel::setPreferScreen,
+                capturePlaybackAudio = capturePlaybackAudio, onCapturePlaybackAudioChange = viewModel::setCapturePlaybackAudio,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1220,6 +1241,8 @@ internal fun SettingsScreen(
     recordingPreferences: RecordingPreferences, recordingState: RecordingState,
     onRecordingPreferencesChange: (RecordingMode, Int) -> Unit,
     screenCaptureState: ScreenCaptureState, onRequestScreenCapture: () -> Unit, onStopScreenCapture: () -> Unit,
+    preferScreen: Boolean, onPreferScreenChange: (Boolean) -> Unit,
+    capturePlaybackAudio: Boolean, onCapturePlaybackAudioChange: (Boolean) -> Unit,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1307,7 +1330,10 @@ internal fun SettingsScreen(
             !changingVideoMode && (editable || canVerifySubscription)
         )
         RecordingSettingsCard(recordingPreferences, recordingState, onRecordingPreferencesChange, editable)
-        ScreenCaptureSettingsCard(screenCaptureState, onRequestScreenCapture, onStopScreenCapture, isStreaming)
+        ScreenCaptureSettingsCard(
+            screenCaptureState, onRequestScreenCapture, onStopScreenCapture, isStreaming,
+            preferScreen, onPreferScreenChange, capturePlaybackAudio, onCapturePlaybackAudioChange, enableAudio
+        )
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
             SelectionDropdown(
@@ -1447,21 +1473,42 @@ private fun ScreenCaptureSettingsCard(
     state: ScreenCaptureState,
     onRequest: () -> Unit,
     onStop: () -> Unit,
-    streaming: Boolean
+    streaming: Boolean,
+    preferScreen: Boolean,
+    onPreferScreenChange: (Boolean) -> Unit,
+    capturePlaybackAudio: Boolean,
+    onCapturePlaybackAudioChange: (Boolean) -> Unit,
+    audioEnabled: Boolean
 ) {
     SettingCard(stringResource(R.string.screen_capture_settings), stringResource(R.string.screen_capture_settings_hint)) {
-        if (state.active) {
-            SupportingText(stringResource(R.string.screen_capture_active, state.width, state.height, state.fps))
+        if (!streaming && !state.busy) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = !preferScreen, onClick = { onPreferScreenChange(false) },
+                    label = { Text(stringResource(R.string.video_source_camera)) })
+                FilterChip(selected = preferScreen, onClick = { onPreferScreenChange(true) },
+                    label = { Text(stringResource(R.string.video_source_screen)) })
+            }
+            if (preferScreen && audioEnabled && Build.VERSION.SDK_INT >= 29) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !capturePlaybackAudio, onClick = { onCapturePlaybackAudioChange(false) },
+                        label = { Text(stringResource(R.string.screen_audio_microphone)) })
+                    FilterChip(selected = capturePlaybackAudio, onClick = { onCapturePlaybackAudioChange(true) },
+                        label = { Text(stringResource(R.string.screen_audio_playback)) })
+                }
+                if (capturePlaybackAudio) SupportingText(stringResource(R.string.screen_audio_playback_hint))
+            }
+        } else if (state.busy) {
+            SupportingText(if (state.active) stringResource(R.string.screen_capture_active, state.width, state.height, state.fps)
+                else stringResource(R.string.screen_capture_starting))
             OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.stop_screen_capture))
             }
-        } else {
-            OutlinedButton(onClick = onRequest, enabled = streaming, modifier = Modifier.fillMaxWidth()) {
+        } else if (!preferScreen) {
+            OutlinedButton(onClick = onRequest, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.start_screen_capture))
             }
-            if (!streaming) SupportingText(stringResource(R.string.screen_capture_requires_stream))
         }
-        state.error?.let { SupportingText(stringResource(R.string.screen_capture_error, it)) }
+        state.error?.let { SupportingText(it.text()) }
     }
 }
 

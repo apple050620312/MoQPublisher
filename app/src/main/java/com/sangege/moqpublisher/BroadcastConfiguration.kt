@@ -43,7 +43,9 @@ internal data class BroadcastConfiguration(
     val videoBitrate: VideoBitrateConfiguration,
     val recording: RecordingPreferences = RecordingPreferences(),
     val provider: RelayProvider = RelayProvider.MOQ_PRO,
-    val protocolDraft: Int? = null
+    val protocolDraft: Int? = null,
+    val screen: ScreenCaptureRequest? = null,
+    val capturePlaybackAudio: Boolean = false
 ) {
     override fun toString(): String = "BroadcastConfiguration(provider=$provider, draft=$protocolDraft, " +
         "relay=${RelayUrl.maskJwt(relayUrl)}, path=$streamPath, codec=$codec, fps=$framerate)"

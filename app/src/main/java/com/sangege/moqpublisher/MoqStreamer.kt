@@ -7,10 +7,14 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat as AndroidAudioFormat
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
+import android.media.AudioAttributes
 import android.media.AudioManager
+import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
+import android.media.projection.MediaProjection
+import android.os.Build
 import android.os.Process
 import android.os.Handler
 import android.os.Looper
@@ -121,7 +125,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     val alertState: StateFlow<StreamAlertState> = _alertState.asStateFlow()
     private val localRecording = LocalRecordingManager(context, diagnostics)
     val recordingState: StateFlow<RecordingState> = localRecording.state
-    private var screenEncoder: SurfaceVideoEncoder? = null
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleLock = Any()
@@ -180,6 +183,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     private var currentVideoWidth: Int = 0
     private var currentVideoHeight: Int = 0
+    private var encodingScreen = false
+    private var cameraRequired = true
+    @Volatile private var playbackProjection: MediaProjection? = null
     private var videoTrackCounter: Int = 0
     private var configuredCodec: VideoCodec = VideoCodec.H264
     @Volatile private var configuredFramerate: Int = 30
@@ -211,7 +217,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         videoBitrate: VideoBitrateConfiguration,
         recording: RecordingPreferences = RecordingPreferences(),
         provider: RelayProvider = RelayProvider.MOQ_PRO,
-        protocolDraft: Int? = null
+        protocolDraft: Int? = null,
+        screenOnly: Boolean = false,
+        playbackAudio: MediaProjection? = null
     ) {
         synchronized(lifecycleLock) {
             // A cancelled job still owns its resources until cleanup completes.
@@ -228,6 +236,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 "min_bitrate_bps" to videoBitrate.minimumBps, "max_bitrate_bps" to videoBitrate.maximumBps,
                 "adaptive_bitrate" to videoBitrate.adaptive,
                 "recording" to recording.mode,
+                "video_source" to if (screenOnly) "screen" else "camera",
+                "playback_audio" to (playbackAudio != null),
                 "audio_channel" to audioChannel, "audio_gain_percent" to audioGainPercent,
                 "network" to diagnostics.networkDescription()
             ))
@@ -239,6 +249,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredAudioGain = AudioSettings.normalizeGain(audioGainPercent)
             audioGainTarget.set(configuredAudioGain)
             configuredAudioEnabled = enableAudio
+            cameraRequired = !screenOnly
+            playbackProjection = playbackAudio
             audioMute.set(false)
             _audioMuted.value = false
             configuredProvider = provider
@@ -606,9 +618,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
                 val activeRecord = createdRecord
                 val routed = activeRecord.routedDevice
-                val requestedDeviceId = configuredAudioDeviceId.takeUnless { it == DEFAULT_AUDIO_INPUT_DEVICE_ID }
-                val actualDeviceId = routed.id.takeIf { it != 0 }
-                val actualDeviceName = routed.productName?.toString()?.takeIf { it.isNotBlank() }
+                val playback = playbackProjection != null
+                val requestedDeviceId = configuredAudioDeviceId.takeUnless { playback || it == DEFAULT_AUDIO_INPUT_DEVICE_ID }
+                val actualDeviceId = routed?.id?.takeUnless { playback || it == 0 }
+                val actualDeviceName = routed?.productName?.toString()?.takeIf { !playback && it.isNotBlank() }
                 if (requestedDeviceId != null && actualDeviceId != null && requestedDeviceId != actualDeviceId) {
                     diagnostics.event("audio_device_fallback", mapOf(
                         "requested_id" to requestedDeviceId, "actual_id" to actualDeviceId,
@@ -630,7 +643,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     "audio_thread_priority" to Process.THREAD_PRIORITY_AUDIO
                 ))
                 audioRecord = activeRecord
-                registerAudioDeviceWatcher()
+                if (!playback) registerAudioDeviceWatcher()
                 startAudioPublisher(audio)
                 publisherStarted = true
                 val captureExecutor = Executors.newSingleThreadExecutor { audioThread(it, "MoqAudioCapture") }
@@ -759,20 +772,31 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         val mask = if (channel == AudioChannel.STEREO) AndroidAudioFormat.CHANNEL_IN_STEREO else AndroidAudioFormat.CHANNEL_IN_MONO
         val format = AndroidAudioFormat.ENCODING_PCM_16BIT
         val minimum = AudioRecord.getMinBufferSize(AudioSettings.SAMPLE_RATE, mask, format)
-        check(minimum > 0) { "Unsupported microphone format: $channel ($minimum)" }
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.MIC, AudioSettings.SAMPLE_RATE, mask, format,
-            maxOf(minimum, AudioSettings.frameBytes(channel) * 4)
-        )
+        check(minimum > 0) { "Unsupported audio capture format: $channel ($minimum)" }
+        val bufferSize = maxOf(minimum, AudioSettings.frameBytes(channel) * 4)
+        val projection = playbackProjection
+        val record = if (projection != null && Build.VERSION.SDK_INT >= 29) {
+            val capture = AudioPlaybackCaptureConfiguration.Builder(projection)
+                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                .build()
+            AudioRecord.Builder()
+                .setAudioFormat(AndroidAudioFormat.Builder()
+                    .setEncoding(format).setSampleRate(AudioSettings.SAMPLE_RATE).setChannelMask(mask).build())
+                .setBufferSizeInBytes(bufferSize)
+                .setAudioPlaybackCaptureConfig(capture)
+                .build()
+        } else AudioRecord(MediaRecorder.AudioSource.MIC, AudioSettings.SAMPLE_RATE, mask, format, bufferSize)
         try {
-            val preferred = AudioInputDeviceRepository(context).find(configuredAudioDeviceId)
+            val preferred = if (projection == null) AudioInputDeviceRepository(context).find(configuredAudioDeviceId) else null
             if (preferred != null && !record.setPreferredDevice(preferred)) {
                 diagnostics.event("audio_device_preference_rejected", mapOf("device_id" to preferred.id))
             }
             check(record.state == AudioRecord.STATE_INITIALIZED && record.channelCount == channel.count &&
-                record.sampleRate == AudioSettings.SAMPLE_RATE) { "Microphone format unavailable: $channel" }
+                record.sampleRate == AudioSettings.SAMPLE_RATE) { "Audio capture format unavailable: $channel" }
             record.startRecording()
-            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone capture did not start" }
+            check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Audio capture did not start" }
             return record
         } catch (e: Throwable) {
             runCatching { record.stop() }
@@ -784,7 +808,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     fun setAudioInputDevice(id: Int) {
         val normalized = if (id == DEFAULT_AUDIO_INPUT_DEVICE_ID) DEFAULT_AUDIO_INPUT_DEVICE_ID else id
         configuredAudioDeviceId = normalized
-        if (configuredAudioEnabled && isBroadcasting.get()) {
+        if (configuredAudioEnabled && playbackProjection == null && isBroadcasting.get()) {
             val preferred = AudioInputDeviceRepository(context).find(normalized)
             audioRecord?.let { record ->
                 if (preferred != null) record.setPreferredDevice(preferred)
@@ -811,7 +835,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 if (configuredAudioDeviceId != DEFAULT_AUDIO_INPUT_DEVICE_ID && configuredAudioDeviceId in removed) {
                     configuredAudioDeviceId = DEFAULT_AUDIO_INPUT_DEVICE_ID
                     diagnostics.event("audio_input_device_removed", mapOf("device_id" to removed))
-                    if (isBroadcasting.get()) scheduleMediaRecovery(
+                    if (playbackProjection == null && isBroadcasting.get()) scheduleMediaRecovery(
                         RecoveryComponent.AUDIO_CAPTURE,
                         IllegalStateException("Selected audio input device was removed"),
                         R.string.error_audio_capture
@@ -887,15 +911,20 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     internal fun prepareVideoSurface(
-        width: Int, height: Int, framerate: Int, modeChange: LiveVideoModeChange?
+        width: Int, height: Int, framerate: Int, modeChange: LiveVideoModeChange?, screen: Boolean
     ): Surface? = synchronized(videoLock) {
         if (!isBroadcasting.get() || resettingVideo ||
             modeChange?.result?.value == LiveVideoModeChange.Result.FAILED) return@synchronized null
-        if (hardwareEncoder !is SurfaceVideoEncoder || currentVideoWidth != width || currentVideoHeight != height ||
+        if (hardwareEncoder !is SurfaceVideoEncoder || screen != encodingScreen ||
+            currentVideoWidth != width || currentVideoHeight != height ||
             configuredFramerate != framerate || (modeChange?.rebuildEncoder == true &&
                 modeChange.result.value == LiveVideoModeChange.Result.PENDING && modeChange !== encoderModeChange)) {
             try {
                 createVideoProducerLocked(width, height, surfaceInput = true, framerate = framerate, modeChange = modeChange)
+                if (screen != encodingScreen) {
+                    videoFramePacer = VideoFramePacer(framerate)
+                    encodingScreen = screen
+                }
             } catch (error: Exception) {
                 if (modeChange == null || modeChange.result.value == LiveVideoModeChange.Result.APPLIED) throw error
                 diagnostics.error("live_video_mode_rejected", error)
@@ -908,26 +937,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
         (hardwareEncoder as? SurfaceVideoEncoder)?.inputSurface
             .takeUnless { modeChange?.result?.value == LiveVideoModeChange.Result.FAILED }
-    }
-
-    internal fun prepareScreenSurface(width: Int, height: Int, framerate: Int): Surface? = synchronized(videoLock) {
-        if (!isBroadcasting.get() || resettingVideo) return@synchronized null
-        try {
-            beforeVideoEncoderClose()
-            createVideoProducerLocked(width, height, surfaceInput = true, framerate = framerate)
-            screenEncoder = hardwareEncoder as? SurfaceVideoEncoder
-            screenEncoder?.inputSurface
-        } catch (error: Throwable) {
-            diagnostics.error("screen_encoder_prepare_failed", error)
-            null
-        }
-    }
-
-    internal fun releaseScreenSurface() {
-        synchronized(videoLock) {
-            screenEncoder = null
-            if (isBroadcasting.get()) resetVideoPipeline("screen_capture_stopped")
-        }
     }
 
     /** Called by the GPU thread before submitting a frame, using the sensor clock for pacing. */
@@ -1207,7 +1216,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             while (isActive && isBroadcasting.get()) {
                 try {
                     val revokedPermission = when {
-                        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ->
+                        cameraRequired &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ->
                             R.string.error_camera
                         configuredAudioEnabled && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
                             PackageManager.PERMISSION_GRANTED -> R.string.error_microphone_permission
@@ -1537,7 +1547,6 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         synchronized(videoLock) {
             runCatching { hardwareEncoder?.close() }
             hardwareEncoder = null
-            screenEncoder = null
             encoderModeChange = null
             runCatching { videoDemand?.close() }
             videoDemand = null
@@ -1549,8 +1558,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             videoGeneration++
             currentVideoWidth = 0
             currentVideoHeight = 0
+            encodingScreen = false
             videoTrackCounter = 0
         }
+        if (stopRecording) playbackProjection = null
 
         synchronized(streamLock) {
             runCatching { broadcastProducer?.end() }

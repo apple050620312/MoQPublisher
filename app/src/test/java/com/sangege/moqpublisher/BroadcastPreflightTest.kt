@@ -57,6 +57,19 @@ class BroadcastPreflightTest {
     }
 
     @Test
+    fun screenSharingCanStartWithoutCameraPermissionOrHardware() {
+        val report = BroadcastPreflightPolicy.evaluate(ready.copy(
+            usesCamera = false,
+            cameraPermission = false,
+            cameraAvailable = false
+        ))
+        assertTrue(report.canStart)
+        assertFalse(report.checks.any {
+            it.id == PreflightCheckId.CAMERA_PERMISSION || it.id == PreflightCheckId.CAMERA_AVAILABILITY
+        })
+    }
+
+    @Test
     fun notificationNetworkBatteryAndThermalAreWarnings() {
         val report = BroadcastPreflightPolicy.evaluate(ready.copy(
             notificationPermission = false,

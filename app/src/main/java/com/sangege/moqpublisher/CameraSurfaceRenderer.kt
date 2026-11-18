@@ -12,6 +12,7 @@ import android.opengl.GLES20
 import android.opengl.Matrix
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.view.Surface
 import androidx.camera.core.SurfaceRequest
 import java.nio.ByteBuffer
@@ -22,7 +23,7 @@ import java.util.concurrent.TimeUnit
 
 /** One persistent camera input, independent preview and codec outputs, no CPU pixel readback. */
 internal class CameraSurfaceRenderer(
-    private val encoderSurface: (Int, Int, Int, LiveVideoModeChange?) -> Surface?,
+    private val encoderSurface: (Int, Int, Int, LiveVideoModeChange?, Boolean) -> Surface?,
     private val frameTimestamp: (Long) -> Long?,
     private val onFailure: (Throwable) -> Unit,
     private val onSubmitted: (Long) -> Unit = {},
@@ -37,6 +38,7 @@ internal class CameraSurfaceRenderer(
     private var pbuffer: EGLSurface = EGL14.EGL_NO_SURFACE
     private var program = 0
     private var input: Input? = null
+    private var screenInput: Input? = null
     private var preview: Output? = null
     private var previewTexture: SurfaceTexture? = null
     private var codec: Output? = null
@@ -53,10 +55,13 @@ internal class CameraSurfaceRenderer(
     private val coordinates = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         .apply { put(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f)); position(0) }
     private data class Input(
-        val texture: SurfaceTexture, val surface: Surface, val id: Int, val width: Int, val height: Int,
-        val fps: Int, val modeChange: LiveVideoModeChange?,
+        val texture: SurfaceTexture, val surface: Surface, val id: Int, var width: Int, var height: Int,
+        var fps: Int, val modeChange: LiveVideoModeChange?,
         val direction: VideoDirection, val mirrored: Boolean,
-        var lastTimestamp: Long = -1, var transformReported: Boolean = false
+        var lastTimestamp: Long = -1, var transformReported: Boolean = false,
+        val screenToken: Any? = null,
+        var frameAvailable: Boolean = false,
+        var hasFrame: Boolean = false
     )
     private data class Output(val surface: Surface, val egl: EGLSurface, var width: Int, var height: Int, val ownsSurface: Boolean) {
         var mapping: FloatArray? = null
@@ -68,28 +73,18 @@ internal class CameraSurfaceRenderer(
         request: SurfaceRequest, fps: Int, modeChange: LiveVideoModeChange?, direction: VideoDirection, mirrored: Boolean
     ) { handler.post {
         try {
-            initialize()
-            releaseCodec()
-            makeCurrent(pbuffer)
-            val ids = IntArray(1)
-            GLES20.glGenTextures(1, ids, 0)
-            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, ids[0])
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            if (screenInput == null) releaseCodec()
             val size = request.resolution
-            val texture = SurfaceTexture(ids[0]).apply { setDefaultBufferSize(size.width, size.height) }
-            val next = Input(texture, Surface(texture), ids[0], size.width, size.height, fps, modeChange, direction, mirrored)
+            val next = createInput(size.width, size.height, fps, modeChange, direction, mirrored)
             input = next
             lastPreviewNs = 0L
-            texture.setOnFrameAvailableListener({ render(next) }, handler)
+            next.texture.setOnFrameAvailableListener({ render(next) }, handler)
             request.provideSurface(next.surface, executor) {
-                if (input === next) { input = null; releaseCodec() }
-                next.texture.setOnFrameAvailableListener(null)
-                next.surface.release(); next.texture.release()
-                makeCurrent(pbuffer)
-                GLES20.glDeleteTextures(1, intArrayOf(next.id), 0)
+                if (input === next) {
+                    input = null
+                    if (screenInput == null) releaseCodec()
+                }
+                releaseInput(next)
             }
         } catch (error: Throwable) {
             request.willNotProvideSurface()
@@ -97,6 +92,114 @@ internal class CameraSurfaceRenderer(
             else onFailure(error)
         }
     } }
+
+    fun provideScreen(
+        token: Any, width: Int, height: Int, fps: Int,
+        isValid: () -> Boolean, onSurface: (Surface) -> Unit, onError: (Throwable) -> Unit
+    ) {
+        handler.post {
+            if (!isValid()) return@post
+            try {
+                check(screenInput == null)
+                releaseCodec()
+                val next = createInput(width, height, fps, screenToken = token)
+                screenInput = next
+                next.texture.setOnFrameAvailableListener({ next.frameAvailable = true }, handler)
+                onSurface(next.surface)
+                val intervalMs = 1_000.0 / fps
+                var frameDeadline = SystemClock.uptimeMillis().toDouble()
+                val renderFrame = object : Runnable {
+                    override fun run() {
+                        if (screenInput !== next || !isValid()) return
+                        try {
+                            if (next.frameAvailable) {
+                                next.frameAvailable = false
+                                makeCurrent(pbuffer)
+                                next.texture.updateTexImage()
+                                next.hasFrame = true
+                            }
+                            if (next.hasFrame) {
+                                next.texture.getTransformMatrix(textureMatrix)
+                                val timestamp = System.nanoTime()
+                                renderEncoded(next, timestamp, rotation = 0)
+                                renderPreview(next, timestamp, rotation = 0, mirror = false)
+                            }
+                            val now = SystemClock.uptimeMillis()
+                            frameDeadline += intervalMs
+                            if (frameDeadline < now) frameDeadline = now + intervalMs
+                            handler.postAtTime(this, token, frameDeadline.toLong())
+                        } catch (error: Exception) {
+                            onError(error)
+                        }
+                    }
+                }
+                handler.postAtTime(renderFrame, token, frameDeadline.toLong())
+            } catch (error: Exception) {
+                onError(error)
+            }
+        }
+    }
+
+    fun resizeScreen(token: Any, width: Int, height: Int, onResized: () -> Unit, onError: (Throwable) -> Unit) {
+        handler.post {
+            val current = screenInput ?: return@post
+            if (current.screenToken !== token) return@post
+            try {
+                if (current.width != width || current.height != height) {
+                    current.texture.setDefaultBufferSize(width, height)
+                    current.width = width
+                    current.height = height
+                    current.hasFrame = false
+                    current.frameAvailable = false
+                }
+                onResized()
+            } catch (error: Exception) { onError(error) }
+        }
+    }
+
+    fun releaseScreen(token: Any) {
+        handler.post {
+            val current = screenInput ?: return@post
+            if (current.screenToken !== token) return@post
+            handler.removeCallbacksAndMessages(token)
+            screenInput = null
+            try { releaseCodec() } finally { releaseInput(current) }
+        }
+    }
+
+    private fun createInput(
+        width: Int, height: Int, fps: Int, modeChange: LiveVideoModeChange? = null,
+        direction: VideoDirection = VideoDirection.FIXED_AT_START, mirrored: Boolean = false,
+        screenToken: Any? = null
+    ): Input {
+        initialize()
+        makeCurrent(pbuffer)
+        val ids = IntArray(1)
+        GLES20.glGenTextures(1, ids, 0)
+        val target = GLES11Ext.GL_TEXTURE_EXTERNAL_OES
+        GLES20.glBindTexture(target, ids[0])
+        GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(target, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        val texture = SurfaceTexture(ids[0])
+        return try {
+            texture.setDefaultBufferSize(width, height)
+            Input(texture, Surface(texture), ids[0], width, height, fps, modeChange, direction, mirrored, screenToken = screenToken)
+        } catch (error: Exception) {
+            texture.release()
+            GLES20.glDeleteTextures(1, ids, 0)
+            throw error
+        }
+    }
+
+    private fun releaseInput(source: Input) {
+        source.texture.setOnFrameAvailableListener(null)
+        source.surface.release()
+        source.texture.release()
+        makeCurrent(pbuffer)
+        GLES20.glDeleteTextures(1, intArrayOf(source.id), 0)
+    }
 
     fun attachPreview(texture: SurfaceTexture, width: Int, height: Int) { handler.post {
         try {
@@ -121,7 +224,7 @@ internal class CameraSurfaceRenderer(
     } }
 
     fun setEncoding(enabled: Boolean, rotation: Int) { handler.post {
-        if (encoding != enabled || encodeRotation != rotation) releaseCodec()
+        if (screenInput == null && (encoding != enabled || encodeRotation != rotation)) releaseCodec()
         encoding = enabled; encodeRotation = rotation
     } }
 
@@ -132,7 +235,7 @@ internal class CameraSurfaceRenderer(
     }
 
     private fun render(source: Input) {
-        if (input !== source) return
+        if (input !== source || screenInput != null) return
         try {
             makeCurrent(pbuffer)
             source.texture.updateTexImage()
@@ -149,32 +252,9 @@ internal class CameraSurfaceRenderer(
             normalized.copyInto(textureMatrix)
             if (encoding) {
                 val rotation = CameraCapturePolicy.outputRotation(source.width, source.height, encodeRotation, source.direction)
-                val rotated = rotation % 180 != 0
-                val width = if (rotated) source.height else source.width
-                val height = if (rotated) source.width else source.height
-                // A network handover can replace the encoder without replacing the camera input.
-                val surface = encoderSurface(width, height, source.fps, source.modeChange)
-                if (codec?.surface !== surface) {
-                    releaseCodec()
-                    surface?.let { codec = output(it, width, height, false) }
-                }
-                val target = codec
-                if (target != null) frameTimestamp(timestamp)?.let { pts ->
-                    val submittedAt = System.nanoTime()
-                    draw(source, target, rotation, source.mirrored)
-                    check(EGLExt.eglPresentationTimeANDROID(display, target.egl, pts))
-                    check(EGL14.eglSwapBuffers(display, target.egl)) { "Encoder surface swap failed" }
-                    onSubmitted(System.nanoTime() - submittedAt)
-                }
+                renderEncoded(source, timestamp, rotation)
             }
-            if (previewVisible && (timestamp < lastPreviewNs || timestamp - lastPreviewNs >= 30_000_000L)) preview?.let { target ->
-                draw(source, target, previewRotation, mirrorPreview)
-                if (!EGL14.eglSwapBuffers(display, target.egl)) {
-                    // A destroyed Activity surface must not interrupt the independent broadcast output.
-                    releaseOutput(preview); preview = null; previewTexture = null
-                }
-                lastPreviewNs = timestamp
-            }
+            renderPreview(source, timestamp, previewRotation, mirrorPreview)
         } catch (error: Throwable) {
             when (source.modeChange?.result?.value) {
                 LiveVideoModeChange.Result.PENDING -> source.modeChange.finish(false)
@@ -182,6 +262,39 @@ internal class CameraSurfaceRenderer(
                 else -> onFailure(error)
             }
         }
+    }
+
+    private fun renderPreview(source: Input, timestamp: Long, rotation: Int, mirror: Boolean) {
+        val target = preview ?: return
+        if (!previewVisible || timestamp >= lastPreviewNs && timestamp - lastPreviewNs < 30_000_000L) return
+        if (runCatching {
+                draw(source, target, rotation, mirror)
+                EGL14.eglSwapBuffers(display, target.egl)
+            }.getOrDefault(false)) {
+            lastPreviewNs = timestamp
+        } else {
+            runCatching { releaseOutput(target) }
+            preview = null
+            previewTexture = null
+        }
+    }
+
+    private fun renderEncoded(source: Input, timestamp: Long, rotation: Int) {
+        val rotated = rotation % 180 != 0
+        val width = if (rotated) source.height else source.width
+        val height = if (rotated) source.width else source.height
+        val surface = encoderSurface(width, height, source.fps, source.modeChange, source.screenToken != null)
+        if (codec?.surface !== surface) {
+            releaseCodec()
+            surface?.let { codec = output(it, width, height, ownsSurface = false) }
+        }
+        val target = codec ?: return
+        val pts = frameTimestamp(timestamp) ?: return
+        val submittedAt = System.nanoTime()
+        draw(source, target, rotation, source.mirrored)
+        check(EGLExt.eglPresentationTimeANDROID(display, target.egl, pts))
+        check(EGL14.eglSwapBuffers(display, target.egl)) { "Encoder surface swap failed" }
+        onSubmitted(System.nanoTime() - submittedAt)
     }
 
     private fun draw(source: Input, target: Output, rotation: Int, mirror: Boolean) {

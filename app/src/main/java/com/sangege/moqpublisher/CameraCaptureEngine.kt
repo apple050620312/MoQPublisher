@@ -48,6 +48,7 @@ internal class CameraCaptureEngine(
     private var cameraObserver: Observer<CameraState>? = null
     private var uiActive = false
     private var streaming = false
+    private var screenSource = false
     private var generation = 0
     private var front = false
     private var size = Size(1280, 720)
@@ -95,6 +96,24 @@ internal class CameraCaptureEngine(
         updateLifecycle()
     }
 
+    fun setScreenSource(enabled: Boolean) {
+        if (screenSource == enabled) return
+        screenSource = enabled
+        updateLifecycle()
+    }
+
+    fun provideScreen(
+        token: Any, size: ScreenCaptureSize, fps: Int, isValid: () -> Boolean,
+        onSurface: (Surface) -> Unit, onError: (Throwable) -> Unit
+    ) = renderer.provideScreen(token, size.width, size.height, fps, isValid, onSurface, onError)
+
+    fun resizeScreen(token: Any, size: ScreenCaptureSize, onResized: () -> Unit, onError: (Throwable) -> Unit) =
+        renderer.resizeScreen(token, size.width, size.height, onResized, onError)
+
+    fun releaseScreen(token: Any) = renderer.releaseScreen(token)
+
+    private val cameraNeeded get() = !screenSource && (uiActive || streaming)
+
     fun attachPreview(texture: SurfaceTexture, width: Int, height: Int, rotation: Int) {
         viewWidth = width.coerceAtLeast(1); viewHeight = height.coerceAtLeast(1)
         displayRotation = rotation
@@ -108,7 +127,7 @@ internal class CameraCaptureEngine(
     /** Rebinds the CameraX surface while the application-owned stream remains live. */
     fun recover() {
         executor.execute {
-            if (!uiActive && !streaming) return@execute
+            if (!cameraNeeded) return@execute
             generation++
             removeCameraObserver()
             val oldPreview = preview
@@ -137,7 +156,7 @@ internal class CameraCaptureEngine(
     }
 
     private fun updateLifecycle() {
-        if (uiActive || streaming) {
+        if (cameraNeeded) {
             lifecycle.currentState = Lifecycle.State.RESUMED
             if (preview == null) bind()
         } else {
@@ -151,10 +170,11 @@ internal class CameraCaptureEngine(
 
     @androidx.annotation.OptIn(androidx.camera.core.ExperimentalMirrorMode::class, ExperimentalCamera2Interop::class)
     private fun bind() {
+        if (!cameraNeeded) return
         val ticket = ++generation
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
-            if (ticket != generation || (!uiActive && !streaming)) return@addListener
+            if (ticket != generation || !cameraNeeded) return@addListener
             try {
                 val cameraProvider = future.get()
                 removeCameraObserver()

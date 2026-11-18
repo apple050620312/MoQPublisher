@@ -151,6 +151,11 @@ class MainViewModel internal constructor(
     val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
     val recordingState: StateFlow<RecordingState> = streamer.recordingState
     val screenCaptureState: StateFlow<ScreenCaptureState> = session.screenCaptureState
+    val preferScreen = session.preferScreen
+    private val _capturePlaybackAudio = MutableStateFlow(
+        Build.VERSION.SDK_INT >= 29 && prefs.getBoolean("screen_playback_audio", false)
+    )
+    val capturePlaybackAudio = _capturePlaybackAudio.asStateFlow()
     private val _recordingPreferences = MutableStateFlow(RecordingPreferences(
         mode = runCatching { RecordingMode.valueOf(prefs.getString(KEY_RECORDING_MODE, null) ?: RecordingMode.STREAM_ONLY.name) }
             .getOrDefault(RecordingMode.STREAM_ONLY),
@@ -500,8 +505,25 @@ class MainViewModel internal constructor(
 
     fun screenCapturePermissionIntent(): Intent = session.screenCapture.permissionIntent()
 
-    fun startScreenCapture(resultCode: Int, data: Intent, width: Int, height: Int, fps: Int, densityDpi: Int): Boolean =
-        session.startScreenCapture(resultCode, data, width, height, fps, densityDpi)
+    fun setPreferScreen(enabled: Boolean) = session.setPreferScreen(enabled)
+
+    fun setCapturePlaybackAudio(enabled: Boolean) {
+        if (Build.VERSION.SDK_INT < 29 || streamState.value.isActive() || session.pendingStart != null) return
+        _capturePlaybackAudio.value = enabled
+        prefs.edit { putBoolean("screen_playback_audio", enabled) }
+    }
+
+    fun screenConsentGeneration(): Long = session.generation
+
+    private fun screenRequest(consent: Intent): ScreenCaptureRequest {
+        val size = _videoResolution.value
+        return ScreenCaptureRequest(consent, maxOf(size.width, size.height), _videoFps.value)
+    }
+
+    fun startScreenCapture(data: Intent, generation: Long, startBroadcast: Boolean): Boolean {
+        if (session.generation != generation) return false
+        return if (startBroadcast) startBroadcast(data) else session.requestScreenCapture(generation, screenRequest(data))
+    }
 
     fun stopScreenCapture() = session.stopScreenCapture()
 
@@ -886,20 +908,16 @@ class MainViewModel internal constructor(
     fun getEffectiveStreamPath(): String = _relayProfile.value.publicationPath(_streamPath.value)
 
     /** Starts a broadcast only when the current settings are usable. */
-    fun startBroadcast(): Boolean {
+    fun startBroadcast(screenConsent: Intent? = null): Boolean {
         if (streamState.value.isActive() || session.pendingStart != null ||
             _applyingVideoBitrate.value || changingVideoMode.value) return false
         if (!streamer.canStart) {
             _configurationError.value = UiMessage(R.string.error_stream_stopping)
             return false
         }
-        val report = runPreflight()
-        if (!report.canStart) {
-            val message = preflightError(report.errors.first().id)
-            _configurationError.value = message
-            diagnostics.event("configuration_error", mapOf("message" to message, "source" to "preflight"))
-            return false
-        }
+        val screen = preferScreen.value
+        if (screen != (screenConsent != null)) return false
+        if (!checkStartSettings()) return false
 
         _configurationError.value = null
         DiagnosticRedactor.protectSecrets(_authToken.value, _relayProfile.value.publishToken, _relayProfile.value.subscribeToken)
@@ -917,7 +935,9 @@ class MainViewModel internal constructor(
             videoBitrate = checkNotNull(_videoBitrate.value.configuration()),
             provider = _relayProfile.value.provider,
             recording = _recordingPreferences.value,
-            protocolDraft = _relayProfile.value.protocolDraft.takeIf { _relayProfile.value.provider == RelayProvider.CLOUDFLARE }
+            protocolDraft = _relayProfile.value.protocolDraft.takeIf { _relayProfile.value.provider == RelayProvider.CLOUDFLARE },
+            screen = screenConsent?.let(::screenRequest),
+            capturePlaybackAudio = screen && _enableAudio.value && capturePlaybackAudio.value
         )) } catch (error: Throwable) {
             diagnostics.error("foreground_service_start_failed", error)
             _configurationError.value = UiMessage(R.string.error_background_start)
@@ -926,17 +946,26 @@ class MainViewModel internal constructor(
         return true
     }
 
+    fun checkStartSettings(): Boolean {
+        val error = runPreflight().errors.firstOrNull() ?: return true
+        val message = preflightError(error.id)
+        _configurationError.value = message
+        diagnostics.event("configuration_error", mapOf("message" to message, "source" to "preflight"))
+        return false
+    }
+
     fun runPreflight(): BroadcastPreflightReport {
         val profile = _relayProfile.value
         val context = getApplication<Application>()
         val settingsError = validateBroadcastSettings()
+        val usesCamera = !preferScreen.value
         val report = BroadcastPreflightPolicy.evaluate(BroadcastPreflightInput(
             cameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED,
             microphonePermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
             notificationPermission = Build.VERSION.SDK_INT < 33 ||
                 ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
             audioEnabled = _enableAudio.value,
-            cameraAvailable = cameraAvailable(context),
+            cameraAvailable = usesCamera && cameraAvailable(context),
             audioAvailable = audioAvailable(),
             hardwareSurfaceEncoderReported = _encoderCapabilities.value.any { it.codec == _videoCodec.value && it.available },
             // CameraX may choose the nearest supported sensor mode. The actual
@@ -952,7 +981,8 @@ class MainViewModel internal constructor(
             networkAvailable = networkAvailable(context),
             moqCoreReady = coreState.value.ready,
             batteryPercent = batteryPercent(context),
-            thermalWarning = thermalWarning(context)
+            thermalWarning = thermalWarning(context),
+            usesCamera = usesCamera
         ))
         _preflightReport.value = report
         diagnostics.event("broadcast_preflight", mapOf(

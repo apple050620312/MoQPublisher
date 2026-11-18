@@ -19,6 +19,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,8 @@ class BroadcastService : Service() {
     private var started = false
     private var ownedGeneration = 0L
     private var ownedStartId = 0
+    private var baseTypes = 0
+    private var projecting = false
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -72,6 +75,15 @@ class BroadcastService : Service() {
             }
         }
         scope.launch {
+            session.screenCaptureState.collect { screen ->
+                if (started && projecting && !screen.busy && session.streamer.streamState.value.isActive() &&
+                    baseTypes and ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA != 0) {
+                    runCatching { promote(session.streamer.streamState.value, projection = false) }
+                        .onFailure { session.diagnostics.error("screen_capture_service_restore_failed", it) }
+                }
+            }
+        }
+        scope.launch {
             var seenEventId = session.streamer.alertState.value.history.lastOrNull()?.id ?: 0L
             var lastNotificationMs = -ALERT_COOLDOWN_MS
             var lastPriority = -1
@@ -97,13 +109,25 @@ class BroadcastService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (started) ownedStartId = startId
         if (intent?.action == ACTION_SCREEN_CAPTURE) {
-            if (started && Build.VERSION.SDK_INT >= 29) {
-                startForeground(NOTIFICATION_ID, notification(session.streamer.streamState.value),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
-                        (if (session.streamer.audioMuted.value || session.streamer.streamState.value.isActive())
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0) or
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            if (!started) {
+                stopSelfResult(startId)
+            } else if (session.canSwitchToScreen(intent.getLongExtra(EXTRA_GENERATION, -1))) {
+                val consent = IntentCompat.getParcelableExtra(intent, EXTRA_SCREEN_CONSENT, Intent::class.java)
+                val maxEdge = intent.getIntExtra(EXTRA_SCREEN_EDGE, 0)
+                val fps = intent.getIntExtra(EXTRA_SCREEN_FPS, 0)
+                if (consent == null || maxEdge < 2 || fps !in 1..120) return START_NOT_STICKY
+                try {
+                    promote(session.streamer.streamState.value, projection = true)
+                    if (!session.startScreenCapture(ScreenCaptureRequest(consent, maxEdge, fps))) {
+                        promote(session.streamer.streamState.value, projection = false)
+                        session.cameraError.value = UiMessage(R.string.screen_capture_start_failed)
+                    }
+                } catch (error: Exception) {
+                    session.diagnostics.error("screen_capture_service_failed", error)
+                    session.cameraError.value = UiMessage(R.string.screen_capture_start_failed)
+                }
             }
             return START_NOT_STICKY
         }
@@ -119,13 +143,13 @@ class BroadcastService : Service() {
         try {
             ownedGeneration = session.generation
             ownedStartId = startId
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
+            val useCamera = config.screen == null
+            if ((useCamera && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) ||
                 (config.enableAudio && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED))
                 throw SecurityException("Broadcast camera/microphone permission was revoked")
-            val notice = notification(StreamState.Connecting, session.streamer.healthState.value)
-            if (Build.VERSION.SDK_INT >= 30) startForeground(NOTIFICATION_ID, notice,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or (if (config.enableAudio) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0))
-            else startForeground(NOTIFICATION_ID, notice)
+            baseTypes = (if (useCamera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0) or
+                (if (config.enableAudio && !config.capturePlaybackAudio) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0)
+            promote(StreamState.Connecting, projection = config.screen != null)
             if (wakeLock?.isHeld == true) wakeLock?.release()
             wakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
                 .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MoQPublisher:Broadcast").apply {
@@ -136,11 +160,21 @@ class BroadcastService : Service() {
             session.diagnostics.event("foreground_service_started", mapOf("audio" to config.enableAudio))
         } catch (error: Throwable) {
             session.diagnostics.error("foreground_service_failed", error)
-            session.cameraError.value = UiMessage(R.string.error_background_start)
+            session.cameraError.value = (error as? UiException)?.uiMessage ?: UiMessage(R.string.error_background_start)
             session.stop(); stopSelf()
         }
         // Camera/microphone permission must be re-checked from a visible Activity after process death.
         return START_NOT_STICKY
+    }
+
+    private fun promote(state: StreamState, projection: Boolean) {
+        val notice = notification(state, session.streamer.healthState.value)
+        if (Build.VERSION.SDK_INT >= 29) {
+            var types = if (Build.VERSION.SDK_INT >= 30) baseTypes else 0
+            if (projection) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            startForeground(NOTIFICATION_ID, notice, types)
+        } else startForeground(NOTIFICATION_ID, notice)
+        projecting = projection
     }
 
     override fun onDestroy() {
@@ -240,12 +274,19 @@ class BroadcastService : Service() {
         private const val ACTION_STOP = "com.sangege.moqpublisher.STOP_BROADCAST"
         private const val ACTION_SCREEN_CAPTURE = "com.sangege.moqpublisher.SCREEN_CAPTURE"
         private const val EXTRA_GENERATION = "broadcast_generation"
+        private const val EXTRA_SCREEN_CONSENT = "screen_consent"
+        private const val EXTRA_SCREEN_EDGE = "screen_edge"
+        private const val EXTRA_SCREEN_FPS = "screen_fps"
         internal fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, BroadcastService::class.java))
         }
 
-        internal fun updateScreenCaptureType(context: Context) {
-            context.startService(Intent(context, BroadcastService::class.java).setAction(ACTION_SCREEN_CAPTURE))
+        internal fun requestScreenCapture(context: Context, generation: Long, request: ScreenCaptureRequest) {
+            context.startService(Intent(context, BroadcastService::class.java).setAction(ACTION_SCREEN_CAPTURE)
+                .putExtra(EXTRA_GENERATION, generation)
+                .putExtra(EXTRA_SCREEN_CONSENT, request.consent)
+                .putExtra(EXTRA_SCREEN_EDGE, request.maxEdge)
+                .putExtra(EXTRA_SCREEN_FPS, request.fps))
         }
     }
 }

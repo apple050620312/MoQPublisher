@@ -47,21 +47,22 @@ data class BroadcastPreflightInput(
     val networkAvailable: Boolean,
     val moqCoreReady: Boolean,
     val batteryPercent: Int? = null,
-    val thermalWarning: Boolean = false
+    val thermalWarning: Boolean = false,
+    val usesCamera: Boolean = true
 )
 
 /** Pure preflight policy so start checks stay deterministic and unit-testable. */
 internal object BroadcastPreflightPolicy {
     fun evaluate(input: BroadcastPreflightInput): BroadcastPreflightReport {
         val checks = mutableListOf<PreflightCheck>()
-        checks += check(PreflightCheckId.CAMERA_PERMISSION, input.cameraPermission,
+        if (input.usesCamera) checks += check(PreflightCheckId.CAMERA_PERMISSION, input.cameraPermission,
             "Camera permission is granted", "Camera permission is required")
         checks += check(PreflightCheckId.MICROPHONE_PERMISSION, !input.audioEnabled || input.microphonePermission,
             "Microphone permission is ready", "Microphone permission is required when audio is enabled")
         checks += check(PreflightCheckId.NOTIFICATION_PERMISSION, input.notificationPermission,
             "Broadcast notification permission is granted", "Notifications are disabled. Background stream controls may be hidden",
             warningWhenFalse = true)
-        checks += check(PreflightCheckId.CAMERA_AVAILABILITY, input.cameraAvailable,
+        if (input.usesCamera) checks += check(PreflightCheckId.CAMERA_AVAILABILITY, input.cameraAvailable,
             "A camera is available", "No camera is available")
         checks += check(PreflightCheckId.AUDIO_AVAILABILITY, !input.audioEnabled || input.audioAvailable,
             "An audio input is available", "No compatible microphone input is available")

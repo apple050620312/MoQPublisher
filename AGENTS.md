@@ -1313,3 +1313,10 @@ P0 > P1 > P2
 
 - `v1.0.45` 完成第 25 項本機備援錄影。設定頁支援只推流或推流並錄影、5／15／30／60 分鐘分段、App-private Movies 輸出、H.264／H.265 影像、AAC 音訊、儲存空間警告與獨立錯誤處理。錄影 worker 使用 bounded queue，不會阻塞 MoQ 直播。
 - 驗證 `testDebugUnitTest`、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`、UTF-8/XML 掃描；尚未在 Android 實機確認 MediaMuxer 檔案可播放、長時間分段與低儲存空間行為。
+
+### 2026-11-19
+
+- `v1.0.46` 發行版本修正投影授權順序。開播前可選相機或螢幕。相機直播可切換到螢幕並在投影結束後返回相機。共用 EGL 輸入維持靜態畫面的影格節奏，旋轉和視窗大小變更沿用同一個 VirtualDisplay。Android 10+ 螢幕模式可選麥克風或允許擷取的裝置播放音訊。
+- SurfaceVideoEncoder 實際啟動後才確認支援。若廠商拒絕低延遲等選用參數，以相同 H.264／H.265、尺寸、FPS 與碼率再試。開播預檢保留能力清單缺項的警告。
+- 220 項 JVM 測試通過。Release、Offline、Android Test APK 與 lint 建置通過，lint 0 errors。UTF-8／XML、APK 包名、版本、ABI、開發簽章和 ZIP 對齊通過。尚未連接手機驗證原回報畫質、投影授權、旋轉、播放音訊和 OBS 接收。
+- Release APK SHA-256 為 `469a4f4448a3fef8f8a3a4737717c6046355e48d2902e21ce4b8d6fe38428cee`，Offline APK 為 `b2af3af980b8ecf09aac4f25c5f4c80a310b764556d251ef48b212ab84ec07ec`。
