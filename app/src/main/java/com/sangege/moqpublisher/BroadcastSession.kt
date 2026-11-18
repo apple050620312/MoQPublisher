@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** Application-owned session; ViewModels observe it and never close an active broadcast. */
 internal class BroadcastSession(private val application: MoqApplication) {
@@ -18,6 +21,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
     val diagnostics = AppDiagnostics(application)
     val streamer = MoqStreamer(application, diagnostics)
     val verifier = SubscriberVerifier(diagnostics)
+    val remote = RemoteControlServer(application, diagnostics)
     val controls = CameraControlHandle { ev -> prefs.edit { putFloat("camera_exposure_ev", ev) } }.apply {
         restoreExposure(prefs.getFloat("camera_exposure_ev", 0f))
     }
@@ -29,12 +33,13 @@ internal class BroadcastSession(private val application: MoqApplication) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     var pendingStart: BroadcastConfiguration? = null
         private set
-    var generation: Long = 0L
+    @Volatile var generation: Long = 0L
         private set
     private var pendingVideoMode: LiveVideoModeChange? = null
     private val mutableChangingVideoMode = MutableStateFlow(false)
     val changingVideoMode = mutableChangingVideoMode.asStateFlow()
     private var screenOnly = false
+    private var subscription: BroadcastSubscription? = null
     private val mutablePreferScreen = MutableStateFlow(prefs.getBoolean("prefer_screen_source", false))
     val preferScreen = mutablePreferScreen.asStateFlow()
     val screenCapture = ScreenCaptureEngine(application, camera, diagnostics) { error ->
@@ -53,6 +58,8 @@ internal class BroadcastSession(private val application: MoqApplication) {
                 val active = state.isActive()
                 if (!active) {
                     verifier.reset()
+                    remote.revoke()
+                    subscription = null
                     screenCapture.stopForBroadcastEnd()
                     screenOnly = false
                 }
@@ -143,6 +150,74 @@ internal class BroadcastSession(private val application: MoqApplication) {
 
     fun stopScreenCapture() = screenCapture.stop()
 
+    fun enableRemote(access: RemoteAccess, expectedGeneration: Long) {
+        if (expectedGeneration != generation || streamer.streamState.value !is StreamState.Live) return
+        remote.start(access) { command, kbps, granted ->
+            withContext(Dispatchers.Main.immediate) {
+                fun authorized() = expectedGeneration == generation && granted() &&
+                    streamer.lifecycleState.value.phase != BroadcastPhase.STOPPING &&
+                    streamer.streamState.value.isActive()
+
+                if (!authorized()) return@withContext remoteReply("inactive")
+                when (command) {
+                    RemoteCommand.STATUS -> remoteStatus()
+                    RemoteCommand.MUTE, RemoteCommand.UNMUTE -> {
+                        if (streamer.audioCaptureStatus.value == null) remoteReply("audio_unavailable")
+                        else {
+                            streamer.setAudioMuted(command == RemoteCommand.MUTE)
+                            remoteReply()
+                        }
+                    }
+                    RemoteCommand.BITRATE -> {
+                        val accepted = try {
+                            streamer.changeRemoteVideoBitrate(streamer.lifecycleState.value.generation, checkNotNull(kbps) * 1_000L, ::authorized)
+                        } catch (error: kotlinx.coroutines.CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            diagnostics.error("remote_bitrate_failed", error)
+                            false
+                        }
+                        remoteReply(if (accepted) null else "bitrate_unavailable")
+                    }
+                    RemoteCommand.VERIFY -> {
+                        val request = subscription
+                        if (request == null || !streamer.streamState.value.canVerifyRemoteMedia()) {
+                            remoteReply("verification_unavailable")
+                        } else {
+                            if (verifier.state.value !is SubscriberVerification.Running) request.verify(verifier)
+                            remoteReply()
+                        }
+                    }
+                    RemoteCommand.STOP -> RemoteResponse(remoteReply().payload) {
+                        withContext(Dispatchers.Main.immediate) { if (authorized()) stopOwned(expectedGeneration) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun remoteStatus(): RemoteResponse {
+        val live = streamer.streamState.value as? StreamState.Live
+        val device = streamer.deviceHealth.value
+        val result = remoteReply()
+        result.payload.apply {
+            put("phase", streamer.lifecycleState.value.phase.name)
+            put("relay_phase", live?.phase?.name.takeUnless { live?.recordingOnly == true } ?: JSONObject.NULL)
+            put("elapsed_seconds", live?.elapsedSeconds ?: JSONObject.NULL)
+            put("fps", live?.publishedFps ?: JSONObject.NULL)
+            put("bitrate_bps", live?.videoBitrateBps ?: JSONObject.NULL)
+            put("rtt_ms", live?.rttMs ?: JSONObject.NULL)
+            put("battery_percent", device.batteryPercent ?: JSONObject.NULL)
+            put("thermal_status", device.thermalStatus ?: JSONObject.NULL)
+            put("muted", streamer.audioMuted.value)
+            put("verification", verifier.state.value.javaClass.simpleName)
+            put("alerts", JSONArray(streamer.alertState.value.history.takeLast(10).map { alert ->
+                JSONObject().put("type", alert.type.name).put("active", alert.active).put("at_ms", alert.lastSeenMs)
+            }))
+        }
+        return result
+    }
+
     fun requestStart(config: BroadcastConfiguration) {
         if (streamer.streamState.value is StreamState.Live || streamer.streamState.value is StreamState.Connecting) return
         if (pendingStart != null) return
@@ -161,6 +236,7 @@ internal class BroadcastSession(private val application: MoqApplication) {
             screenCapture.start(request) ?: throw UiException(UiMessage(R.string.screen_capture_start_failed))
         } else null
         screenOnly = projection != null
+        subscription = config.subscription
         streamer.startBroadcast(
             config.relayUrl, config.streamPath, config.tlsVerify, config.enableAudio,
             config.audioChannel, config.audioQuality, config.audioGainPercent,
@@ -173,6 +249,8 @@ internal class BroadcastSession(private val application: MoqApplication) {
 
     fun stop() {
         pendingStart = null
+        remote.revoke()
+        subscription = null
         pendingVideoMode?.finish(false)
         screenCapture.stopForBroadcastEnd()
         verifier.reset()

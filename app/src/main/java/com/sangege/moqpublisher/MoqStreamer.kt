@@ -1505,6 +1505,13 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     internal suspend fun changeVideoBitrate(generation: Long, settings: VideoBitrateConfiguration): Boolean =
         changeVideoBitrate(generation) { settings }
 
+    internal suspend fun changeRemoteVideoBitrate(generation: Long, targetBps: Long, authorized: () -> Boolean): Boolean =
+        changeVideoBitrate(generation) { control ->
+            val settings = control.settings
+            if (authorized() && targetBps in settings.minimumBps..settings.maximumBps)
+                settings.copy(targetBps = targetBps) else null
+        }
+
     internal suspend fun lowerVideoBitrateForDeviceHealth(generation: Long): Boolean = changeVideoBitrate(generation) { control ->
         if (deviceHealth.value.recommendation != DeviceQualityRecommendation.REDUCE_BITRATE) return@changeVideoBitrate null
         val settings = control.settings

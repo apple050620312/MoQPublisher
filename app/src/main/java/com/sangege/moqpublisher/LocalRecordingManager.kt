@@ -203,7 +203,7 @@ internal class LocalRecordingManager(private val context: Context, private val d
         private fun tryOpenSegment(waitForAudio: Boolean = true) {
             if (segment != null) return
             val first = pendingVideo.peekFirst() ?: return
-            val last = pendingVideo.peekLast()
+            val last = pendingVideo.last
             val audio = audioFormat?.takeIf { pendingAudio.peekLast()?.timestampUs?.let { pts -> pts >= first.timestampUs } == true }
             if (waitForAudio && audioExpected && audio == null && last.timestampUs - first.timestampUs < 1_200_000L) return
             val next = Segment.open(root, first, audio)

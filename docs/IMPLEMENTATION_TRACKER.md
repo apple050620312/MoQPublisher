@@ -30,7 +30,7 @@
 | 24 | OBS 連接體驗 | moq.pro 與 Cloudflare 訂閱端點、觀看 QR、OBS 指引與遠端解碼檢查 | 真實 OBS 播放矩陣 | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | moq.pro 需要相容播放頁或原生來源，私人 Relay 使用獨立觀看 JWT |
 | 25 | 本機備援錄影 | 三種錄影模式、網路切換期間持續擷取、AAC、MP4 分段與匯出 | 實測 MP4 回放、分段、停播和低儲存空間 | IMPLEMENTED | `RecordingCodecConfigTest`、`RecordingSettingsTest`、`BroadcastPreflightTest`、Release build、lint | 未驗證 | 手機與 OBS 驗收依 `docs/testing/END_TO_END.md` |
 | 26 | 多鏡頭／防手震 | 依 Camera2 能力列出邏輯／實體鏡頭、套用支援的防手震、對焦與曝光鎖定 | 驗證多鏡頭切換後的實際尺寸、時間戳及 OBS 解碼 | IMPLEMENTED | camera policy／geometry tests | 未驗證 | 聯繫手機廠商提供的 Camera2 能力判斷鏡頭是否可用 |
-| 27 | 遠端監控／控制 | — | 安全配對、可撤銷控制通道 | NOT_STARTED | — | 未驗證 | 需定義低維運傳輸方案 |
+| 27 | 遠端監控／控制 | 區域網路 TLS 配對、僅查看或控制、會話內撤銷、靜音／碼率／驗證／停止 | 實機配對及 Android 區域網路授權驗收 | IMPLEMENTED | 桌面 TLS 本機驗證、Android build、lint | 未驗證 | 需 Wi-Fi／乙太網路 IPv4；桌面使用隨專案的 Python 用戶端 |
 | 28 | Android 螢幕直播 | 開播前選擇相機或螢幕，直播中可切換，MediaProjection／共用 EGL、旋轉、Android 10+ 播放音訊 | 實測授權、旋轉、視窗大小與投影撤銷 | IMPLEMENTED | `ScreenCaptureSizeTest`、`BroadcastPreflightTest`、Android build、lint | 未驗證 | 播放音訊受來源 App 的擷取政策限制 |
 | 29 | 直播疊圖 | GPU renderer 可作為整合點 | overlay model、clock、logo、opacity、同步預覽 | NOT_STARTED | — | 未驗證 | — |
 | 30 | RTMP／SRT 備援 | 桌面 MoQ 閘道以獨立程序輸出 Enhanced RTMP 與 SRT | 真實 Relay、Android 與 OBS 相容性及長時重連 | TESTED | 本機 Draft 18 Relay、FFmpeg 實測 H.264／H.265＋Opus 雙路解碼 | 未驗證 | 需支援對應影音格式的接收端 |

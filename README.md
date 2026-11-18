@@ -47,6 +47,22 @@ Under **Settings → Video source**, choose **Screen** before starting and accep
 Under **Settings → Local recording**, select **Stream and record** to save MP4 while sending MoQ, or **Record only** to record without connecting to a Relay. Both save H.264 or H.265 with AAC when audio is available. Recording starts while the Relay connects and continues during network handovers. If the Relay connection fails, the phone keeps recording and shows the Relay error. Start a new broadcast to reconnect after a terminal failure.
 
 Choose a segment duration of 5, 15, 30 or 60 minutes. A video format or channel change can start a new segment early. Select a completed MP4 in **Local recording** and choose **Export MP4** to save it to a folder of your choice.
+
+### Remote access
+
+While a session is active, open **Settings → Remote access** on the phone. Choose **View only** for status, FPS, bitrate, RTT, battery, thermal status, and alerts. Choose **Allow control** to also enable mute, bitrate, subscriber verification, and stop. Use **Copy pairing code** and transfer the code to your computer on the same Wi-Fi or Ethernet network. Android can ask for local network permission.
+
+Run the desktop client from the repository with Python 3.10 or later.
+
+```powershell
+python tools/moq-remote-control.py status --watch
+python tools/moq-remote-control.py mute
+python tools/moq-remote-control.py bitrate 2500
+python tools/moq-remote-control.py verify
+python tools/moq-remote-control.py stop
+```
+
+Enter the pairing code at the hidden prompt. The client pins the phone's TLS certificate before sending the pairing credential. Bitrate changes apply to the current session within the configured range. Verification uses the app's separate subscriber connection. **Revoke access** invalidates the pairing code immediately. Ending the session also revokes access.
 6. The core must be ready before streaming. Compatible core updates apply on the next cold launch. During a broadcast, select a resolution and FPS together and tap **Apply resolution and frame rate**. The app saves the new mode when the rebuilt video track writes its first keyframe. If configuration fails or times out, it restores the previous settings. Stop before changing the codec. To stop a live broadcast, confirm in the app or use **Stop immediately** in the notification. You can turn off the app confirmation in Broadcast behavior.
 
 In landscape, the narrow left rail contains camera switching, center focus, torch, Settings and the details toggle. The narrow right rail contains a vertical zoom slider and the broadcast button. Drag upward to zoom in or downward to zoom out; tap the displayed zoom ratio to reset to 1.0x. Statistics and diagnostic export open in a separate panel beside the right rail. The actions and details can scroll on short screens; the zoom rail accepts vertical drags directly. Portrait keeps one set of focus/torch controls and a separate zoom row.
@@ -108,7 +124,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.47)
+## APK variants (v1.0.48)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease assembleOffline testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. Release, compact and debug omit `libmoq_ffi.so`, while offline packages the official core as verified assets for the three supported Android ABIs. The local APKs are signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

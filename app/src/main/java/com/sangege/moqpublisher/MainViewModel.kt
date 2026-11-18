@@ -151,6 +151,11 @@ class MainViewModel internal constructor(
     val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
     val recordingState: StateFlow<RecordingState> = streamer.recordingState
     val screenCaptureState: StateFlow<ScreenCaptureState> = session.screenCaptureState
+    val remoteControlState: StateFlow<RemoteControlState> = session.remote.state
+
+    fun enableRemote(access: RemoteAccess, generation: Long) = session.enableRemote(access, generation)
+    fun revokeRemote() = session.remote.revoke()
+    fun copyRemotePairingCode(): Boolean = !screenCaptureState.value.busy && session.remote.copyPairingCode()
     val preferScreen = session.preferScreen
     private val _capturePlaybackAudio = MutableStateFlow(
         Build.VERSION.SDK_INT >= 29 && prefs.getBoolean("screen_playback_audio", false)
@@ -410,14 +415,18 @@ class MainViewModel internal constructor(
 
     fun verifySubscription() {
         if (!streamState.value.canVerifyRemoteMedia()) return
+        subscriptionTarget()?.verify(session.verifier)
+    }
+
+    private fun subscriptionTarget(): BroadcastSubscription? {
         val profile = _relayProfile.value
         DiagnosticRedactor.protectSecrets(profile.publishToken, profile.subscribeToken, _authToken.value, _moqProSubscribeToken.value)
-        when (profile.provider) {
+        return when (profile.provider) {
             RelayProvider.CLOUDFLARE -> if (profile.canSubscribe()) {
-                session.verifier.verify(profile.subscribeUrl(), profile.publicationPath(""), profile.provider, _enableAudio.value)
-            }
+                BroadcastSubscription(profile.subscribeUrl(), profile.publicationPath(""), profile.provider, _enableAudio.value)
+            } else null
             RelayProvider.MOQ_PRO -> moqProSubscriptionUrl()?.let { url ->
-                session.verifier.verify(url, getEffectiveStreamPath(), profile.provider, _enableAudio.value)
+                BroadcastSubscription(url, getEffectiveStreamPath(), profile.provider, _enableAudio.value)
             }
         }
     }
@@ -519,7 +528,7 @@ class MainViewModel internal constructor(
         prefs.edit { putBoolean("screen_playback_audio", enabled) }
     }
 
-    fun screenConsentGeneration(): Long = session.generation
+    fun sessionGeneration(): Long = session.generation
 
     private fun screenRequest(consent: Intent): ScreenCaptureRequest {
         val size = _videoResolution.value
@@ -946,7 +955,8 @@ class MainViewModel internal constructor(
             recording = _recordingPreferences.value,
             protocolDraft = _relayProfile.value.protocolDraft.takeIf { _relayProfile.value.provider == RelayProvider.CLOUDFLARE },
             screen = screenConsent?.let(::screenRequest),
-            capturePlaybackAudio = screen && _enableAudio.value && capturePlaybackAudio.value
+            capturePlaybackAudio = screen && _enableAudio.value && capturePlaybackAudio.value,
+            subscription = if (publishes) subscriptionTarget() else null
         )) } catch (error: Throwable) {
             diagnostics.error("foreground_service_start_failed", error)
             _configurationError.value = UiMessage(R.string.error_background_start)

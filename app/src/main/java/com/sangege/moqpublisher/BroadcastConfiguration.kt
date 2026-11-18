@@ -45,8 +45,15 @@ internal data class BroadcastConfiguration(
     val provider: RelayProvider = RelayProvider.MOQ_PRO,
     val protocolDraft: Int? = null,
     val screen: ScreenCaptureRequest? = null,
-    val capturePlaybackAudio: Boolean = false
+    val capturePlaybackAudio: Boolean = false,
+    val subscription: BroadcastSubscription? = null
 ) {
     override fun toString(): String = "BroadcastConfiguration(provider=$provider, draft=$protocolDraft, " +
         "relay=${RelayUrl.maskJwt(relayUrl)}, path=$streamPath, codec=$codec, fps=$framerate)"
+}
+
+internal class BroadcastSubscription(
+    private val url: String, private val path: String, private val provider: RelayProvider, private val expectAudio: Boolean
+) {
+    fun verify(verifier: SubscriberVerifier) = verifier.verify(url, path, provider, expectAudio)
 }

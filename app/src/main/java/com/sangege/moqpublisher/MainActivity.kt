@@ -150,6 +150,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val recordingPreferences by viewModel.recordingPreferences.collectAsState()
     val recordingState by viewModel.recordingState.collectAsState()
     val screenCaptureState by viewModel.screenCaptureState.collectAsState()
+    val remoteControlState by viewModel.remoteControlState.collectAsState()
     val preferScreen by viewModel.preferScreen.collectAsState()
     val capturePlaybackAudio by viewModel.capturePlaybackAudio.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -170,6 +171,23 @@ fun MainScreen(viewModel: MainViewModel) {
     var preparingAppInstall by remember { mutableStateOf(false) }
     var projectionGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var projectionStartsBroadcast by rememberSaveable { mutableStateOf(false) }
+    var remoteAccessRequest by rememberSaveable { mutableStateOf<String?>(null) }
+    var remoteRequestGeneration by rememberSaveable { mutableLongStateOf(0L) }
+    val remotePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        val request = RemoteAccess.entries.firstOrNull { it.name == remoteAccessRequest }
+        remoteAccessRequest = null
+        if (allowed && request != null) viewModel.enableRemote(request, remoteRequestGeneration)
+        else viewModel.setConfigurationError(UiMessage(R.string.remote_permission_required))
+    }
+    val enableRemote: (RemoteAccess) -> Unit = { requested ->
+        val generation = viewModel.sessionGeneration()
+        if (Build.VERSION.SDK_INT >= 37 && ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_LOCAL_NETWORK) !=
+            PackageManager.PERMISSION_GRANTED) {
+            remoteAccessRequest = requested.name
+            remoteRequestGeneration = generation
+            remotePermission.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
+        } else viewModel.enableRemote(requested, generation)
+    }
     var dismissedAppUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
     var dismissedCoreUpdateKey by rememberSaveable { mutableStateOf<String?>(null) }
     val updateReminder = updateReminderFor(appUpdateState, coreState)
@@ -187,7 +205,7 @@ fun MainScreen(viewModel: MainViewModel) {
     }
     val requestScreenConsent: (Boolean) -> Unit = { start ->
         if (projectionGeneration == null) {
-            projectionGeneration = viewModel.screenConsentGeneration()
+            projectionGeneration = viewModel.sessionGeneration()
             projectionStartsBroadcast = start
             try {
                 screenCaptureLauncher.launch(viewModel.screenCapturePermissionIntent())
@@ -409,6 +427,9 @@ fun MainScreen(viewModel: MainViewModel) {
                 onStopScreenCapture = viewModel::stopScreenCapture,
                 preferScreen = preferScreen, onPreferScreenChange = viewModel::setPreferScreen,
                 capturePlaybackAudio = capturePlaybackAudio, onCapturePlaybackAudioChange = viewModel::setCapturePlaybackAudio,
+                remoteControlState = remoteControlState, remoteAvailable = streamState is StreamState.Live,
+                onEnableRemote = enableRemote,
+                onRevokeRemote = viewModel::revokeRemote, onCopyPairing = viewModel::copyRemotePairingCode,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1260,6 +1281,8 @@ internal fun SettingsScreen(
     screenCaptureState: ScreenCaptureState, onRequestScreenCapture: () -> Unit, onStopScreenCapture: () -> Unit,
     preferScreen: Boolean, onPreferScreenChange: (Boolean) -> Unit,
     capturePlaybackAudio: Boolean, onCapturePlaybackAudioChange: (Boolean) -> Unit,
+    remoteControlState: RemoteControlState, remoteAvailable: Boolean, onEnableRemote: (RemoteAccess) -> Unit,
+    onRevokeRemote: () -> Unit, onCopyPairing: () -> Boolean,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1352,6 +1375,10 @@ internal fun SettingsScreen(
         ScreenCaptureSettingsCard(
             screenCaptureState, onRequestScreenCapture, onStopScreenCapture, isStreaming,
             preferScreen, onPreferScreenChange, capturePlaybackAudio, onCapturePlaybackAudioChange, enableAudio
+        )
+        RemoteControlSettings(
+            remoteControlState, remoteAvailable, screenCaptureState.busy,
+            onEnableRemote, onRevokeRemote, onCopyPairing
         )
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
@@ -1564,6 +1591,38 @@ private fun ScreenCaptureSettingsCard(
             }
         }
         state.error?.let { SupportingText(it.text()) }
+    }
+}
+
+@Composable
+private fun RemoteControlSettings(
+    state: RemoteControlState, live: Boolean, screenSharing: Boolean,
+    onEnable: (RemoteAccess) -> Unit, onRevoke: () -> Unit, onCopy: () -> Boolean
+) {
+    var copied by remember(state.access) { mutableStateOf(false) }
+    SettingCard(stringResource(R.string.remote_settings), stringResource(R.string.remote_settings_hint)) {
+        val access = state.access
+        if (access == null) {
+            if (live) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RemoteAccess.entries.forEach { option ->
+                        OutlinedButton(onClick = { onEnable(option) }) { Text(stringResource(option.label)) }
+                    }
+                }
+            } else SupportingText(stringResource(R.string.remote_requires_live))
+        } else {
+            if (state.preparing) SupportingText(stringResource(R.string.remote_preparing))
+            state.address?.let { address ->
+                SupportingText(stringResource(R.string.remote_address, stringResource(access.label), address))
+                OutlinedButton(onClick = { copied = onCopy() }, enabled = !screenSharing) {
+                    Text(stringResource(R.string.remote_pairing))
+                }
+                if (copied) SupportingText(stringResource(R.string.remote_pairing_copied))
+                if (screenSharing) SupportingText(stringResource(R.string.remote_pairing_screen))
+            }
+            OutlinedButton(onClick = onRevoke) { Text(stringResource(R.string.remote_revoke)) }
+        }
+        state.problem?.let { SupportingText(it.text()) }
     }
 }
 
