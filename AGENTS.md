@@ -1293,3 +1293,13 @@ P0 > P1 > P2
 - `v1.0.44` 完成第 26／31 項的 Camera2／CameraX 產品化。進階設定可選邏輯或實體鏡頭，套用支援的防手震、對焦鎖定、自動曝光鎖定、固定／直向／橫向輸出及前置鏡像。直播中沿用影片 Track 安全重建與失敗回復。
 - 直播畫質調整後的 `testDebugUnitTest` 為 215 項，Release／Offline／Android Test／lintRelease（0 errors）已建置。尚無 Android 實機，未驗證廠商 Camera2 實體鏡頭、光學防手震和 OBS 方向相容性。
 - 本機 Windows MoQ CLI 0.14.17、Relay 0.17.17、FFmpeg 9.0.2 已驗證 RTMP／SRT 各自解碼 H.264／H.265＋Opus。單一 ABI `assembleOffline -PmoqAbi=arm64-v8a` 建置通過。v1.0.44 Release／Offline APK SHA-256 分別為 `4dda1a364ca664f4550436c6879e5a254084cb26a43727ff55da98f2d6939674`、`9c6698414297e613051aa0984a49fc457ff7a951d426b2458dff11021194aa0a`，GitHub 資產雜湊均已核對。
+
+### 2026-11-19
+
+- `v1.0.45` 完成第 25 項本機備援錄影。設定可選 Stream only 或 Stream + Record，錄影使用獨立 worker、已編碼 H.264／H.265、AAC 音訊、5／15／30／60 分鐘分段及 256 MiB 儲存安全門檻。MediaMuxer、AAC 或儲存失敗會停止錄影並保留 MoQ。
+- 驗證 `testDebugUnitTest` 217 項通過，`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 errors）、UTF-8/XML、APK v2 簽章與 zipalign 通過。尚未在 Android 實機播放錄影檔、確認長時間分段和低儲存行為。
+
+### 2026-11-19
+
+- `v1.0.45` 完成第 25 項本機備援錄影。設定頁支援只推流或推流並錄影、5／15／30／60 分鐘分段、App-private Movies 輸出、H.264／H.265 影像、AAC 音訊、儲存空間警告與獨立錯誤處理。錄影 worker 使用 bounded queue，不會阻塞 MoQ 直播。
+- 驗證 `testDebugUnitTest`、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`、UTF-8/XML 掃描；尚未在 Android 實機確認 MediaMuxer 檔案可播放、長時間分段與低儲存空間行為。

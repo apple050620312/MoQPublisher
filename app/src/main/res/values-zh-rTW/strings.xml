@@ -199,6 +199,17 @@
     <string name="app_update_description">從 GitHub Releases 檢查已簽署的 MoQ Publisher APK，下載後會先驗證 SHA-256 再安裝。</string>
     <string name="app_update_current">目前版本：%1$s</string>
     <string name="app_update_managed">請透過原本的發佈管道更新 App。</string>
+    <string name="recording_settings">本機錄影</string>
+    <string name="recording_settings_hint">錄影工作執行緒使用已編碼的視訊與獨立 AAC 音訊。磁碟或封裝錯誤不會停止直播。</string>
+    <string name="recording_mode">錄影模式</string>
+    <string name="recording_stream_only">只推流</string>
+    <string name="recording_stream_and_record">推流並錄影</string>
+    <string name="recording_segment">分段長度</string>
+    <string name="recording_minutes">%1$d 分鐘</string>
+    <string name="apply_recording_settings">套用錄影設定</string>
+    <string name="recording_active">錄影分段 %1$d・%2$d MiB</string>
+    <string name="recording_storage">可用錄影儲存空間 %1$d MiB</string>
+    <string name="recording_error">錄影已停止：%1$s</string>
     <string name="app_update_latest">最新版本：%1$s</string>
     <string name="app_update_checking">正在檢查 GitHub Releases</string>
     <string name="app_update_available">有較新的 App 版本可用。</string>

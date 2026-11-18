@@ -37,6 +37,7 @@ flowchart LR
 - `CameraCaptureEngine` 管理 CameraX。`CameraSurfaceRenderer` 將相機紋理送到預覽與 MediaCodec input surface，避免在正常路徑複製 YUV。
 - `SurfaceVideoEncoder` 和 `HardwareVideoEncoder` 封裝 MediaCodec。正常路徑使用 surface encoder，輸出在 callback 執行緒排入有上限的 `VideoPublishQueue`。
 - `MoqStreamer` 擁有 MoQ session、重連、影片／音訊 publisher、時間戳、動態碼率與 relay 統計。相機及 AudioRecord callback 不直接執行阻塞的 MoQ 寫入。
+- `LocalRecordingManager` 使用獨立 bounded queue 和 worker，沿用已編碼的 H.264／H.265 影像，另外以 AAC encoder 將 PCM 轉成 MP4 音訊。每個分段從關鍵影格開始，磁碟低於安全門檻或 MediaMuxer 失敗只停止錄影，並保留 MoQ 直播。
 - 原生重連會丟棄影音佇列，保留直播時間基準，並在新關鍵影格成功寫入後更新 Relay 狀態。網路切換會在相同直播 generation 重新建立 Relay session。App 與前景通知皆讀取同一份 Relay 狀態。
 - `VideoBitrateControl` 從目標碼率開始，以最低與最高設定限制 ABR。佇列深度或媒體年齡可在缺少容量估計時獨立觸發降碼率。直播設定與 ABR 操作經 `MoqStreamer` 的 video lock，MediaCodec 接受後才提交新碼率及設定。重連與影片編碼器重建沿用當場最後接受的碼率。
 - 音訊 capture worker 以每個 20 ms frame 的 ramp gain 套用增益，`AudioHealthMetrics` 在 capture thread 計算 RMS、dBFS、peak hold、聲道峰值與削波，UI 只讀取 `StateFlow`。

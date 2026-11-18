@@ -28,7 +28,7 @@
 | 22 | 停止／Android lifecycle | App 可設定停止確認，通知有立即停止，直播取樣監控相機及音訊權限，Service 以 generation 辨識直播 | Android 背景、急停、權限撤銷及快速啟停實測 | IMPLEMENTED | session／settings tests | 未驗證 | 需各 Android 版本實機 |
 | 23 | 認證／安全 | 內嵌 moq.pro JWT 遷移至 Keystore，發布與訂閱 JWT 分離；Cloudflare 獨立 Token 與診斷遮罩 | 以測試帳號實測權限與失效情境 | IMPLEMENTED | repository／redaction／RelayProfile tests、release compile、lint | 未驗證 | Token 權限由 Relay 回應決定 |
 | 24 | OBS 連接體驗 | moq.pro 與 Cloudflare 訂閱端點、觀看 QR、OBS 指引與遠端解碼檢查 | 真實 OBS 播放矩陣 | IMPLEMENTED | `RelayProfileTest`、release compile、lint | BLOCKED | moq.pro 需要相容播放頁或原生來源，私人 Relay 使用獨立觀看 JWT |
-| 25 | 本機備援錄影 | — | MediaMuxer、分段、儲存監測、獨立錯誤處理 | NOT_STARTED | — | 未驗證 | — |
+| 25 | 本機備援錄影 | — | MediaMuxer、分段、儲存監測、獨立錯誤處理 | IMPLEMENTED | `RecordingSettingsTest`、release compile、lint | 未驗證 | 使用 App-private Movies 目錄、H.264／H.265 壓縮影像與 AAC 音訊，尚未在 Android 實機量測長時間檔案完整性 |
 | 26 | 多鏡頭／防手震 | 依 Camera2 能力列出邏輯／實體鏡頭、套用支援的防手震、對焦與曝光鎖定 | 驗證多鏡頭切換後的實際尺寸、時間戳及 OBS 解碼 | IMPLEMENTED | camera policy／geometry tests | 未驗證 | 聯繫手機廠商提供的 Camera2 能力判斷鏡頭是否可用 |
 | 27 | 遠端監控／控制 | — | 安全配對、可撤銷控制通道 | NOT_STARTED | — | 未驗證 | 需定義低維運傳輸方案 |
 | 28 | Android 螢幕直播 | — | MediaProjection、screen source、rotation、playback audio | NOT_STARTED | — | 未驗證 | Android 權限與前景服務限制 |

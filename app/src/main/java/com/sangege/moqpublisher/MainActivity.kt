@@ -146,6 +146,8 @@ fun MainScreen(viewModel: MainViewModel) {
     val coreState by viewModel.coreState.collectAsState()
     val appUpdateState by viewModel.appUpdateState.collectAsState()
     val streamHealth by viewModel.streamHealth.collectAsState()
+    val recordingPreferences by viewModel.recordingPreferences.collectAsState()
+    val recordingState by viewModel.recordingState.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var stopConfirmationGeneration by rememberSaveable { mutableStateOf<Long?>(null) }
     var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
@@ -366,6 +368,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 confirmStop = confirmStop, onConfirmStopChange = viewModel::setConfirmStop,
                 streamAlertMode = streamAlertMode, onStreamAlertModeChange = viewModel::setStreamAlertMode,
                 streamAlerts = streamAlerts,
+                recordingPreferences = recordingPreferences, recordingState = recordingState,
+                onRecordingPreferencesChange = viewModel::setRecordingPreferences,
                 coreState = coreState, onCoreCheck = viewModel::checkCoreUpdates,
                 appUpdateState = appUpdateState, onAppUpdateCheck = viewModel::checkAppUpdates,
                 onAppUpdateDownload = viewModel::downloadAppUpdate, onAppUpdateInstall = installAppUpdate,
@@ -1196,6 +1200,8 @@ internal fun SettingsScreen(
     confirmStop: Boolean, onConfirmStopChange: (Boolean) -> Unit,
     streamAlertMode: StreamAlertMode, onStreamAlertModeChange: (StreamAlertMode) -> Unit,
     streamAlerts: StreamAlertState,
+    recordingPreferences: RecordingPreferences, recordingState: RecordingState,
+    onRecordingPreferencesChange: (RecordingMode, Int) -> Unit,
     coreState: CoreState, onCoreCheck: () -> Unit,
     appUpdateState: AppUpdateState, onAppUpdateCheck: () -> Unit,
     onAppUpdateDownload: () -> Unit, onAppUpdateInstall: () -> Unit,
@@ -1282,6 +1288,7 @@ internal fun SettingsScreen(
             cameraLenses, cameraVideoSettings, onApplyCameraVideoSettings, cameraControls, cameraControlState,
             !changingVideoMode && (editable || canVerifySubscription)
         )
+        RecordingSettingsCard(recordingPreferences, recordingState, onRecordingPreferencesChange, editable)
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
             SelectionDropdown(
@@ -1381,6 +1388,38 @@ private fun CameraVideoControls(
             SettingSwitch(stringResource(R.string.camera_exposure_lock), stringResource(R.string.camera_exposure_lock_hint),
                 status.exposureLocked, controls::setExposureLocked, enabled)
         }
+    }
+}
+
+@Composable
+private fun RecordingSettingsCard(
+    preferences: RecordingPreferences,
+    state: RecordingState,
+    onChange: (RecordingMode, Int) -> Unit,
+    enabled: Boolean
+) {
+    var mode by remember(preferences) { mutableStateOf(preferences.mode) }
+    var segment by remember(preferences) { mutableIntStateOf(preferences.segmentMinutes) }
+    SettingCard(stringResource(R.string.recording_settings), stringResource(R.string.recording_settings_hint)) {
+        SelectionDropdown(stringResource(R.string.recording_mode), mode,
+            RecordingMode.entries.map { it to stringResource(it.label) },
+            { mode = it }, enabled)
+        if (mode == RecordingMode.STREAM_AND_RECORD) {
+            SelectionDropdown(stringResource(R.string.recording_segment), segment,
+                RecordingPreferences.SEGMENT_OPTIONS.map { it to stringResource(R.string.recording_minutes, it) },
+                { segment = it }, enabled)
+        }
+        Button(onClick = { onChange(mode, segment) }, enabled = enabled &&
+            (mode != preferences.mode || segment != preferences.segmentMinutes)) {
+            Text(stringResource(R.string.apply_recording_settings))
+        }
+        if (state.active) {
+            SupportingText(stringResource(R.string.recording_active, state.segmentIndex, state.bytesWritten / (1024 * 1024)))
+        }
+        state.availableBytes?.let { available ->
+            SupportingText(stringResource(R.string.recording_storage, available / (1024 * 1024)))
+        }
+        state.error?.let { SupportingText(stringResource(R.string.recording_error, it)) }
     }
 }
 

@@ -214,6 +214,17 @@
     <string name="app_update_description">Checks GitHub Releases for a signed MoQ Publisher APK. Downloads are verified with SHA-256 before installation.</string>
     <string name="app_update_current">Installed version: %1$s</string>
     <string name="app_update_managed">Install App updates through the original distribution channel.</string>
+    <string name="recording_settings">Local recording</string>
+    <string name="recording_settings_hint">The recording worker uses the encoded video and a separate AAC track. Disk or muxer errors do not stop the broadcast.</string>
+    <string name="recording_mode">Recording mode</string>
+    <string name="recording_stream_only">Stream only</string>
+    <string name="recording_stream_and_record">Stream and record</string>
+    <string name="recording_segment">Segment length</string>
+    <string name="recording_minutes">%1$d minutes</string>
+    <string name="apply_recording_settings">Apply recording settings</string>
+    <string name="recording_active">Recording segment %1$d · %2$d MiB</string>
+    <string name="recording_storage">Available recording storage %1$d MiB</string>
+    <string name="recording_error">Recording stopped: %1$s</string>
     <string name="app_update_latest">Latest release: %1$s</string>
     <string name="app_update_checking">Checking GitHub Releases</string>
     <string name="app_update_available">A newer app version is available.</string>

@@ -41,6 +41,7 @@ internal data class BroadcastConfiguration(
     val codec: VideoCodec,
     val framerate: Int,
     val videoBitrate: VideoBitrateConfiguration,
+    val recording: RecordingPreferences = RecordingPreferences(),
     val provider: RelayProvider = RelayProvider.MOQ_PRO,
     val protocolDraft: Int? = null
 ) {

@@ -67,6 +67,8 @@ private const val KEY_CAMERA_LENS = "camera_lens"
 private const val KEY_VIDEO_STABILIZE = "video_stabilize"
 private const val KEY_VIDEO_DIRECTION = "video_direction"
 private const val KEY_VIDEO_MIRROR_FRONT = "video_mirror_front"
+private const val KEY_RECORDING_MODE = "recording_mode"
+private const val KEY_RECORDING_SEGMENT = "recording_segment_minutes"
 
 private const val DEFAULT_RELAY_URL = "https://cdn.moq.pro/placeholder"
 private const val DEFAULT_STREAM_PATH = "live/camera"
@@ -147,6 +149,13 @@ class MainViewModel internal constructor(
     val audioCaptureStatus: StateFlow<AudioCaptureStatus?> = streamer.audioCaptureStatus
     val audioMuted: StateFlow<Boolean> = streamer.audioMuted
     val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
+    val recordingState: StateFlow<RecordingState> = streamer.recordingState
+    private val _recordingPreferences = MutableStateFlow(RecordingPreferences(
+        mode = runCatching { RecordingMode.valueOf(prefs.getString(KEY_RECORDING_MODE, null) ?: RecordingMode.STREAM_ONLY.name) }
+            .getOrDefault(RecordingMode.STREAM_ONLY),
+        segmentMinutes = RecordingPreferences.normalizeSegmentMinutes(prefs.getInt(KEY_RECORDING_SEGMENT, 15))
+    ))
+    val recordingPreferences = _recordingPreferences.asStateFlow()
 
     private val _relayUrl = MutableStateFlow(
         prefs.getString(KEY_RELAY_URL, DEFAULT_RELAY_URL) ?: DEFAULT_RELAY_URL
@@ -476,6 +485,16 @@ class MainViewModel internal constructor(
     fun setConfirmStop(confirm: Boolean) {
         _confirmStop.value = confirm
         prefs.edit { putBoolean(KEY_CONFIRM_STOP, confirm) }
+    }
+
+    fun setRecordingPreferences(mode: RecordingMode, segmentMinutes: Int) {
+        if (streamState.value.isActive()) return
+        val next = RecordingPreferences(mode, RecordingPreferences.normalizeSegmentMinutes(segmentMinutes))
+        _recordingPreferences.value = next
+        prefs.edit {
+            putString(KEY_RECORDING_MODE, next.mode.name)
+            putInt(KEY_RECORDING_SEGMENT, next.segmentMinutes)
+        }
     }
 
     fun setVideoCodec(codec: String) {
@@ -889,6 +908,7 @@ class MainViewModel internal constructor(
             framerate = _videoFps.value,
             videoBitrate = checkNotNull(_videoBitrate.value.configuration()),
             provider = _relayProfile.value.provider,
+            recording = _recordingPreferences.value,
             protocolDraft = _relayProfile.value.protocolDraft.takeIf { _relayProfile.value.provider == RelayProvider.CLOUDFLARE }
         )) } catch (error: Throwable) {
             diagnostics.error("foreground_service_start_failed", error)

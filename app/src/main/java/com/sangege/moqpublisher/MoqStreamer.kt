@@ -119,6 +119,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private val alertLock = Any()
     private val _alertState = MutableStateFlow(StreamAlertState())
     val alertState: StateFlow<StreamAlertState> = _alertState.asStateFlow()
+    private val localRecording = LocalRecordingManager(context, diagnostics)
+    val recordingState: StateFlow<RecordingState> = localRecording.state
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleLock = Any()
@@ -206,6 +208,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         codec: VideoCodec = VideoCodec.H264,
         framerate: Int = 30,
         videoBitrate: VideoBitrateConfiguration,
+        recording: RecordingPreferences = RecordingPreferences(),
         provider: RelayProvider = RelayProvider.MOQ_PRO,
         protocolDraft: Int? = null
     ) {
@@ -223,6 +226,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 "audio" to enableAudio, "codec" to codec, "fps" to framerate, "bitrate_bps" to videoBitrate.targetBps,
                 "min_bitrate_bps" to videoBitrate.minimumBps, "max_bitrate_bps" to videoBitrate.maximumBps,
                 "adaptive_bitrate" to videoBitrate.adaptive,
+                "recording" to recording.mode,
                 "audio_channel" to audioChannel, "audio_gain_percent" to audioGainPercent,
                 "network" to diagnostics.networkDescription()
             ))
@@ -238,6 +242,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             _audioMuted.value = false
             configuredProvider = provider
             configuredDraft = protocolDraft
+            localRecording.start(recording, codec, enableAudio)
             _audioCaptureStatus.value = null
             _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
             startNanoTime = System.nanoTime()
@@ -288,7 +293,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     connection.cancelAndJoin()
                 }
                 reconnectBase = ((_streamState.value as? StreamState.Live)?.reconnectCount ?: reconnectBase) + 1
-                cleanup()
+                cleanup(stopRecording = false)
             }
         } catch (e: TimeoutCancellationException) {
             terminalState = StreamState.Error(UiMessage(R.string.error_relay_timeout))
@@ -308,7 +313,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         } finally {
             monitor?.close()
             handovers.close()
-            cleanup()
+            cleanup(stopRecording = true)
             _healthState.value = healthEvaluator.reset()
             publishAlerts { clearActive(System.currentTimeMillis()) }
             transitionLifecycle(BroadcastLifecycleEvent.CleanedUp)
@@ -665,6 +670,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 }
                                 if (isBroadcasting.get()) {
                                     val queue = audioPublishQueue ?: return@submit
+                                    localRecording.offerAudio(buffer.clone(), stamp.timestampUs, actualChannel.count)
                                     val result = queue.offer(EncodedAudioPacket(
                                         timestampUs = stamp.timestampUs,
                                         data = buffer.clone(),
@@ -1109,6 +1115,15 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             if (!isBroadcasting.get()) return@encoded
             if (generation != videoGeneration) return@encoded
             val queue = videoPublishQueue ?: return@encoded
+            localRecording.offerVideo(RecordingVideoFrame(
+                codec = configuredCodec,
+                width = width,
+                height = height,
+                framerate = framerate,
+                headers = headers,
+                accessUnit = unit,
+                timestampUs = timestampUs
+            ))
             val result = queue.offer(EncodedVideoPacket(
                 generation = generation,
                 trackName = trackName,
@@ -1481,7 +1496,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         scope.cancel()
     }
 
-    private suspend fun cleanup() = withContext(NonCancellable) {
+    private suspend fun cleanup(stopRecording: Boolean) = withContext(NonCancellable) {
         isBroadcasting.set(false)
         cancelRecoveryWorker()?.join()
         // A worker cancelled before its body ran has no finally block.
@@ -1529,6 +1544,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             }
             moqSession = null
         }
+        if (stopRecording) localRecording.stop()
         diagnostics.event("broadcast_cleaned_up", diagnostics.metrics.sample())
     }
 
