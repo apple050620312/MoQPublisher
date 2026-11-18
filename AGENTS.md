@@ -1286,8 +1286,10 @@ P0 > P1 > P2
 
 - `v1.0.43` 加入第 20／21 項的離線單一 ABI 建置及獨立 production variant，GitHub Release 會檢查三種 ABI 與離線核心檔案。第 23／24 項將 moq.pro 內嵌發布 JWT 移至 Keystore，加入獨立觀看 JWT、訂閱端點、QR、OBS 操作指引與遠端解碼。
 - 驗證 `testDebugUnitTest` 214 項通過，Release、Offline、Android Test APK 和 `lintRelease` 通過，APK 包名、版本、簽章、ABI 與 ZIP 對齊均核對。Production 缺少正式金鑰時明確停止，正式簽章與實機 Relay／OBS 尚待驗收。
+- `v1.0.43` Release／Offline APK SHA-256 分別為 `d04013d3247f152e2092880074cec6d83f6bd25dcba63c69bc4b66ce49de3b02`、`f8e47c71d8b1b732f9b164a09b1066ec20c4e006f12da81cd2a18ab5abd3122c`，GitHub 資產雜湊均已核對。
 
 ### 2026-11-19
 
 - `v1.0.44` 完成第 26／31 項的 Camera2／CameraX 產品化。進階設定可選邏輯或實體鏡頭，套用支援的防手震、對焦鎖定、自動曝光鎖定、固定／直向／橫向輸出及前置鏡像。直播中沿用影片 Track 安全重建與失敗回復。
 - 直播畫質調整後的 `testDebugUnitTest` 為 215 項，Release／Offline／Android Test／lintRelease（0 errors）已建置。尚無 Android 實機，未驗證廠商 Camera2 實體鏡頭、光學防手震和 OBS 方向相容性。
+- 本機 Windows MoQ CLI 0.14.17、Relay 0.17.17、FFmpeg 9.0.2 已驗證 RTMP／SRT 各自解碼 H.264／H.265＋Opus。單一 ABI `assembleOffline -PmoqAbi=arm64-v8a` 建置通過。v1.0.44 Release／Offline APK SHA-256 分別為 `4dda1a364ca664f4550436c6879e5a254084cb26a43727ff55da98f2d6939674`、`9c6698414297e613051aa0984a49fc457ff7a951d426b2458dff11021194aa0a`，GitHub 資產雜湊均已核對。
