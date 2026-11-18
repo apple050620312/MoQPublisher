@@ -1184,4 +1184,5 @@ P0 > P1 > P2
 - 驗證：`testDebugUnitTest` 180 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置、Cloudflare Relay 或 OBS，未執行實際故障注入與長時間恢復驗證。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.22` GitHub Release；檔案為 `MoQPublisher-1.0.22-release.apk`，SHA-256 為 `408799022784dc8f3509b4a05a3c0273703e4fe8443991a0392f1a6691a145ec`。
 - `v1.0.23`：新增 `BroadcastPreflight`，在開播前統一檢查相機／麥克風／通知權限、相機與音訊可用性、硬體編碼器、解析度／FPS、Relay／Publish Token、網路、MoQ Core、電量與熱度，並分級為 PASS／WARNING／ERROR。ERROR 會阻擋開播，WARNING 允許直播並寫入 diagnostics。
-- 驗證：`testDebugUnitTest` 184 項通過；完整 release、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置執行真實設備能力與熱度驗證。
+- 驗證：`testDebugUnitTest` 184 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置執行真實設備能力與熱度驗證。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.23` GitHub Release；檔案為 `MoQPublisher-1.0.23-release.apk`，SHA-256 為 `a589baeabda30612b0b5baab69959e3852bb1a13406c14b10ed3d9db35d2aa6f`。
