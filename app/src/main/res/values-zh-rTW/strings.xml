@@ -28,6 +28,7 @@
     <string name="relay_url">中繼伺服器網址</string>
     <string name="auth_token">驗證權杖 / JWT（選填）</string>
     <string name="auth_token_hint">開始直播時，會以 jwt 查詢參數加入連線網址。</string>
+    <string name="clear_auth_token">清除 moq.pro JWT</string>
     <string name="effective_url">實際連線網址</string>
     <string name="broadcast_path">直播路徑</string>
     <string name="video_configuration">視訊設定</string>
@@ -250,6 +251,7 @@
     <string name="cloudflare_publish_hint">輸入 Cloudflare 的 Publish + Subscribe 連線 Token，以 Android Keystore 加密儲存，連線時放在網址路徑。</string>
     <string name="cloudflare_subscribe_token">訂閱連線 Token（選填）</string>
     <string name="cloudflare_subscribe_hint">觀看、OBS 與接收驗證須使用另一組僅有 Subscribe 權限的 Token，請勿填入 Publish Token。</string>
+    <string name="clear_cloudflare_tokens">清除 Cloudflare Token</string>
     <string name="cloudflare_broadcast_name">直播名稱（選填）</string>
     <string name="cloudflare_broadcast_hint">留空時會傳送未命名的直播，與官方 moq-pub 範例相同。也可填入任何合法的 Cloudflare namespace 路徑；需要 moq.watch 連結與 Hang 遠端驗證時才加上 .hang。</string>
     <string name="cloudflare_no_management_token">請勿輸入 Cloudflare Management API Token。不需要填 Relay ID 或 moq.pro Project ID。</string>

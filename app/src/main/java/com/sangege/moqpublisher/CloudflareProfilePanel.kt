@@ -42,6 +42,11 @@ internal fun CloudflareProfilePanel(
         stringResource(R.string.cloudflare_publish_token), stringResource(R.string.cloudflare_publish_hint), editable)
     SecretField(profile.subscribeToken, { onChange(profile.copy(subscribeToken = it)) },
         stringResource(R.string.cloudflare_subscribe_token), stringResource(R.string.cloudflare_subscribe_hint), editable)
+    if (editable && (profile.publishToken.isNotBlank() || profile.subscribeToken.isNotBlank())) {
+        TextButton(onClick = { onChange(profile.copy(publishToken = "", subscribeToken = "")) }) {
+            Text(stringResource(R.string.clear_cloudflare_tokens))
+        }
+    }
     OutlinedTextField(profile.broadcastName, { onChange(profile.copy(broadcastName = it)) },
         label = { Text(stringResource(R.string.cloudflare_broadcast_name)) },
         supportingText = { Text(stringResource(R.string.cloudflare_broadcast_hint)) },

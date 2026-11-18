@@ -46,6 +46,7 @@ flowchart LR
 - `MoqCoreManager` 下載、驗證、選擇與快取官方相容的 native core。直播期間不替換正在使用的 native library。
 - `offline` APK 由 Gradle 從官方 `moq-ffi` AAR 產生 ABI 分層 assets。`MoqCoreManager` 在啟動時把對應 asset 安裝到 app-private 目錄，執行相同 ELF、SHA-256 與 UniFFI symbol 驗證後才設定 library override。一般 release／compact APK 維持首次啟動下載流程。
 - `AppDiagnostics`、`StreamMetrics` 與 `AudioHealthMetrics` 以受限事件歷史和每秒樣本記錄效能、傳輸、裝置與資源資訊。憑證在寫入前遮罩。
+- `RelayProfileRepository` 透過 `ConnectionTokenStore` 保存 moq.pro 與 Cloudflare 憑證。設定頁的清除操作寫入空值，會移除 Keystore ciphertext 與相關偏好，不會回退到明文。
 
 ## 生命週期與執行緒
 

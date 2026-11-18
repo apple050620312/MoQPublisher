@@ -1248,3 +1248,8 @@ P0 > P1 > P2
 - `v1.0.37`：完成第 18 項裝置健康品質策略。熱度或記憶體壓力時，主畫面提供降低本場直播碼率的明確操作，套用約 25% 降幅並同步 target／maximum 與 MediaCodec。沒有使用者操作時保留原本品質設定。
 - 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認各廠牌 thermal API 與 MediaCodec 實際降碼率效果。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.37` GitHub Release。Release APK SHA-256 為 `f2f6ab3a5669a7ae7d276099312f11dff722bec2eab5e945d7780fe9755bce08`，Offline APK SHA-256 為 `fc5eba671bab394c647a799dd39e3c312d2e85d5a5ce36d07c0d285568322980`。
+
+### 2026-11-19
+
+- `v1.0.38`：完成第 23 項憑證清除流程。設定頁可直接移除加密保存的 moq.pro JWT 與 Cloudflare Publish／Subscribe Token，沿用 Keystore ciphertext removal，不寫入明文，也不改變既有 Token 分離與遮罩流程。
+- 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認 Keystore 清除後的系統行為。

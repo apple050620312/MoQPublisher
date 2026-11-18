@@ -10,6 +10,7 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 - Device-supported resolution selection and 15/24/30/60 FPS targets.
 - Optional 48 kHz mono/stereo Opus microphone audio, with four quality/bitrate presets, 0-300% PCM gain and automatic mono fallback.
 - Relay URL, broadcast path, JWT and TLS certificate verification settings.
+- Security settings provide explicit clearing actions for the encrypted moq.pro JWT and Cloudflare Publish/Subscribe tokens.
 - Switchable moq.pro and Cloudflare MoQ Draft 18 profiles, with encrypted connection tokens,
   separate Subscribe-only viewing/OBS links, connection phases and an opt-in remote decoder check.
 - Cloudflare viewing tools include a Subscribe-token QR code, Browser Source instructions and native MoQ source instructions. The app keeps Publish and Subscribe credentials separate.
@@ -96,7 +97,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.37)
+## APK variants (v1.0.38)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease assembleOffline testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. Release, compact and debug omit `libmoq_ffi.so`, while offline packages the official core as verified assets for the three supported Android ABIs. The local APKs are signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 

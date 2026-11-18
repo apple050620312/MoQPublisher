@@ -1235,6 +1235,11 @@ fun SettingsScreen(
                 enabled = editable, singleLine = true, shape = MaterialTheme.shapes.small,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }), modifier = Modifier.fillMaxWidth())
+            if (editable && authToken.isNotBlank()) {
+                TextButton(onClick = { onAuthTokenChange("") }) {
+                    Text(stringResource(R.string.clear_auth_token))
+                }
+            }
             SettingSwitch(stringResource(R.string.tls_verify), stringResource(if (tlsVerify) R.string.tls_strict else R.string.tls_disabled),
                 tlsVerify, onTlsVerifyChange, editable)
             } else SupportingText(stringResource(R.string.cloudflare_tls_required))

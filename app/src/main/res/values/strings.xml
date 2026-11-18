@@ -33,6 +33,7 @@
     <string name="auth_token">Auth token / JWT (optional)</string>
     <string name="auth_token_example" translatable="false">eyJhbGciOiJIUzI1NiIsIn...</string>
     <string name="auth_token_hint">Added as a jwt query parameter when broadcasting starts.</string>
+    <string name="clear_auth_token">Clear moq.pro JWT</string>
     <string name="effective_url">Connection URL</string>
     <string name="broadcast_path">Broadcast path</string>
     <string name="broadcast_path_example" translatable="false">live/camera</string>
@@ -265,6 +266,7 @@
     <string name="cloudflare_publish_hint">Enter a Cloudflare Publish + Subscribe connection token. It is stored with Android Keystore encryption and sent in the URL path.</string>
     <string name="cloudflare_subscribe_token">Subscribe Connection Token (optional)</string>
     <string name="cloudflare_subscribe_hint">Use a separate Subscribe-only token for watching, OBS and receiver verification. Never use a Publish token here.</string>
+    <string name="clear_cloudflare_tokens">Clear Cloudflare tokens</string>
     <string name="cloudflare_broadcast_name">Broadcast Name (optional)</string>
     <string name="cloudflare_broadcast_hint">Leave blank to publish an unnamed broadcast, as in the official moq-pub example. Any valid Cloudflare namespace path also works. Add .hang for moq.watch links and Hang remote verification.</string>
     <string name="cloudflare_no_management_token">Do not enter a Cloudflare Management API Token. No Relay ID or moq.pro Project ID is needed.</string>
