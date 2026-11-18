@@ -914,7 +914,7 @@ private fun StreamControls(
             else if (state.phase == RelayConnectionPhase.CONNECTED)
                 StatusNotice(stringResource(R.string.connected_waiting_media), loading = true)
             val deviceHealth by viewModel.deviceHealth.collectAsState()
-            LiveStats(state, codec, fps, deviceHealth)
+            LiveStats(state, codec, fps, deviceHealth, viewModel::applyDeviceHealthRecommendation)
         }
         else -> SettingCard(stringResource(R.string.effective_url)) {
             Text(relay, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -968,7 +968,10 @@ private fun AudioLevelMeter(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int, deviceHealth: DeviceHealthSnapshot) {
+private fun LiveStats(
+    stats: StreamState.Live, codec: String, fps: Int, deviceHealth: DeviceHealthSnapshot,
+    onApplyHealthRecommendation: () -> Unit
+) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.live_stats), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -997,6 +1000,12 @@ private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int, deviceHe
             Text(stringResource(R.string.stat_device_health,
                 deviceHealth.batteryPercent ?: -1, deviceHealth.memoryAvailablePercent ?: -1,
                 deviceHealth.thermalStatus ?: 0), style = MaterialTheme.typography.bodySmall)
+            if (deviceHealth.recommendation == DeviceQualityRecommendation.REDUCE_BITRATE) {
+                SupportingText(stringResource(R.string.health_quality_recommendation))
+                OutlinedButton(onClick = onApplyHealthRecommendation, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small) {
+                    Text(stringResource(R.string.health_apply_recommendation))
+                }
+            }
             Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
             stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)

@@ -202,6 +202,8 @@
     <string name="health_thermal">Device thermal pressure is high.</string>
     <string name="health_low_battery">Battery level is low.</string>
     <string name="health_memory_pressure">Available memory is low.</string>
+    <string name="health_quality_recommendation">Thermal or memory pressure is detected. Lowering the bitrate can protect stream continuity.</string>
+    <string name="health_apply_recommendation">Lower bitrate for this stream</string>
     <string name="stat_device_health">Battery %1$d%% · Memory %2$d%% · Thermal %3$d</string>
     <string name="about">About</string>
     <string name="about_description">MoQ Publisher version, app updates and the downloaded MoQ core.</string>

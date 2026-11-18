@@ -187,6 +187,8 @@
     <string name="health_thermal">裝置熱度壓力過高。</string>
     <string name="health_low_battery">電量偏低。</string>
     <string name="health_memory_pressure">可用記憶體偏低。</string>
+    <string name="health_quality_recommendation">偵測到熱度或記憶體壓力。降低碼率有助於維持直播連續性。</string>
+    <string name="health_apply_recommendation">降低本場直播碼率</string>
     <string name="stat_device_health">電量 %1$d%% · 記憶體 %2$d%% · 熱度 %3$d</string>
     <string name="about">關於</string>
     <string name="about_description">MoQ Publisher 版本、App 更新與已下載的 MoQ 核心。</string>

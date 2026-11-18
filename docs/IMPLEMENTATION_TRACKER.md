@@ -21,7 +21,7 @@
 | 15 | 硬體編碼相容性 | CameraX mode、codec／resolution errors、diagnostics | 統一 DeviceCapabilityRepository 與 UI 報告 | IMPLEMENTED | release compile、Android test compile、lint | 未驗證 | codec 清單與動態碼率能力依手機而異；UI 與 diagnostics 顯示系統回報範圍，實際解析度／幀率由 MediaCodec.configure()，runtime bitrate 由 setParameters() 判斷 |
 | 16 | 直播中調整畫質 | bitrate／ABR 可在 encoder 支援時更新 | min／max 設定與解析度／FPS 安全重建 | IMPLEMENTED | `VideoBitrateControlTest`、release compile、lint | 未驗證 | MediaCodec 動態能力不同；目前支援直播中最低／目標／最高 bitrate 與 ABR，解析度與 FPS 仍需重新開播 |
 | 17 | 直播儀表板 | LiveStats 有 RTT、bitrate、bytes、FPS、codec | health、audio、queue、thermal 的簡易／專業模式 | PARTIAL | metrics tests、release compile | 未驗證 | 沒有 OBS 接收數據；目前已顯示 publisher queue、encoder bitrate 與 packet loss |
-| 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | PARTIAL | `DeviceHealthTest`、release compile | 未驗證 | 部分 Android 無 thermal API；目前提供警報與狀態顯示，未自動降低品質 |
+| 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | IMPLEMENTED | `DeviceHealthTest`、release compile、lint | 未驗證 | 部分 Android 無 thermal API；熱度／記憶體壓力提供使用者觸發的降低碼率操作，不自動改動品質 |
 | 19 | 畫質 Preset | 持久化個別 video／audio 設定 | Preset CRUD 與能力檢查 | IMPLEMENTED | `StreamPresetTest`、release compile | 未驗證 | 真實硬體 encoder 與相機模式需在 Android 裝置確認；內建 Preset 會使用 CameraX 的最近可用模式 |
 | 20 | 完整離線 APK | core 快取、checksum、ABI／FFI 驗證與 fallback | 真正內含 compatible core 的離線 variant | IMPLEMENTED | `assembleOffline`、APK v2／zipalign、CoreLibraryFiles tests | 未驗證 | offline APK 約 35 MB，啟動時仍會將 asset 安全安裝到 app-private 目錄；需要 Android 實機確認 native loading |
 | 21 | Release pipeline | 本機 signed release、tag、checksum、GitHub Release | production key 安全遷移策略 | TESTED | publish script、APK checks | BLOCKED | 目前使用 debug key，沒有正式私鑰 |

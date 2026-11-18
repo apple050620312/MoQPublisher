@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.math.BigDecimal
 
 private const val PREFS_NAME = "moq_stream_prefs"
 private const val KEY_RELAY_URL = "relay_url"
@@ -233,6 +234,21 @@ class MainViewModel internal constructor(
     fun checkAppUpdates() = appUpdates.checkForUpdates()
 
     fun setAudioMuted(muted: Boolean) = streamer.setAudioMuted(muted)
+
+    fun applyDeviceHealthRecommendation() {
+        if (!streamState.value.isActive()) return
+        if (streamer.deviceHealth.value.recommendation != DeviceQualityRecommendation.REDUCE_BITRATE) return
+        val target = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value) ?: return
+        val minimum = VideoBitrateSettings.parseKbps(_videoMinBitrateKbps.value) ?: VideoBitrateSettings.MIN_BPS
+        val reduced = (target * 0.75).toLong().coerceAtLeast(minimum)
+        val reducedKbps = BigDecimal.valueOf(reduced).divide(BigDecimal(1_000)).stripTrailingZeros().toPlainString()
+        setVideoMaxBitrateKbps(reducedKbps)
+        setVideoBitrateKbps(reducedKbps)
+        diagnostics.event("device_health_quality_recommendation_applied", mapOf(
+            "old_target_bps" to target, "new_target_bps" to reduced,
+            "issues" to streamer.deviceHealth.value.issues.map { it.name }
+        ))
+    }
 
     fun refreshAudioInputDevices() {
         _audioInputDevices.value = audioInputRepository.list()

@@ -9,13 +9,15 @@ import android.os.Build
 import android.os.PowerManager
 
 enum class DeviceHealthIssue { LOW_BATTERY, THERMAL, MEMORY_PRESSURE }
+enum class DeviceQualityRecommendation { NONE, REDUCE_BITRATE }
 
 data class DeviceHealthSnapshot(
     val batteryPercent: Int? = null,
     val thermalStatus: Int? = null,
     val memoryAvailablePercent: Int? = null,
     val powerSaveMode: Boolean = false,
-    val issues: Set<DeviceHealthIssue> = emptySet()
+    val issues: Set<DeviceHealthIssue> = emptySet(),
+    val recommendation: DeviceQualityRecommendation = DeviceQualityRecommendation.NONE
 )
 
 internal object DeviceHealthPolicy {
@@ -29,7 +31,9 @@ internal object DeviceHealthPolicy {
         if (batteryPercent != null && batteryPercent < 20) issues += DeviceHealthIssue.LOW_BATTERY
         if (thermalStatus != null && thermalStatus >= PowerManager.THERMAL_STATUS_SEVERE) issues += DeviceHealthIssue.THERMAL
         if (memoryAvailablePercent != null && memoryAvailablePercent < 10) issues += DeviceHealthIssue.MEMORY_PRESSURE
-        return DeviceHealthSnapshot(batteryPercent, thermalStatus, memoryAvailablePercent, powerSaveMode, issues)
+        val recommendation = if (DeviceHealthIssue.THERMAL in issues || DeviceHealthIssue.MEMORY_PRESSURE in issues)
+            DeviceQualityRecommendation.REDUCE_BITRATE else DeviceQualityRecommendation.NONE
+        return DeviceHealthSnapshot(batteryPercent, thermalStatus, memoryAvailablePercent, powerSaveMode, issues, recommendation)
     }
 }
 
