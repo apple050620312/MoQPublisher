@@ -1241,3 +1241,4 @@ P0 > P1 > P2
 
 - `v1.0.36`：完成第 15 項硬體編碼相容性資料層。`DeviceCapabilityRepository` 會列出 H.264／H.265 硬體 encoder、surface input、寬高／FPS／碼率範圍與 CBR 能力，設定頁顯示所選 codec 的摘要，diagnostics 保存完整能力資料。runtime bitrate 仍以實際 MediaCodec `setParameters` 結果為準。
 - 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認不同廠牌回報值。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.36` GitHub Release。Release APK SHA-256 為 `603e92067d32fb370d25fe1b3e2e2af2d91f0367c90d12d49fbea098219ff34e`，Offline APK SHA-256 為 `ef12e8cb0b2bc82c5ebbe013d43942f2b8a518ff78951cd13b0b2052c416b7c5`。
