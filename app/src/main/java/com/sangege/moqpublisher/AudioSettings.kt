@@ -27,9 +27,22 @@ internal object AudioSettings {
     const val SAMPLES_PER_FRAME = 960 // 20 ms, per channel.
     const val DEFAULT_GAIN = 100
     const val MAX_GAIN = 300
+    const val GAIN_RAMP_STEP_PERCENT = 10
 
     fun frameBytes(channel: AudioChannel): Int = SAMPLES_PER_FRAME * channel.count * 2
     fun normalizeGain(percent: Int): Int = percent.coerceIn(0, MAX_GAIN)
+
+    /** Move one 20 ms audio frame toward a new gain without an audible step. */
+    fun rampGain(current: Int, target: Int, step: Int = GAIN_RAMP_STEP_PERCENT): Int {
+        val from = normalizeGain(current)
+        val to = normalizeGain(target)
+        val amount = step.coerceAtLeast(1)
+        return when {
+            from < to -> (from + amount).coerceAtMost(to)
+            from > to -> (from - amount).coerceAtLeast(to)
+            else -> from
+        }
+    }
 
     /** Return the format that really opened, so AudioRecord and Opus always agree. */
     fun <T> openCapture(

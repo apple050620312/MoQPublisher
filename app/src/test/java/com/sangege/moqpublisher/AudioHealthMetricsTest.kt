@@ -13,6 +13,21 @@ class AudioHealthMetricsTest {
         assertTrue(level.peakPercent > 99f)
         assertTrue(level.rmsPercent > 50f)
         assertTrue(level.clipping)
+        assertTrue(level.peakDbfs > -1f)
+        assertTrue(level.rmsDbfs < 0f)
+    }
+
+    @Test
+    fun reportsStereoPeaksAndResetsMeterWindowAfterSampling() {
+        val metrics = AudioHealthMetrics { 0L }
+        metrics.captured(byteArrayOf(0, 0x40, 0, 0x20, 0, 0x40, 0, 0x20), channels = 2)
+        val level = metrics.level()
+        assertEquals(2, level.channelPeakPercent.size)
+        assertTrue(level.channelPeakPercent[0] > level.channelPeakPercent[1])
+        assertFalse(level.silent)
+        metrics.sample()
+        assertFalse(metrics.level().silent)
+        assertTrue(metrics.level().channelPeakPercent.isEmpty())
     }
     @Test fun revealsPublisherBurstsEvenWhenAveragePacketRateIsCorrect() {
         var now = 0L

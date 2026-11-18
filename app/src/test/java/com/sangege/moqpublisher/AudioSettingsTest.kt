@@ -112,4 +112,12 @@ class AudioSettingsTest {
             assertEquals(2, attempts)
         }
     }
+
+    @Test
+    fun gainChangesRampAcrossFramesToAvoidAOneFrameStep() {
+        assertEquals(90, AudioSettings.rampGain(100, 0))
+        assertEquals(110, AudioSettings.rampGain(100, 300))
+        assertEquals(0, AudioSettings.rampGain(5, 0, step = 10))
+        assertEquals(300, AudioSettings.rampGain(295, 300, step = 10))
+    }
 }

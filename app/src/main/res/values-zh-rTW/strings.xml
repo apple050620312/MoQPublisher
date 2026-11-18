@@ -189,10 +189,14 @@
     <string name="audio_quality_hint">實際調整 Opus 編碼碼率，品質越高越耗頻寬。降級為單聲道時也會調整對應碼率。</string>
     <string name="mute_audio">靜音</string>
     <string name="unmute_audio">取消靜音</string>
-    <string name="audio_level">音訊峰值 %1$.0f%% · RMS %2$.0f%%</string>
+    <string name="audio_level">峰值 %1$.0f%% · RMS %2$.0f%% · 峰值保持 %3$.0f%% · %4$.1f dBFS</string>
+    <string name="audio_level_channels">聲道：%1$.0f%%／%2$.0f%%</string>
+    <string name="audio_clipping">偵測到削波</string>
+    <string name="audio_silent">靜音環境</string>
     <string name="broadcast_notification_channel">直播通知</string>
     <string name="broadcast_notification_title">MoQ 直播</string>
     <string name="broadcast_notification_live">正在傳送相機與已啟用的音訊，點此返回 App。</string>
+    <string name="broadcast_notification_muted">音訊已靜音，點此返回 App。</string>
     <string name="error_background_start">無法啟動直播服務。請返回 App，確認相機與麥克風權限後重試。</string>
     <string name="error_stream_stopping">上一場直播正在結束，請稍候再開始。</string>
     <string name="cancel">取消</string>

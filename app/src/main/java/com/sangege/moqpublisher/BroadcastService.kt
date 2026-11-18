@@ -62,6 +62,13 @@ class BroadcastService : Service() {
                 if (started) wakeLock?.acquire(15 * 60 * 1_000L)
             }
         }
+        scope.launch {
+            session.streamer.audioMuted.collect {
+                if (started) getSystemService(NotificationManager::class.java).notify(
+                    NOTIFICATION_ID, notification(session.streamer.streamState.value, session.streamer.healthState.value)
+                )
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -139,10 +146,11 @@ class BroadcastService : Service() {
             StreamHealthLevel.RECOVERING -> localized.getString(R.string.health_recovering)
             else -> null
         }
+        val audioText = if (session.streamer.audioMuted.value) localized.getString(R.string.broadcast_notification_muted) else null
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_broadcast_notification)
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))
-            .setContentText(healthText ?: baseText)
+            .setContentText(healthText ?: audioText ?: baseText)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(0, localized.getString(R.string.stop_broadcast), stop).build()
     }

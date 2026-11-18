@@ -1,6 +1,15 @@
 package com.sangege.moqpublisher
 
-data class AudioLevel(val peakPercent: Float, val rmsPercent: Float, val peakHoldPercent: Float, val clipping: Boolean)
+data class AudioLevel(
+    val peakPercent: Float,
+    val rmsPercent: Float,
+    val peakHoldPercent: Float,
+    val clipping: Boolean,
+    val peakDbfs: Float = -120f,
+    val rmsDbfs: Float = -120f,
+    val channelPeakPercent: List<Float> = emptyList(),
+    val silent: Boolean = false
+)
 
 /** Distinguishes microphone gaps, publisher bursts, silence, and network-independent queueing. */
 internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nanoTime) {
@@ -36,6 +45,7 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
     private var rmsSamples = 0L
     private var peakHold = 0
     private var clipping = false
+    private var channelPeaks = FloatArray(0)
     private var bytes = 0L
     private var groups = 0
     private var queueMax = 0
@@ -45,32 +55,50 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
     @Synchronized fun reset() {
         capture = Cadence(); publication = Cadence()
         captured = 0; silent = 0; peak = 0; rmsSumSquares = 0.0; rmsSamples = 0
-        peakHold = 0; clipping = false; bytes = 0; groups = 0; queueMax = 0
+        peakHold = 0; clipping = false; channelPeaks = FloatArray(0)
+        bytes = 0; groups = 0; queueMax = 0
         unreadMs = null; timestampAgeMs = null
     }
 
-    @Synchronized fun captured(pcm: ByteArray) {
+    @Synchronized fun captured(pcm: ByteArray, channels: Int = 1) {
         capture.observe(nanoTime())
         captured++
+        val channelCount = channels.coerceIn(1, 8)
+        if (channelPeaks.size != channelCount) channelPeaks = FloatArray(channelCount)
         var framePeak = 0
+        var sampleIndex = 0
         for (i in 0 until pcm.size - 1 step 2) {
             val sample = ((pcm[i].toInt() and 255) or (pcm[i + 1].toInt() shl 8)).toShort().toInt()
-            framePeak = maxOf(framePeak, kotlin.math.abs(sample))
+            val absolute = kotlin.math.abs(sample)
+            framePeak = maxOf(framePeak, absolute)
+            val channel = sampleIndex % channelCount
+            channelPeaks[channel] = maxOf(channelPeaks[channel], absolute.toFloat())
             rmsSumSquares += sample.toDouble() * sample.toDouble()
             rmsSamples++
-            if (kotlin.math.abs(sample) >= Short.MAX_VALUE) clipping = true
+            if (absolute >= Short.MAX_VALUE) clipping = true
+            sampleIndex++
         }
         if (framePeak == 0) silent++
         peak = maxOf(peak, framePeak)
         peakHold = maxOf(peakHold, framePeak)
     }
 
-    @Synchronized fun level(): AudioLevel = AudioLevel(
-        peakPercent = peak * 100f / Short.MAX_VALUE,
-        rmsPercent = if (rmsSamples == 0L) 0f else (kotlin.math.sqrt(rmsSumSquares / rmsSamples) * 100.0 / Short.MAX_VALUE).toFloat(),
-        peakHoldPercent = peakHold * 100f / Short.MAX_VALUE,
-        clipping = clipping
-    )
+    @Synchronized fun level(): AudioLevel = levelLocked()
+
+    private fun levelLocked(): AudioLevel {
+        val rms = if (rmsSamples == 0L) 0f else
+            (kotlin.math.sqrt(rmsSumSquares / rmsSamples) * 100.0 / Short.MAX_VALUE).toFloat()
+        return AudioLevel(
+            peakPercent = peak * 100f / Short.MAX_VALUE,
+            rmsPercent = rms,
+            peakHoldPercent = peakHold * 100f / Short.MAX_VALUE,
+            clipping = clipping,
+            peakDbfs = dbfs(peak),
+            rmsDbfs = dbfs((rms / 100f * Short.MAX_VALUE).toInt()),
+            channelPeakPercent = channelPeaks.map { it * 100f / Short.MAX_VALUE },
+            silent = captured > 0 && peak == 0
+        )
+    }
 
     @Synchronized fun published(size: Int, groupClosed: Boolean) {
         publication.observe(nanoTime())
@@ -88,7 +116,22 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
     @Synchronized fun sample(): Map<String, Any?> = (capture.sample("audio_capture") + publication.sample("audio_publish") + mapOf(
         "audio_capture_packets" to captured, "audio_pcm_silent_packets" to silent,
         "audio_pcm_peak_percent" to peak * 100.0 / 32768,
+        "audio_pcm_rms_percent" to levelLocked().rmsPercent,
+        "audio_pcm_peak_hold_percent" to levelLocked().peakHoldPercent,
+        "audio_pcm_peak_dbfs" to levelLocked().peakDbfs,
+        "audio_pcm_rms_dbfs" to levelLocked().rmsDbfs,
+        "audio_pcm_clipping" to clipping,
+        "audio_channel_peak_percent" to levelLocked().channelPeakPercent,
         "audio_encoded_bytes" to bytes, "audio_groups" to groups, "audio_queue_max_depth" to queueMax,
         "audio_record_unread_ms" to unreadMs, "audio_record_timestamp_age_ms" to timestampAgeMs
-    )).also { captured = 0; silent = 0; peak = 0; bytes = 0; groups = 0; queueMax = 0 }
+    )).also {
+        captured = 0; silent = 0; peak = 0; rmsSumSquares = 0.0; rmsSamples = 0
+        peakHold = 0; clipping = false; channelPeaks = FloatArray(0)
+        bytes = 0; groups = 0; queueMax = 0
+    }
+
+    private fun dbfs(sample: Int): Float {
+        if (sample <= 0) return -120f
+        return (20.0 * kotlin.math.log10(sample.toDouble() / Short.MAX_VALUE)).toFloat().coerceAtLeast(-120f)
+    }
 }

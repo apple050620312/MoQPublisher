@@ -309,6 +309,7 @@ class MainViewModel internal constructor(
     fun setAudioGain(percent: Int) {
         val normalized = AudioSettings.normalizeGain(percent)
         _audioGain.value = normalized
+        streamer.setAudioGain(normalized)
         prefs.edit { putInt(KEY_AUDIO_GAIN, normalized) }
     }
 

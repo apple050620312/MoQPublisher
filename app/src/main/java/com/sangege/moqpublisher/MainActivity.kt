@@ -924,10 +924,18 @@ private fun AudioLevelMeter(viewModel: MainViewModel) {
     val level by viewModel.audioLevel.collectAsState()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            stringResource(R.string.audio_level, level.peakPercent, level.rmsPercent),
+            stringResource(R.string.audio_level, level.peakPercent, level.rmsPercent, level.peakHoldPercent, level.rmsDbfs),
             style = MaterialTheme.typography.bodySmall,
             color = if (level.clipping) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (level.channelPeakPercent.size >= 2) {
+            Text(stringResource(R.string.audio_level_channels,
+                level.channelPeakPercent[0], level.channelPeakPercent[1]), style = MaterialTheme.typography.bodySmall)
+        }
+        if (level.clipping) Text(stringResource(R.string.audio_clipping), color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall)
+        else if (level.silent) Text(stringResource(R.string.audio_silent), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         LinearProgressIndicator(
             progress = { (level.peakPercent / 100f).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth()
@@ -1136,7 +1144,7 @@ fun SettingsScreen(
                     }), quality.bitrateBps(audioChannel) / 1000) }, onAudioQualityChange, editable && enableAudio)
             SupportingText(stringResource(R.string.audio_quality_hint))
             if (audioCaptureStatus?.fellBackToMono == true) StatusNotice(stringResource(R.string.stereo_fallback))
-            AudioGainControl(audioGain, onAudioGainChange, editable && enableAudio)
+            AudioGainControl(audioGain, onAudioGainChange, enableAudio)
         }
         SettingCard(stringResource(R.string.security_authentication), stringResource(R.string.security_authentication_description)) {
             if (relayProfile.provider == RelayProvider.MOQ_PRO) {

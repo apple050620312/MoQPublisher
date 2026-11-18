@@ -39,6 +39,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
 import uniffi.moq.MoqException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -122,6 +123,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var audioCaptureFuture: Future<*>? = null
     private val audioHealth = AudioHealthMetrics()
     private val audioMute = AtomicBoolean(false)
+    private val audioGainTarget = AtomicInteger(AudioSettings.DEFAULT_GAIN)
     private val recoveryCoordinator = BroadcastRecoveryCoordinator()
     private val recoveryLock = Any()
     private val pendingRecoveries = LinkedHashMap<RecoveryComponent, RecoveryRequest>()
@@ -198,6 +200,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredAudioChannel = audioChannel
             configuredAudioQuality = audioQuality
             configuredAudioGain = AudioSettings.normalizeGain(audioGainPercent)
+            audioGainTarget.set(configuredAudioGain)
             configuredAudioEnabled = enableAudio
             audioMute.set(false)
             _audioMuted.value = false
@@ -536,6 +539,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     val timeline = AudioTimeline()
                     val hardwareTimestamp = AudioTimestamp()
                     var framesRead = 0L
+                    var appliedGain = configuredAudioGain
                     try {
                         while (!Thread.currentThread().isInterrupted && isBroadcasting.get()) {
                             var readTotal = 0
@@ -551,11 +555,14 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
                             if (readTotal == frameBytes && isBroadcasting.get()) {
                                 framesRead += AudioSettings.SAMPLES_PER_FRAME
-                                AudioSettings.applyGain(buffer, if (audioMute.get()) 0 else configuredAudioGain)
+                                val requestedGain = if (audioMute.get()) 0 else audioGainTarget.get()
+                                appliedGain = AudioSettings.rampGain(appliedGain, requestedGain)
+                                AudioSettings.applyGain(buffer, appliedGain)
                                 val stamp = timeline.next((System.nanoTime() - startNanoTime) / 1000L)
-                                audioHealth.captured(buffer)
+                                audioHealth.captured(buffer, actualChannel.count)
                                 if ((framesRead / AudioSettings.SAMPLES_PER_FRAME) % 5L == 0L) {
                                     _audioLevel.value = audioHealth.level()
+                                    _audioCaptureStatus.value = _audioCaptureStatus.value?.copy(gainPercent = appliedGain)
                                 }
                                 if (framesRead % AudioSettings.SAMPLE_RATE == 0L &&
                                     activeRecord.getTimestamp(hardwareTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
@@ -1091,6 +1098,15 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         audioMute.set(muted)
         _audioMuted.value = muted
         diagnostics.event("audio_mute_changed", mapOf("muted" to muted))
+    }
+
+    fun setAudioGain(percent: Int) {
+        val normalized = AudioSettings.normalizeGain(percent)
+        audioGainTarget.set(normalized)
+        if (!isBroadcasting.get()) configuredAudioGain = normalized
+        if (configuredAudioEnabled && isBroadcasting.get()) {
+            diagnostics.event("audio_gain_target_changed", mapOf("gain_percent" to normalized, "ramp_step_percent" to AudioSettings.GAIN_RAMP_STEP_PERCENT))
+        }
     }
 
     private fun failBroadcast(error: Throwable, fallbackMessage: Int = R.string.error_audio_capture) {

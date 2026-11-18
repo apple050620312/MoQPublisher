@@ -1186,3 +1186,5 @@ P0 > P1 > P2
 - `v1.0.23`：新增 `BroadcastPreflight`，在開播前統一檢查相機／麥克風／通知權限、相機與音訊可用性、硬體編碼器、解析度／FPS、Relay／Publish Token、網路、MoQ Core、電量與熱度，並分級為 PASS／WARNING／ERROR。ERROR 會阻擋開播，WARNING 允許直播並寫入 diagnostics。
 - 驗證：`testDebugUnitTest` 184 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置執行真實設備能力與熱度驗證。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.23` GitHub Release；檔案為 `MoQPublisher-1.0.23-release.apk`，SHA-256 為 `a589baeabda30612b0b5baab69959e3852bb1a13406c14b10ed3d9db35d2aa6f`。
+- `v1.0.24`：完成直播中音訊控制與音量表。增益變更以每個音訊 frame 平滑 ramp，靜音同樣保留合法 Opus 時間線並更新背景通知；音量表補上 RMS、peak hold、dBFS、左右聲道峰值、削波與靜音資訊，診斷樣本同步保存並以採樣視窗重置。
+- 驗證：`testDebugUnitTest` 186 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置實測增益切換、藍牙／USB 聲道與通知呈現。

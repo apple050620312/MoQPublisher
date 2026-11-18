@@ -204,10 +204,14 @@
     <string name="audio_quality_hint">Sets the actual Opus bitrate. Higher quality uses more bandwidth. Mono fallback adjusts the bitrate automatically.</string>
     <string name="mute_audio">Mute audio</string>
     <string name="unmute_audio">Unmute audio</string>
-    <string name="audio_level">Audio peak %1$.0f%% · RMS %2$.0f%%</string>
+    <string name="audio_level">Peak %1$.0f%% · RMS %2$.0f%% · Peak hold %3$.0f%% · %4$.1f dBFS</string>
+    <string name="audio_level_channels">Channels: %1$.0f%% / %2$.0f%%</string>
+    <string name="audio_clipping">Clipping detected</string>
+    <string name="audio_silent">Silence</string>
     <string name="broadcast_notification_channel">Live broadcasts</string>
     <string name="broadcast_notification_title">MoQ broadcast</string>
     <string name="broadcast_notification_live">Broadcasting camera and enabled audio. Tap to return to the app.</string>
+    <string name="broadcast_notification_muted">Audio muted. Tap to return to the app.</string>
     <string name="error_background_start">Could not start the broadcast service. Return to the app and check camera and microphone access, then try again.</string>
     <string name="error_stream_stopping">The previous broadcast is finishing. Please try again in a moment.</string>
     <string name="cancel">Cancel</string>
