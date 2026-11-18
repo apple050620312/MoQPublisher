@@ -1,17 +1,37 @@
 package com.sangege.moqpublisher
 
 /** Leaves transport/audio headroom; drops promptly and recovers gradually. */
-internal class VideoBitrateControl(private var ceilingBps: Long, private val audioBps: Long) {
-    init {
-        require(ceilingBps > 0 && audioBps >= 0)
-    }
+internal class VideoBitrateControl(
+    private var ceilingBps: Long,
+    private val audioBps: Long,
+    floorBps: Long = VideoBitrateSettings.MIN_BPS
+) {
+    init { require(ceilingBps > 0 && audioBps >= 0 && floorBps > 0 && floorBps <= ceilingBps) }
+    private var floorBps = floorBps
     var currentBps = ceilingBps
         private set
 
     fun setCeiling(value: Long) {
-        require(value > 0)
+        require(value >= floorBps)
         ceilingBps = value
         currentBps = currentBps.coerceAtMost(value)
+    }
+
+    fun setFloor(value: Long) {
+        require(value in VideoBitrateSettings.MIN_BPS..ceilingBps)
+        floorBps = value
+        currentBps = currentBps.coerceAtLeast(value)
+    }
+
+    fun setRange(minimum: Long, maximum: Long) {
+        require(minimum > 0 && minimum <= maximum)
+        floorBps = minimum
+        ceilingBps = maximum
+        currentBps = currentBps.coerceIn(minimum, maximum)
+    }
+
+    fun setTarget(value: Long) {
+        currentBps = value.coerceIn(floorBps, ceilingBps)
     }
 
     private var smoothedCapacityBps: Double? = null
@@ -36,7 +56,7 @@ internal class VideoBitrateControl(private var ceilingBps: Long, private val aud
         else previous + (rawCapacity - previous) * alpha
 
         fun budget(capacity: Double): Long = (capacity * 0.8 - audioBps)
-            .toLong().coerceIn(minOf(100_000L, ceilingBps), ceilingBps)
+            .toLong().coerceIn(floorBps, ceilingBps)
 
         val rawBudget = budget(rawCapacity)
         val smoothedBudget = budget(smoothedCapacityBps ?: rawCapacity)

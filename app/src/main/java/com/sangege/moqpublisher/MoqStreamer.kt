@@ -162,6 +162,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var configuredCodec: VideoCodec = VideoCodec.H264
     private var configuredFramerate: Int = 30
     private var configuredBitrate: Long = VideoBitrateSettings.DEFAULT_BPS
+    private var configuredMinBitrate: Long = VideoBitrateSettings.MIN_BPS
+    private var configuredMaxBitrate: Long = VideoBitrateSettings.DEFAULT_BPS
     private var configuredAudioChannel = AudioChannel.MONO
     private var configuredAudioQuality = AudioQuality.STANDARD
     private var configuredAudioGain = AudioSettings.DEFAULT_GAIN
@@ -187,6 +189,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         codec: VideoCodec = VideoCodec.H264,
         framerate: Int = 30,
         bitrateBps: Long = VideoBitrateSettings.DEFAULT_BPS,
+        minBitrateBps: Long = VideoBitrateSettings.MIN_BPS,
+        maxBitrateBps: Long = VideoBitrateSettings.DEFAULT_BPS,
         adaptiveBitrate: Boolean = true,
         provider: RelayProvider = RelayProvider.MOQ_PRO,
         protocolDraft: Int? = null
@@ -204,6 +208,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 "relay" to RelayUrl.maskJwt(relayUrl), "path" to streamPath, "tls_verify" to tlsVerify,
                 "provider" to provider, "endpoint_draft" to protocolDraft,
                 "audio" to enableAudio, "codec" to codec, "fps" to framerate, "bitrate_bps" to bitrateBps,
+                "min_bitrate_bps" to minBitrateBps, "max_bitrate_bps" to maxBitrateBps,
                 "adaptive_bitrate" to adaptiveBitrate,
                 "audio_channel" to audioChannel, "audio_gain_percent" to audioGainPercent,
                 "network" to diagnostics.networkDescription()
@@ -211,7 +216,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
             configuredCodec = codec
             configuredFramerate = framerate.coerceIn(1, 120)
-            configuredBitrate = bitrateBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
+            configuredMinBitrate = minBitrateBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
+            configuredMaxBitrate = maxBitrateBps.coerceIn(configuredMinBitrate, Int.MAX_VALUE.toLong())
+            configuredBitrate = bitrateBps.coerceIn(configuredMinBitrate, configuredMaxBitrate)
             configuredAudioChannel = audioChannel
             configuredAudioQuality = audioQuality
             configuredAudioGain = AudioSettings.normalizeGain(audioGainPercent)
@@ -223,7 +230,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredDraft = protocolDraft
             _audioCaptureStatus.value = null
             _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
-            videoBitrateControl = VideoBitrateControl(configuredBitrate, if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L)
+            videoBitrateControl = VideoBitrateControl(configuredBitrate,
+                if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L,
+                configuredMinBitrate)
+            videoBitrateControl?.setCeiling(configuredMaxBitrate)
             bitrateAdaptationEnabled = adaptiveBitrate
             _streamState.value = StreamState.Connecting
             transitionLifecycle(BroadcastLifecycleEvent.StartRequested)
@@ -527,7 +537,9 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 val frameBytes = AudioSettings.frameBytes(actualChannel)
                 // Account for the actual Opus channel configuration, including a mono fallback.
                 synchronized(videoLock) {
-                    videoBitrateControl = VideoBitrateControl(configuredBitrate, configuredAudioQuality.bitrateBps(actualChannel))
+                    videoBitrateControl = VideoBitrateControl(configuredBitrate,
+                        configuredAudioQuality.bitrateBps(actualChannel), configuredMinBitrate)
+                    videoBitrateControl?.setCeiling(configuredMaxBitrate)
                 }
                 Log.d(TAG, "Encoding audio with Opus (48kHz, $actualChannel)...")
                 val actualBitrate = configuredAudioQuality.bitrateBps(actualChannel)
@@ -1200,9 +1212,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     fun setVideoBitrate(bitrateBps: Long) {
-        val normalized = bitrateBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
+        val normalized = bitrateBps.coerceIn(configuredMinBitrate, configuredMaxBitrate)
         configuredBitrate = normalized
-        videoBitrateControl?.setCeiling(normalized)
+        videoBitrateControl?.setCeiling(configuredMaxBitrate)
+        videoBitrateControl?.let { if (!bitrateAdaptationEnabled) it.setTarget(normalized) }
         if (isBroadcasting.get()) {
             synchronized(videoLock) {
                 if (!bitrateAdaptationEnabled) {
@@ -1212,6 +1225,24 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 }
             }
         }
+    }
+
+    fun setVideoBitrateRange(minimumBps: Long, maximumBps: Long) {
+        val minimum = minimumBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
+        val maximum = maximumBps.coerceIn(minimum, Int.MAX_VALUE.toLong())
+        configuredMinBitrate = minimum
+        configuredMaxBitrate = maximum
+        configuredBitrate = configuredBitrate.coerceIn(minimum, maximum)
+        videoBitrateControl?.setRange(minimum, maximum)
+        if (isBroadcasting.get() && !bitrateAdaptationEnabled) {
+            synchronized(videoLock) {
+                runCatching { hardwareEncoder?.setBitrate(configuredBitrate) }
+                    .onFailure { diagnostics.error("video_bitrate_range_change_failed", it) }
+            }
+        }
+        diagnostics.event("video_bitrate_range_changed", mapOf(
+            "min_bitrate_bps" to minimum, "max_bitrate_bps" to maximum, "target_bitrate_bps" to configuredBitrate
+        ))
     }
 
     fun setAdaptiveBitrate(enabled: Boolean) {

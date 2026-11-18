@@ -64,6 +64,9 @@
     <string name="target_framerate">Target frame rate</string>
     <string name="fps_value">%1$d FPS</string>
     <string name="target_bitrate">Target video bitrate (Kbps)</string>
+    <string name="minimum_bitrate">Minimum video bitrate (Kbps)</string>
+    <string name="maximum_bitrate">Maximum video bitrate (Kbps)</string>
+    <string name="bitrate_range_hint">ABR decreases toward the minimum and recovers toward the maximum. These controls remain available during a broadcast.</string>
     <string name="bitrate_hint">Try 8000 Kbps for 1080p / 60 FPS. Actual bitrate also depends on the scene and encoder.</string>
     <string name="adaptive_bitrate">Automatically adjust bitrate</string>
     <string name="adaptive_bitrate_on">Uses the target as a ceiling and reduces bitrate when bandwidth is limited.</string>
@@ -132,6 +135,7 @@
     <string name="error_path_invalid">Enter a broadcast path without spaces.</string>
     <string name="error_fps_invalid">Select a supported frame rate.</string>
     <string name="error_bitrate_invalid">Enter a bitrate from 100 to 2147483.647 Kbps, with at most three decimal places.</string>
+    <string name="error_bitrate_range_invalid">Set minimum ≤ target ≤ maximum, with each value between 100 and 2147483.647 Kbps.</string>
     <string name="error_resolution_invalid">Select a valid camera resolution.</string>
     <string name="error_broadcast">Could not connect or publish to the relay. Check the server URL, path, authentication, TLS and network. Details are saved in diagnostics.</string>
     <string name="error_video">Video encoding or transmission failed. Try a lower resolution or frame rate. Details are saved in diagnostics.</string>

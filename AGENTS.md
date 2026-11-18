@@ -1230,3 +1230,8 @@ P0 > P1 > P2
 - `v1.0.34`：完成第 24 項可在 App 內驗證的 OBS 連接體驗。Cloudflare 設定新增 Subscribe-only 觀看 QR Code、Browser Source 指引與原生 MoQ Draft 18 指引。QR Code 僅使用觀看 URL，Publish Token 不會進入 QR Code 或 OBS 資訊。
 - 驗證：`testDebugUnitTest` 194 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android、OBS、瀏覽器或 Relay 實測接收能力。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.34` GitHub Release。Release APK SHA-256 為 `c08c7d46868314b1d2a2ac28e31e48511466ca989c83242b930e846d9a3f5bca`，Offline APK SHA-256 為 `2ecabdc84f50d0426dd15ab259e4e2d6aef39b0b3a75e2ba7a576065e10edf1b`。
+
+### 2026-11-19
+
+- `v1.0.35`：完成第 16 項直播中碼率控制。新增可持久化的最低／目標／最高視訊碼率，ABR 下降不低於最低值、恢復不超過最高值，直播中調整範圍或目標會透過 video lock 套用至實際 MediaCodec；診斷同步保存三個值。
+- 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機量測不同 MediaCodec 對動態 bitrate 的接受行為。

@@ -63,4 +63,16 @@ class VideoBitrateControlTest {
         repeat(20) { control.update(100_000_000uL) }
         assertEquals(2_000_000L, control.currentBps)
     }
+
+    @Test
+    fun customMinimumAndMaximumBoundAbrWithoutBreakingTheTarget() {
+        val control = VideoBitrateControl(2_000_000L, 0L, floorBps = 500_000L)
+        control.setCeiling(4_000_000L)
+        repeat(10) { control.update(100_000_000uL) }
+        assertEquals(4_000_000L, control.currentBps)
+        assertEquals(500_000L, control.update(0uL))
+        assertEquals(500_000L, control.currentBps)
+        control.setRange(750_000L, 3_000_000L)
+        assertEquals(750_000L, control.currentBps)
+    }
 }

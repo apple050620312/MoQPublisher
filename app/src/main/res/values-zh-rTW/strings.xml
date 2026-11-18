@@ -54,6 +54,9 @@
     <string name="target_framerate">目標幀率</string>
     <string name="fps_value">%1$d FPS</string>
     <string name="target_bitrate">目標視訊碼率（Kbps）</string>
+    <string name="minimum_bitrate">最低視訊碼率（Kbps）</string>
+    <string name="maximum_bitrate">最高視訊碼率（Kbps）</string>
+    <string name="bitrate_range_hint">ABR 會向最低碼率下降，並向最高碼率逐步恢復。直播中也可調整。</string>
     <string name="bitrate_hint">1080p / 60 FPS 可先試 8000 Kbps。實際碼率也取決於畫面與編碼器。</string>
     <string name="adaptive_bitrate">依網路自動調整碼率</string>
     <string name="adaptive_bitrate_on">以目標碼率為上限，頻寬不足時降低碼率。</string>
@@ -117,6 +120,7 @@
     <string name="error_path_invalid">請輸入不含空白的直播路徑。</string>
     <string name="error_fps_invalid">請選擇支援的幀率。</string>
     <string name="error_bitrate_invalid">請輸入 100 至 2147483.647 Kbps 的碼率，最多支援三位小數。</string>
+    <string name="error_bitrate_range_invalid">請設定最低 ≤ 目標 ≤ 最高，且每個值都在 100 至 2147483.647 Kbps 之間。</string>
     <string name="error_resolution_invalid">請選擇有效的相機解析度。</string>
     <string name="error_broadcast">無法連線或發布至中繼伺服器。請檢查網址、路徑、驗證、TLS 與網路。詳細資訊已記錄於診斷資料。</string>
     <string name="error_video">視訊編碼或傳輸失敗。請嘗試降低解析度或幀率。詳細資訊已記錄於診斷資料。</string>

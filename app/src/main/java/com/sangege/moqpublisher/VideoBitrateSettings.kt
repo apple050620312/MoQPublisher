@@ -7,6 +7,8 @@ internal object VideoBitrateSettings {
     const val DEFAULT_KBPS = "8000"
     const val DEFAULT_BPS = 8_000_000L
     const val MIN_BPS = 100_000L
+    const val DEFAULT_MIN_KBPS = "600"
+    const val DEFAULT_MAX_KBPS = DEFAULT_KBPS
 
     fun parseKbps(value: String): Long? = parse(value, 1_000)
 
