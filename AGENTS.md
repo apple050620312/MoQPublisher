@@ -1178,4 +1178,5 @@ P0 > P1 > P2
 - Cloudflare 推流名稱改為選填。留空時直接傳送空的 broadcast name，符合官方 `moq-pub` 只提供 connection token 的範例；填入名稱時接受合法 namespace，`.hang` 僅用於 moq.watch／OBS 資訊與 Hang 遠端驗證。
 - 驗證：`testDebugUnitTest` 共 162 項通過、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過；尚未連接 Android 裝置執行 Cloudflare 實際推流與空 namespace 端對端驗證。
 - `v1.0.21`：將 Cloudflare 發布路徑集中為 provider 的 publication path。名稱留空時保留空字串並傳入 `createBroadcast("")`，不回退到 moq.pro 路徑；同步修正空白名稱的驗證文案並加入回歸測試。
-- 驗證：`testDebugUnitTest` 通過；已使用本機 Gradle 完成測試，release APK、Android lint、簽章與 Cloudflare／Android 實機推流仍待本次建置後確認。
+- 驗證：`testDebugUnitTest` 175 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置、Cloudflare Relay 或 OBS，未執行實際空 namespace 推流與播放驗證。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.21` GitHub Release；檔案為 `MoQPublisher-1.0.21-release.apk`，SHA-256 為 `92790d60d56eb86bc6694216d3a59fb656bda891b7cb50b5b0b9cbf9ff55b385`。
