@@ -528,7 +528,7 @@ class MainViewModel internal constructor(
         if (profile.provider == RelayProvider.CLOUDFLARE) {
             if (!CloudflareRelay.validToken(profile.publishToken)) return UiMessage(R.string.error_cloudflare_publish_token)
             if (profile.protocolDraft != CloudflareRelay.DRAFT) return UiMessage(R.string.error_cloudflare_draft)
-            if (!CloudflareRelay.validBroadcast(profile.broadcastName)) return UiMessage(R.string.error_cloudflare_broadcast)
+            if (!CloudflareRelay.validPublicationName(getEffectiveStreamPath())) return UiMessage(R.string.error_cloudflare_broadcast)
         }
         val relay = _relayUrl.value.trim()
         if (profile.provider == RelayProvider.MOQ_PRO && relay.isEmpty()) return UiMessage(R.string.error_relay_required)
@@ -540,7 +540,7 @@ class MainViewModel internal constructor(
         }
 
         val path = getEffectiveStreamPath()
-        if (!StreamPath.isValid(path)) {
+        if ((profile.provider != RelayProvider.CLOUDFLARE || path.isNotEmpty()) && !StreamPath.isValid(path)) {
             return UiMessage(R.string.error_path_invalid)
         }
 

@@ -33,3 +33,8 @@
 - 修復更新 APK 與診斷分享共用同一 FileProvider 元件造成 URI 路徑衝突的問題，拆成獨立元件；安裝 Intent 加入 ClipData 讀取授權，未允許未知來源時開啟系統設定，授權返回後接續安裝。
 - 安裝前在 IO 執行緒重新驗證長度、SHA-256、Android 套件解析、包名、版本名稱、遞增版本代碼、最低 Android 版本與簽章，並試開實際 content URI；損毀檔案清除後可重新下載。先前版本若仍報「剖析套件時發生錯誤」，需用瀏覽器下載新版 APK 覆蓋安裝一次。
 - 驗證：舊版 Provider 元件重複的回歸測試曾失敗，分離後通過；`testDebugUnitTest` 共 161 項通過、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。Robolectric 在 Windows 無法使用 Android 的路徑分隔方式進行真實 URI 開檔，因此另加 `UpdateFileProviderTest` 實機測試並已編譯；本次沒有連接 Android 裝置，未執行實機 URI 與廠牌安裝器流程。
+
+### 2026-11-18
+
+- Cloudflare 推流名稱改為選填。留空時直接傳送空的 broadcast name，符合官方 `moq-pub` 只提供 connection token 的範例；填入名稱時接受合法 namespace，`.hang` 僅用於 moq.watch／OBS 資訊與 Hang 遠端驗證。
+- 驗證：`testDebugUnitTest` 共 162 項通過、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過；尚未連接 Android 裝置執行 Cloudflare 實際推流與空 namespace 端對端驗證。

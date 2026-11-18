@@ -27,8 +27,8 @@ MoQ Publisher is an Android camera broadcaster built with Jetpack Compose, Camer
 1. Install the signed release APK (recommended), compact APK or debug APK on a supported Android device. Each APK supports ARM64, ARMv7 and x86_64 and omits the MoQ core.
 2. On first launch, connect to the internet and allow the official MoQ core package to download (about 33 MB). Only the running process ABI is extracted and saved. Grant camera permission; microphone permission is requested when an audio broadcast starts.
 3. Open **Settings -> Relay Provider**. For moq.pro, enter the existing relay URL, broadcast path and optional JWT.
-   For Cloudflare, enter a **Publish + Subscribe connection token** and a full Hang broadcast name
-   (default `twcam.hang`). This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`;
+   For Cloudflare, enter a **Publish + Subscribe connection token** and a broadcast name
+   (default `twcam.hang`). You can clear the broadcast name to publish an unnamed broadcast, matching the official `moq-pub` example. Cloudflare publication accepts any valid namespace path, so `.hang` is optional for publishing. Use a `.hang` name when you need the app's moq.watch link, OBS information or Hang remote verification. This profile uses `https://draft-18.cloudflare.mediaoverquic.com/<connection-token>`;
    do not use a Management API token, Project ID, Relay ID or `?jwt=`.
 4. Select the codec, resolution, frame rate, target video bitrate in Kbps and TLS behavior. **Adaptive bitrate** enables network adaptation; disable it to retain the configured encoder target.
 5. Press **Start broadcast** while the app is visible. Camera permission is required, and microphone permission is required when audio is enabled. Android 13+ also offers notification permission; denying it does not grant extra background permissions or bypass the foreground-service rules. With Background broadcast enabled (the default), switching apps or turning the screen off keeps the camera and enabled microphone streaming. Stop from the app or broadcast notification. Disabling Background broadcast stops the stream when the Activity leaves the foreground.
@@ -93,7 +93,7 @@ Build the debug APK with:
 Run Android lint with `./gradlew lintDebug`. JVM tests cover timing, throughput, stride-aware pixel copying and AVC/HEVC access-unit packaging. Hardware encoding and end-to-end relay playback require an Android device; successful JVM tests and APK compilation do not validate those device paths.
 
 
-## APK variants (v1.0.19)
+## APK variants (v1.0.20)
 
 Build all variants with `./gradlew assembleDebug assembleCompact assembleRelease testDebugUnitTest lintDebug lintCompact lintRelease`. Compact and release enable R8/resource shrinking; debug retains development tooling. All three omit `libmoq_ffi.so`, retain both languages and support the three official Android core ABIs. The local release build is signed with the existing development certificate for in-place sideload updates. The Kotlin client remains 0.5.3 / FFI bindings 0.4.26; startup accepts newer official cores only when the complete UniFFI contract matches (currently 0.4.27). The core architecture must match both the device ABI preference and the running process bitness. The official upstream currently supplies no 32-bit x86 core.
 
@@ -138,10 +138,10 @@ always verifies TLS and disables the moq.pro WebSocket fallback. Connection toke
 encrypted with an Android Keystore key, excluded from backup, and never logged in URLs. The old
 moq.pro authentication preference migrates into the encrypted store after a successful write.
 
-Enter a different **Subscribe-only connection token from the same relay** to enable viewing and
-OBS information. The app never substitutes the Publish Token. Before copying, confirm that the
-opaque token has Subscribe-only permissions; the app cannot infer those permissions. Shared
-links intentionally contain the Subscribe Token. Draft 18 links use
+Enter a different **Subscribe-only connection token from the same relay** and use a `.hang`
+broadcast name to enable the app's viewing and OBS information. The app never substitutes the
+Publish Token. Before copying, confirm that the opaque token has Subscribe-only permissions; the
+app cannot infer those permissions. Shared links intentionally contain the Subscribe Token. Draft 18 links use
 `https://moq.watch/<subscribe-token>/<full-broadcast-name>?cloudflare=draft-18`.
 
 Connected means session establishment; Publishing requires a subscriber's video demand and media

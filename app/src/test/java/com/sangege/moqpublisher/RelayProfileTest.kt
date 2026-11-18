@@ -53,10 +53,23 @@ class RelayProfileTest {
         assertThrows(IllegalArgumentException::class.java) { profile().copy(protocolDraft = 16).publishUrl() }
     }
 
-    @Test fun broadcastRequiresHangAndPreservesNestedNamespace() {
+    @Test fun cloudflarePublicationAcceptsAnySafeNamespaceAndPreservesNestedNamespace() {
+        assertTrue(CloudflareRelay.validBroadcast("camera"))
+        assertTrue(CloudflareRelay.validBroadcast("space/camera"))
         assertTrue(CloudflareRelay.validBroadcast("space/camera.hang"))
-        for (bad in listOf("camera", "/camera.hang", "../camera.hang", "a//camera.hang", "camera.hang?x=1", "a%2Fcamera.hang", "a\\camera.hang"))
+        assertFalse(CloudflareRelay.validHangBroadcast("camera"))
+        assertTrue(CloudflareRelay.validHangBroadcast("space/camera.hang"))
+        assertTrue(CloudflareRelay.validPublicationName(""))
+        assertTrue(CloudflareRelay.validPublicationName(" space/camera "))
+        for (bad in listOf("", "/camera.hang", "../camera.hang", "a//camera.hang", "camera.hang?x=1", "a%2Fcamera.hang", "a\\camera.hang"))
             assertFalse(bad, CloudflareRelay.validBroadcast(bad))
+    }
+
+    @Test fun nonHangPublicationDoesNotEnableHangViewingLinks() {
+        val p = profile().copy(broadcastName = "space/camera")
+        assertFalse(p.canShare())
+        assertThrows(IllegalArgumentException::class.java) { p.watchUrl() }
+        assertThrows(IllegalArgumentException::class.java) { p.obsSubscription() }
     }
 
     @Test fun legacyMoqProJwtBehaviorIsUnchanged() {

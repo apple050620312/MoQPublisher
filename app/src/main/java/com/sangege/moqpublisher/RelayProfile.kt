@@ -22,7 +22,7 @@ data class RelayProfile(
     fun subscribeUrl(): String = CloudflareRelay.url(protocolDraft, subscribeToken)
 
     fun canShare(): Boolean = CloudflareRelay.validToken(subscribeToken) &&
-        subscribeToken.trim() != publishToken.trim() && CloudflareRelay.validBroadcast(broadcastName)
+        subscribeToken.trim() != publishToken.trim() && CloudflareRelay.validHangBroadcast(broadcastName)
 
     /** Never fall back to a publish credential, even when no subscription token was supplied. */
     fun watchUrl(): String {
@@ -48,12 +48,19 @@ internal object CloudflareRelay {
     // Connection tokens are opaque. No Management API credential is requested or embedded.
     fun validToken(value: String): Boolean = value.trim().let { it.isNotEmpty() && tokenCharacters.matches(it) }
 
+    /** Cloudflare accepts any safe namespace path for publication. */
     fun validBroadcast(value: String): Boolean {
         val path = value.trim()
-        return path.endsWith(".hang") && path.split('/').all {
+        return path.split('/').all {
             it.isNotEmpty() && it != "." && it != ".." && it.none { c -> c.isWhitespace() || c.isISOControl() || c in "?#\\%" }
         }
     }
+
+    /** The Hang viewers and the in-app remote decoder use the Hang suffix. */
+    fun validHangBroadcast(value: String): Boolean = validBroadcast(value) && value.trim().endsWith(".hang")
+
+    /** Cloudflare's publish and subscribe examples allow an unnamed broadcast. */
+    fun validPublicationName(value: String): Boolean = value.trim().isEmpty() || validBroadcast(value)
 
     fun url(draft: Int, token: String): String {
         require(draft == DRAFT) { "Only Cloudflare Draft 18 is enabled" }
