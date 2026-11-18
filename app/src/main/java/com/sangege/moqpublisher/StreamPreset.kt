@@ -1,9 +1,6 @@
 package com.sangege.moqpublisher
 
 import android.content.SharedPreferences
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
-import android.media.MediaFormat
 import androidx.core.content.edit
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -121,26 +118,4 @@ internal class StreamPresetRepository(private val prefs: SharedPreferences) {
 
     private fun encodeText(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
     private fun decodeText(value: String): String = URLDecoder.decode(value, Charsets.UTF_8.name())
-}
-
-internal class DeviceCapabilityRepository {
-    fun supportsHardwareSurfaceEncoder(codec: String): Boolean = runCatching {
-        val mime = when (codec.uppercase()) {
-            "H264" -> MediaFormat.MIMETYPE_VIDEO_AVC
-            "H265" -> MediaFormat.MIMETYPE_VIDEO_HEVC
-            else -> return@runCatching false
-        }
-        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-            info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
-                isHardware(info) && MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in
-                info.getCapabilitiesForType(mime).colorFormats
-        }
-    }.getOrDefault(false)
-
-    private fun isHardware(info: MediaCodecInfo): Boolean {
-        if (android.os.Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
-        val name = info.name.lowercase()
-        return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") &&
-            "ffmpeg" !in name && "sw.encoder" !in name && ".sw." !in name
-    }
 }

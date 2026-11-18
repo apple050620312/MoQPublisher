@@ -138,6 +138,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val videoMinBitrateKbps by viewModel.videoMinBitrateKbps.collectAsState()
     val videoMaxBitrateKbps by viewModel.videoMaxBitrateKbps.collectAsState()
     val adaptiveBitrate by viewModel.adaptiveBitrate.collectAsState()
+    val encoderCapabilities by viewModel.encoderCapabilities.collectAsState()
     val presets by viewModel.presets.collectAsState()
     val selectedPresetId by viewModel.selectedPresetId.collectAsState()
     val availableResolutions by viewModel.availableResolutions.collectAsState()
@@ -334,6 +335,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 presets = presets, selectedPresetId = selectedPresetId,
                 onApplyPreset = viewModel::applyPreset, onSavePreset = viewModel::saveCurrentPreset,
                 onDeletePreset = viewModel::deletePreset, onResetPresets = viewModel::resetCustomPresets,
+                encoderCapabilities = encoderCapabilities,
                 enableAudio = enableAudio, onEnableAudioChange = viewModel::setEnableAudio,
                 audioChannel = audioChannel, onAudioChannelChange = viewModel::setAudioChannel,
                 audioGain = audioGain, onAudioGainChange = viewModel::setAudioGain,
@@ -1090,6 +1092,7 @@ fun SettingsScreen(
     adaptiveBitrate: Boolean, onAdaptiveBitrateChange: (Boolean) -> Unit,
     presets: List<StreamPreset>, selectedPresetId: String?, onApplyPreset: (String) -> Boolean,
     onSavePreset: (String) -> Boolean, onDeletePreset: (String) -> Boolean, onResetPresets: () -> Unit,
+    encoderCapabilities: List<VideoEncoderCapability>,
     enableAudio: Boolean, onEnableAudioChange: (Boolean) -> Unit,
     audioChannel: AudioChannel, onAudioChannelChange: (AudioChannel) -> Unit,
     audioGain: Int, onAudioGainChange: (Int) -> Unit, audioCaptureStatus: AudioCaptureStatus?,
@@ -1160,6 +1163,7 @@ fun SettingsScreen(
         }
         SettingCard(stringResource(R.string.video_configuration)) {
             StreamPresetCard(presets, selectedPresetId, editable, onApplyPreset, onSavePreset, onDeletePreset, onResetPresets)
+            EncoderCapabilitySummary(encoderCapabilities.firstOrNull { it.codec == videoCodec })
             ChoiceOptions(stringResource(R.string.video_codec), videoCodec, listOf(
                 "H264" to stringResource(R.string.codec_h264), "H265" to stringResource(R.string.codec_h265)), onVideoCodecChange, editable)
             SelectionDropdown(stringResource(R.string.camera_resolution), videoResolution,
@@ -1298,6 +1302,22 @@ private fun StreamPresetCard(
             dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text(stringResource(R.string.cancel)) } }
         )
     }
+}
+
+@Composable
+private fun EncoderCapabilitySummary(capability: VideoEncoderCapability?) {
+    capability ?: return
+    val detail = if (!capability.available) stringResource(R.string.encoder_capability_unavailable)
+    else stringResource(
+        R.string.encoder_capability_summary,
+        capability.encoderNames.joinToString(),
+        capability.widthRange?.toString() ?: "--",
+        capability.heightRange?.toString() ?: "--",
+        capability.frameRateRange?.toString() ?: "--",
+        capability.bitrateRange?.toString() ?: "--",
+        if (capability.cbrSupported) stringResource(R.string.supported) else stringResource(R.string.unsupported)
+    )
+    SupportingText(detail)
 }
 
 @Composable

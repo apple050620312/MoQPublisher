@@ -210,6 +210,8 @@ class MainViewModel internal constructor(
     val adaptiveBitrate: StateFlow<Boolean> = _adaptiveBitrate.asStateFlow()
     private val _presets = MutableStateFlow(StreamPresetPolicy.builtIns() + presetRepository.loadCustom())
     val presets: StateFlow<List<StreamPreset>> = _presets.asStateFlow()
+    private val _encoderCapabilities = MutableStateFlow(capabilityRepository.inspectAll())
+    val encoderCapabilities: StateFlow<List<VideoEncoderCapability>> = _encoderCapabilities.asStateFlow()
     private val _selectedPresetId = MutableStateFlow(prefs.getString(KEY_ACTIVE_PRESET, null))
     val selectedPresetId: StateFlow<String?> = _selectedPresetId.asStateFlow()
 
@@ -222,6 +224,7 @@ class MainViewModel internal constructor(
         streamer.setAudioInputDevice(_audioInputDeviceId.value)
         refreshAvailableResolutions(_useFrontCamera.value)
         syncCamera()
+        viewModelScope.launch(Dispatchers.Default) { _encoderCapabilities.value = capabilityRepository.inspectAll() }
         viewModelScope.launch { session.cameraError.collect { if (it != null) _configurationError.value = it } }
     }
 
@@ -647,6 +650,7 @@ class MainViewModel internal constructor(
         "target_bitrate_kbps" to videoBitrateKbps.value,
         "min_bitrate_kbps" to videoMinBitrateKbps.value,
         "max_bitrate_kbps" to videoMaxBitrateKbps.value,
+        "encoder_capabilities" to encoderCapabilities.value.map { it.toDiagnosticMap() },
         "adaptive_bitrate" to adaptiveBitrate.value,
         "camera_capture" to cameraCaptureStatus.value,
         "audio_enabled" to enableAudio.value,

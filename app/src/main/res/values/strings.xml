@@ -55,6 +55,10 @@
     <string name="error_preset_name">Enter a preset name from 1 to 64 characters.</string>
     <string name="error_preset_save">The preset could not be saved. Try again.</string>
     <string name="error_preset_unsupported">This preset needs a hardware %1$s surface encoder on this device.</string>
+    <string name="encoder_capability_summary">Hardware encoder: %1$s · width %2$s · height %3$s · FPS %4$s · bitrate %5$s · CBR %6$s. Runtime bitrate changes are confirmed when the encoder is running.</string>
+    <string name="encoder_capability_unavailable">No hardware surface encoder was reported for this codec. The final result is still confirmed when MediaCodec is configured.</string>
+    <string name="supported">supported</string>
+    <string name="unsupported">unavailable</string>
     <string name="video_codec">Video codec</string>
     <string name="codec_h264" translatable="false">H.264 (AVC)</string>
     <string name="codec_h265" translatable="false">H.265 (HEVC)</string>

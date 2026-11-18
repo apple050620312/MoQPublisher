@@ -49,6 +49,10 @@
     <string name="error_preset_name">請輸入 1 到 64 個字元的 Preset 名稱。</string>
     <string name="error_preset_save">無法儲存 Preset，請重試。</string>
     <string name="error_preset_unsupported">此 Preset 需要裝置提供 %1$s 硬體 surface 編碼器。</string>
+    <string name="encoder_capability_summary">硬體編碼器：%1$s・寬度 %2$s・高度 %3$s・FPS %4$s・碼率 %5$s・CBR %6$s。動態碼率能力會在編碼器實際啟動後確認。</string>
+    <string name="encoder_capability_unavailable">裝置沒有回報此編碼格式的硬體 surface encoder。最終結果仍會在 MediaCodec 配置時確認。</string>
+    <string name="supported">支援</string>
+    <string name="unsupported">不可用</string>
     <string name="video_codec">視訊編碼</string>
     <string name="camera_resolution">相機解析度（裝置支援）</string>
     <string name="target_framerate">目標幀率</string>

@@ -18,7 +18,7 @@
 | 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | IMPLEMENTED | `AudioSettingsTest`、`AudioHealthMetricsTest` | 未驗證 | 需要裝置實測切換增益時的實際聽感 |
 | 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | IMPLEMENTED | `AudioHealthMetricsTest` | 未驗證 | 聲道與削波顯示需要不同硬體麥克風實測 |
 | 14 | 音訊輸入設備 | AudioRecord 使用預設裝置 | AudioManager 列表、偏好與拔除處理 | IMPLEMENTED | `AudioInputDeviceTest` 與 AudioRecord 編譯驗證 | 未驗證 | 需要多種實體音訊裝置實測路由與拔除回退 |
-| 15 | 硬體編碼相容性 | CameraX mode、codec／resolution errors、diagnostics | 統一 DeviceCapabilityRepository 與 UI 報告 | PARTIAL | release compile、JVM regression | 未驗證 | codec 清單與動態碼率能力依手機而異；preflight 只確認硬體 MIME／surface 能力，實際解析度與幀率由 MediaCodec.configure() 判斷 |
+| 15 | 硬體編碼相容性 | CameraX mode、codec／resolution errors、diagnostics | 統一 DeviceCapabilityRepository 與 UI 報告 | IMPLEMENTED | release compile、Android test compile、lint | 未驗證 | codec 清單與動態碼率能力依手機而異；UI 與 diagnostics 顯示系統回報範圍，實際解析度／幀率由 MediaCodec.configure()，runtime bitrate 由 setParameters() 判斷 |
 | 16 | 直播中調整畫質 | bitrate／ABR 可在 encoder 支援時更新 | min／max 設定與解析度／FPS 安全重建 | IMPLEMENTED | `VideoBitrateControlTest`、release compile、lint | 未驗證 | MediaCodec 動態能力不同；目前支援直播中最低／目標／最高 bitrate 與 ABR，解析度與 FPS 仍需重新開播 |
 | 17 | 直播儀表板 | LiveStats 有 RTT、bitrate、bytes、FPS、codec | health、audio、queue、thermal 的簡易／專業模式 | PARTIAL | metrics tests、release compile | 未驗證 | 沒有 OBS 接收數據；目前已顯示 publisher queue、encoder bitrate 與 packet loss |
 | 18 | 裝置健康／溫度 | diagnostics 已記錄 thermal、battery、memory | 主動警告與品質策略 | PARTIAL | `DeviceHealthTest`、release compile | 未驗證 | 部分 Android 無 thermal API；目前提供警報與狀態顯示，未自動降低品質 |

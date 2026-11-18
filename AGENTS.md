@@ -1236,3 +1236,8 @@ P0 > P1 > P2
 - `v1.0.35`：完成第 16 項直播中碼率控制。新增可持久化的最低／目標／最高視訊碼率，ABR 下降不低於最低值、恢復不超過最高值，直播中調整範圍或目標會透過 video lock 套用至實際 MediaCodec；診斷同步保存三個值。
 - 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機量測不同 MediaCodec 對動態 bitrate 的接受行為。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.35` GitHub Release。Release APK SHA-256 為 `b60bf2c10c97095aeec01eaedca1cc0855ad39f099d3d573516ae00d91be9494`，Offline APK SHA-256 為 `642720d89e178855cf587913fe0dbb72e668418283868d77281a8c7c0d732028`。
+
+### 2026-11-19
+
+- `v1.0.36`：完成第 15 項硬體編碼相容性資料層。`DeviceCapabilityRepository` 會列出 H.264／H.265 硬體 encoder、surface input、寬高／FPS／碼率範圍與 CBR 能力，設定頁顯示所選 codec 的摘要，diagnostics 保存完整能力資料。runtime bitrate 仍以實際 MediaCodec `setParameters` 結果為準。
+- 驗證：`testDebugUnitTest` 195 項通過、`assembleRelease`、`assembleOffline`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 實機確認不同廠牌回報值。
