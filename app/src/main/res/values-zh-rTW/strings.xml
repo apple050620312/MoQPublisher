@@ -74,6 +74,9 @@
     <string name="stat_sent">已傳送</string>
     <string name="stat_encoder">編碼器</string>
     <string name="stat_encoder_bitrate">編碼器碼率</string>
+    <string name="stat_queue">視訊佇列</string>
+    <string name="stat_lost">遺失封包</string>
+    <string name="value_queue_age">%1$d 幀 · %2$d 毫秒</string>
     <string name="stat_codec">編碼 / 幀率</string>
     <string name="stat_unavailable">—</string>
     <string name="value_ms">%1$d ms</string>

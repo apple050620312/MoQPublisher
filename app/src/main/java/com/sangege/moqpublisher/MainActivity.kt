@@ -974,6 +974,11 @@ private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int) {
             stats.videoBitrateBps?.let { bitrate ->
                 StatItem(stringResource(R.string.stat_encoder_bitrate), stringResource(R.string.value_mbps, bitrate / 1_000_000.0), Modifier.fillMaxWidth())
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatItem(stringResource(R.string.stat_queue), stringResource(R.string.value_queue_age,
+                    stats.videoQueueDepth, stats.videoQueueAgeMs ?: 0L), Modifier.weight(1f))
+                StatItem(stringResource(R.string.stat_lost), stats.packetsLost?.toString() ?: stringResource(R.string.stat_unavailable), Modifier.weight(1f))
+            }
             Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
             stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)
