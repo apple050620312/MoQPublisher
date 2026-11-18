@@ -14,7 +14,7 @@
 | 08 | 遠端媒體驗證／OBS | 有 Subscribe-only `SubscriberVerifier`，可驗證 catalog、video、audio decode | moq.pro 接收矩陣、OBS telemetry | TESTED | verifier 編譯與 JVM 規則 | BLOCKED | 無手機、Token、OBS |
 | 09 | 主動異常警報 | 有錯誤 UI、前景通知與 diagnostics events | Alert manager、冷卻、歷史、通知與健康事件 | IMPLEMENTED | `StreamAlertManagerTest`、`StreamHealthTest` | 未驗證 | 目前使用 App 畫面與 diagnostics，背景震動／提示音尚未實測 |
 | 10 | 長時間穩定性 | 有 queue、資源 cleanup、metrics | 2／4 小時正式回歸紀錄與 leak 檢查 | NOT_STARTED | 可執行 JVM regression | BLOCKED | 需要實機與長時間環境 |
-| 11 | 開播前檢查 | MainViewModel 已驗證權限、核心、relay、codec 設定 | 統一 PASS／WARNING／ERROR preflight 報告 | IN_PROGRESS | 既有設定 tests | 未驗證 | 裝置能力需在 Android 執行 |
+| 11 | 開播前檢查 | MainViewModel 已驗證權限、核心、relay、codec 設定 | 統一 PASS／WARNING／ERROR preflight 報告 | IMPLEMENTED | `BroadcastPreflightTest` 與既有設定 tests | 未驗證 | 真實設備能力與廠牌熱度資料需在 Android 執行 |
 | 12 | 直播中靜音／增益 | 有持久 gain 與 PCM saturation | mute、gain ramp、背景通知狀態 | PARTIAL | AudioSettingsTest | 未驗證 | 尚未加入 mute 控制 |
 | 13 | 麥克風音量表 | AudioHealthMetrics 已計算 peak／靜音 | UI RMS／dBFS／peak hold | PARTIAL | AudioHealthMetricsTest | 未驗證 | 尚未公開即時 UI meter |
 | 14 | 音訊輸入設備 | AudioRecord 使用預設裝置 | AudioManager 列表、偏好與拔除處理 | NOT_STARTED | — | 未驗證 | 需要多種實體音訊裝置 |

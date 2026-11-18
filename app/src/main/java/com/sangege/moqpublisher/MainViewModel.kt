@@ -1,18 +1,32 @@
 ﻿package com.sangege.moqpublisher
 
 import android.app.Application
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaCodecList
+import android.media.MediaFormat
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.BatteryManager
+import android.os.Build
+import android.os.PowerManager
+import android.content.pm.PackageManager
 import android.util.Log
 import android.util.Size
 import androidx.camera.core.ImageProxy
 import androidx.core.content.edit
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.moq.VideoCodec
@@ -72,6 +86,8 @@ class MainViewModel internal constructor(
     val broadcastLifecycle: StateFlow<BroadcastLifecycleState> = streamer.lifecycleState
     val streamHealth: StateFlow<StreamHealthSnapshot> = streamer.healthState
     val streamAlerts: StateFlow<StreamAlertState> = streamer.alertState
+    private val _preflightReport = MutableStateFlow<BroadcastPreflightReport?>(null)
+    val preflightReport: StateFlow<BroadcastPreflightReport?> = _preflightReport.asStateFlow()
     internal val cameraEngine = session.camera
     val streamState: StateFlow<StreamState> = streamer.streamState
 
@@ -184,6 +200,10 @@ class MainViewModel internal constructor(
     fun checkAppUpdates() = appUpdates.checkForUpdates()
 
     fun setAudioMuted(muted: Boolean) = streamer.setAudioMuted(muted)
+
+    fun clearPreflightReport() {
+        _preflightReport.value = null
+    }
 
     fun downloadAppUpdate() {
         if (!streamState.value.isActive()) appUpdates.downloadUpdate()
@@ -388,6 +408,7 @@ class MainViewModel internal constructor(
         "endpoint_draft" to relayProfile.value.protocolDraft.takeIf { relayProfile.value.provider == RelayProvider.CLOUDFLARE },
         "negotiated_draft" to "not exposed by SDK 0.5.3",
         "subscriber_verification" to subscriberVerification.value,
+        "preflight" to preflightReport.value,
         "auth_configured" to authToken.value.isNotBlank(),
         "tls_verify" to tlsVerify.value,
         "codec" to videoCodec.value,
@@ -492,14 +513,11 @@ class MainViewModel internal constructor(
             _configurationError.value = UiMessage(R.string.error_stream_stopping)
             return false
         }
-        if (!coreState.value.ready) {
-            _configurationError.value = UiMessage(R.string.core_required)
-            return false
-        }
-        val validationError = validateBroadcastSettings()
-        if (validationError != null) {
-            _configurationError.value = validationError
-            diagnostics.event("configuration_error", mapOf("message" to validationError))
+        val report = runPreflight()
+        if (!report.canStart) {
+            val message = preflightError(report.errors.first().id)
+            _configurationError.value = message
+            diagnostics.event("configuration_error", mapOf("message" to message, "source" to "preflight"))
             return false
         }
 
@@ -527,6 +545,101 @@ class MainViewModel internal constructor(
         }
         return true
     }
+
+    fun runPreflight(): BroadcastPreflightReport {
+        val profile = _relayProfile.value
+        val context = getApplication<Application>()
+        val settingsError = validateBroadcastSettings()
+        val report = BroadcastPreflightPolicy.evaluate(BroadcastPreflightInput(
+            cameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED,
+            microphonePermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED,
+            notificationPermission = Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            audioEnabled = _enableAudio.value,
+            cameraAvailable = cameraAvailable(context),
+            audioAvailable = audioAvailable(),
+            encoderAvailable = encoderAvailable(),
+            resolutionFpsSupported = _availableResolutions.value.isEmpty() ||
+                _availableResolutions.value.any { it == _videoResolution.value },
+            relayConfigured = settingsError == null,
+            publishTokenConfigured = profile.provider != RelayProvider.CLOUDFLARE || CloudflareRelay.validToken(profile.publishToken),
+            subscribeTokenConfigured = profile.subscribeToken.isNotBlank(),
+            subscribeTokenRequired = false,
+            networkAvailable = networkAvailable(context),
+            moqCoreReady = coreState.value.ready,
+            batteryPercent = batteryPercent(context),
+            thermalWarning = thermalWarning(context)
+        ))
+        _preflightReport.value = report
+        diagnostics.event("broadcast_preflight", mapOf(
+            "can_start" to report.canStart,
+            "errors" to report.errors.map { it.id },
+            "warnings" to report.warnings.map { it.id },
+            "checks" to report.checks.map { "${it.id}:${it.severity}" }
+        ))
+        return report
+    }
+
+    private fun preflightError(id: PreflightCheckId): UiMessage = when (id) {
+        PreflightCheckId.CAMERA_PERMISSION, PreflightCheckId.CAMERA_AVAILABILITY -> UiMessage(R.string.error_camera)
+        PreflightCheckId.MICROPHONE_PERMISSION, PreflightCheckId.AUDIO_AVAILABILITY -> UiMessage(R.string.error_microphone_permission)
+        PreflightCheckId.ENCODER_CAPABILITY -> UiMessage(
+            R.string.error_encoder_unsupported,
+            listOf(_videoCodec.value, _videoResolution.value.width, _videoResolution.value.height, _videoFps.value)
+        )
+        PreflightCheckId.RESOLUTION_FPS -> UiMessage(R.string.error_resolution_invalid)
+        PreflightCheckId.PUBLISH_TOKEN -> UiMessage(R.string.error_cloudflare_publish_token)
+        PreflightCheckId.MOQ_CORE -> UiMessage(R.string.core_required)
+        PreflightCheckId.RELAY_CONFIGURATION -> validateBroadcastSettings() ?: UiMessage(R.string.error_relay_invalid)
+        else -> validateBroadcastSettings() ?: UiMessage(R.string.error_relay_invalid)
+    }
+
+    private fun cameraAvailable(context: Context): Boolean = runCatching {
+        context.getSystemService(CameraManager::class.java).cameraIdList.isNotEmpty()
+    }.getOrDefault(false)
+
+    private fun audioAvailable(): Boolean {
+        if (!_enableAudio.value) return true
+        val mask = if (_audioChannel.value == AudioChannel.STEREO) AudioFormat.CHANNEL_IN_STEREO else AudioFormat.CHANNEL_IN_MONO
+        return AudioRecord.getMinBufferSize(AudioSettings.SAMPLE_RATE, mask, AudioFormat.ENCODING_PCM_16BIT) > 0
+    }
+
+    private fun encoderAvailable(): Boolean = runCatching {
+        val mime = if (_videoCodec.value == "H265") MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+        val bitrate = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)?.times(1_000L) ?: return@runCatching false
+        val format = MediaFormat.createVideoFormat(mime, _videoResolution.value.width, _videoResolution.value.height).apply {
+            setInteger(MediaFormat.KEY_FRAME_RATE, _videoFps.value)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        }
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+            info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                isHardwareEncoder(info) && runCatching { info.getCapabilitiesForType(mime).isFormatSupported(format) }.getOrDefault(false)
+        }
+    }.getOrDefault(false)
+
+    private fun isHardwareEncoder(info: android.media.MediaCodecInfo): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
+        val name = info.name.lowercase()
+        return !name.startsWith("omx.google.") && !name.startsWith("c2.android.") &&
+            "ffmpeg" !in name && "sw.encoder" !in name && ".sw." !in name
+    }
+
+    private fun networkAvailable(context: Context): Boolean = runCatching {
+        val manager = context.getSystemService(ConnectivityManager::class.java)
+        val network = manager.activeNetwork ?: return@runCatching false
+        manager.getNetworkCapabilities(network)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(false)
+
+    private fun batteryPercent(context: Context): Int? = runCatching {
+        val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return@runCatching null
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        if (level >= 0 && scale > 0) (level * 100 / scale) else null
+    }.getOrNull()
+
+    private fun thermalWarning(context: Context): Boolean = Build.VERSION.SDK_INT >= 29 && runCatching {
+        context.getSystemService(PowerManager::class.java).currentThermalStatus >= PowerManager.THERMAL_STATUS_SEVERE
+    }.getOrDefault(false)
 
     private fun validateBroadcastSettings(): UiMessage? {
         if (tokenReadFailed) return UiMessage(R.string.error_token_storage)
