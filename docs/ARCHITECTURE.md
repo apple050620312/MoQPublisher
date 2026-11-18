@@ -40,6 +40,7 @@ flowchart LR
 - `HardwareVideoEncoder` 與 `SurfaceVideoEncoder` 將實際 MediaCodec 名稱保存到 `StreamState.Live`，主畫面與每秒 diagnostics 都能區分實際硬體實作。動態碼率若被 codec 拒絕，ABR 會停用並保留最後有效碼率。
 - `BroadcastRecoveryCoordinator` 以元件為單位限制恢復次數並套用指數退避。`MoqStreamer` 可重建相機綁定、MediaCodec、影片發布 worker 或 AudioRecord，而不立即結束整場直播。
 - `MoqCoreManager` 下載、驗證、選擇與快取官方相容的 native core。直播期間不替換正在使用的 native library。
+- `offline` APK 由 Gradle 從官方 `moq-ffi` AAR 產生 ABI 分層 assets。`MoqCoreManager` 在啟動時把對應 asset 安裝到 app-private 目錄，執行相同 ELF、SHA-256 與 UniFFI symbol 驗證後才設定 library override。一般 release／compact APK 維持首次啟動下載流程。
 - `AppDiagnostics`、`StreamMetrics` 與 `AudioHealthMetrics` 以受限事件歷史和每秒樣本記錄效能、傳輸、裝置與資源資訊。憑證在寫入前遮罩。
 
 ## 生命週期與執行緒

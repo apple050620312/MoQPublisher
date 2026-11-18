@@ -1218,3 +1218,8 @@ P0 > P1 > P2
 - `v1.0.32`：完成第 19 項直播畫質 Preset。新增 Data Saver、Mobile Streaming、High Quality、High FPS 內建 Preset，自訂 Preset 的命名、儲存、更新、刪除與重設，並將視訊／音訊設定分開於 Relay Profile 持久化。套用前檢查 Preset 格式與硬體 surface encoder，套用時同步 MediaCodec、CameraX、碼率、ABR、麥克風開關、聲道與音訊品質。
 - 驗證：`testDebugUnitTest` 194 項通過、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描；尚未連接 Android 裝置確認不同相機能力與 H.264／H.265 Preset 的實際開播。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.32` GitHub Release；檔案為 `MoQPublisher-1.0.32-release.apk`，SHA-256 為 `33e009cd93eecf80d8b7eeacd3c624fd33b743fe7ffe345e72b2bc034a785011`。
+
+### 2026-11-19
+
+- `v1.0.33`：完成第 20 項完整離線 APK。新增 `offline` build type，從官方 `moq-ffi` AAR 產生 arm64-v8a、armeabi-v7a 與 x86_64 core assets。`MoqCoreManager` 會在啟動時驗證 ELF、ABI、SHA-256 與 UniFFI symbols，通過後安裝到 app-private 目錄並設定 library override；一般 Release／Compact 流程維持核心下載與既有 fallback。
+- 驗證：`assembleOffline`、offline APK v2 簽章與 zipalign 通過；尚未連接 Android 實機確認離線 native library loading、三種 ABI 與首次啟動流程。

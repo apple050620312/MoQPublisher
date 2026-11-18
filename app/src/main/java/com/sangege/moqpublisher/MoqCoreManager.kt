@@ -89,21 +89,24 @@ class MoqCoreManager(context: Context) {
     }
 
     private fun restoreInstalled() {
-        val selected = runCatching { marker.openRead().bufferedReader().use { JSONObject(it.readText()) } }.getOrNull() ?: return
-        val candidates = listOfNotNull(selected, selected.optJSONObject("previous"))
-        for (candidate in candidates) {
-            val valid = runCatching {
-                val version = candidate.getString("version")
-                check(CoreUpdatePolicy.validVersion(version) && candidate.getString("api") == apiFingerprint)
-                val library = library(version)
-                CoreLibraryFiles.verifySha256(library, candidate.getString("sha256"))
-                CoreLibraryFiles.validate(library, architecture)
-                verifyAbi(library)
-                activate(candidate)
+        val selected = runCatching { marker.openRead().bufferedReader().use { JSONObject(it.readText()) } }.getOrNull()
+        if (selected != null) {
+            val candidates = listOfNotNull(selected, selected.optJSONObject("previous"))
+            for (candidate in candidates) {
+                val valid = runCatching {
+                    val version = candidate.getString("version")
+                    check(CoreUpdatePolicy.validVersion(version) && candidate.getString("api") == apiFingerprint)
+                    val library = descriptorLibrary(candidate)
+                    CoreLibraryFiles.verifySha256(library, candidate.getString("sha256"))
+                    CoreLibraryFiles.validate(library, architecture)
+                    verifyAbi(library)
+                    activate(candidate)
+                }
+                if (valid.isSuccess) return
+                Log.w("MoqCore", "Ignoring unusable cached core", valid.exceptionOrNull())
             }
-            if (valid.isSuccess) return
-            Log.w("MoqCore", "Ignoring unusable cached core", valid.exceptionOrNull())
         }
+        restoreBundled()
     }
 
     private fun activate(descriptor: JSONObject) {
@@ -111,9 +114,62 @@ class MoqCoreManager(context: Context) {
         // change it once this process can start a broadcast.
         check(active == null)
         val version = descriptor.getString("version")
-        System.setProperty("uniffi.component.moq.libraryOverride", library(version).absolutePath)
+        System.setProperty("uniffi.component.moq.libraryOverride", descriptorLibrary(descriptor).absolutePath)
         active = descriptor
         mutableState.value = CoreState(phase = CorePhase.READY, activeVersion = version, abi = architecture.abi)
+    }
+
+    /** Offline builds carry the official AAR core as an asset and install it privately. */
+    private fun restoreBundled() {
+        if (active != null) return
+        val asset = "moq-core-offline/${architecture.abi}/libmoq_ffi.so"
+        val expectedSha256 = runCatching {
+            context.assets.open("$asset.sha256").bufferedReader().use { it.readText().trim() }
+                .also { check(Regex("[0-9a-fA-F]{64}").matches(it)) }
+        }.getOrNull() ?: return
+        val target = File(root, "bundled/libmoq_ffi.so")
+        val installed = runCatching {
+            if (!target.exists()) throw IllegalStateException("bundled core is not installed")
+            CoreLibraryFiles.verifySha256(target, expectedSha256)
+            CoreLibraryFiles.validate(target, architecture)
+            verifyAbi(target)
+        }.isSuccess
+        if (!installed) {
+            val partial = File(target.parentFile, "libmoq_ffi.so.partial")
+            val copied = runCatching {
+                target.parentFile?.mkdirs()
+                context.assets.open(asset).use { input ->
+                    partial.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            check(total <= CoreLibraryFiles.MAX_LIBRARY_BYTES)
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                        check(total > 0)
+                    }
+                }
+                CoreLibraryFiles.verifySha256(partial, expectedSha256)
+                CoreLibraryFiles.validate(partial, architecture)
+                verifyAbi(partial)
+                target.delete()
+                check(partial.renameTo(target)) { "Cannot install bundled core" }
+                check(target.setReadOnly())
+            }.isSuccess
+            partial.delete()
+            if (!copied) return
+        }
+        val descriptor = JSONObject()
+            .put("version", CoreUpdatePolicy.BASE_VERSION)
+            .put("sha256", CoreLibraryFiles.sha256(target))
+            .put("api", apiFingerprint)
+            .put("path", target.absolutePath)
+            .put("bundled", true)
+        activate(descriptor)
     }
 
     private suspend fun update() {
@@ -202,7 +258,7 @@ class MoqCoreManager(context: Context) {
     }
 
     private fun cachedValid(descriptor: JSONObject) = runCatching {
-        val file = library(descriptor.getString("version"))
+        val file = descriptorLibrary(descriptor)
         check(descriptor.getString("api") == apiFingerprint)
         CoreLibraryFiles.verifySha256(file, descriptor.getString("sha256"))
         CoreLibraryFiles.validate(file, architecture)
@@ -222,6 +278,14 @@ class MoqCoreManager(context: Context) {
     private fun library(version: String): File {
         require(CoreUpdatePolicy.validVersion(version))
         return File(root, "$version/libmoq_ffi.so")
+    }
+
+    private fun descriptorLibrary(descriptor: JSONObject): File {
+        val file = descriptor.optString("path").takeIf { it.isNotBlank() }?.let(::File)
+            ?: library(descriptor.getString("version"))
+        val rootPath = root.canonicalFile.path + File.separator
+        check(file.canonicalFile.path.startsWith(rootPath)) { "Core path escapes the private core directory" }
+        return file
     }
 
     private fun saveSelected(descriptor: JSONObject) {
