@@ -1204,4 +1204,5 @@ P0 > P1 > P2
 - `v1.0.29`：新增 DeviceHealthMonitor，監測電量、Power Save、Android thermal status 與可用記憶體；低電量、熱度與記憶體壓力會進入 StreamHealth、StreamAlertManager、主畫面與背景通知，未自動改變使用者選定畫質。
 - 驗證：`testDebugUnitTest` 191 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置進行熱度、低電量與記憶體壓力實測。
 - `v1.0.30`：修復 BroadcastPreflight 將可用 H.264 surface encoder 誤判為不支援的問題。Preflight 現在使用與 `SurfaceVideoEncoder`／`HardwareVideoEncoder` 相同的色彩格式、profile、latency、B-frame、priority、bitrate mode 與 `isFormatSupported` 檢查，避免畫面出現錯誤並阻擋正常開播。
-- 驗證：`testDebugUnitTest` 191 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未在原始截圖裝置執行實機開播回歸。
+- 驗證：`testDebugUnitTest` 191 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未在原始截圖裝置執行實機開播回歸。
+- 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.30` GitHub Release；檔案為 `MoQPublisher-1.0.30-release.apk`，SHA-256 為 `6f2adab8b26109e8606805ea209838f978a8bb9ac96c0812d2dc5e49fdf49345`。
