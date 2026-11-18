@@ -1189,3 +1189,5 @@ P0 > P1 > P2
 - `v1.0.24`：完成直播中音訊控制與音量表。增益變更以每個音訊 frame 平滑 ramp，靜音同樣保留合法 Opus 時間線並更新背景通知；音量表補上 RMS、peak hold、dBFS、左右聲道峰值、削波與靜音資訊，診斷樣本同步保存並以採樣視窗重置。
 - 驗證：`testDebugUnitTest` 186 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置實測增益切換、藍牙／USB 聲道與通知呈現。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.24` GitHub Release；檔案為 `MoQPublisher-1.0.24-release.apk`，SHA-256 為 `eb5aa033bf73035558f7944973d4f035aaa1172d415cc0811cd8d3e207e89302`。
+- `v1.0.25`：新增 AudioManager 輸入設備選擇。設定頁可選系統預設、內建、耳機、USB 與 Bluetooth 麥克風，直播狀態顯示實際路由；AudioDeviceCallback 偵測拔除後清除偏好、回退系統路由並重建 AudioRecord／Opus track。
+- 驗證：`testDebugUnitTest` 188 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置實測 USB／Bluetooth 路由、拔除回退與廠牌 AudioRecord 行為。

@@ -202,6 +202,10 @@
     <string name="audio_quality_maximum">Maximum</string>
     <string name="audio_quality_option">%1$s &#8226; %2$d Kbps</string>
     <string name="audio_quality_hint">Sets the actual Opus bitrate. Higher quality uses more bandwidth. Mono fallback adjusts the bitrate automatically.</string>
+    <string name="audio_input_device">Audio input device</string>
+    <string name="audio_input_default">System default</string>
+    <string name="audio_input_device_hint">Select a built-in, wired, USB or Bluetooth microphone. If it is removed during a broadcast, the app falls back to the system route.</string>
+    <string name="audio_input_route">Input route: %1$s</string>
     <string name="mute_audio">Mute audio</string>
     <string name="unmute_audio">Unmute audio</string>
     <string name="audio_level">Peak %1$.0f%% · RMS %2$.0f%% · Peak hold %3$.0f%% · %4$.1f dBFS</string>

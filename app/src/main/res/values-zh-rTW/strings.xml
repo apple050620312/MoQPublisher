@@ -187,6 +187,10 @@
     <string name="audio_quality_maximum">最高品質</string>
     <string name="audio_quality_option">%1$s · %2$d Kbps</string>
     <string name="audio_quality_hint">實際調整 Opus 編碼碼率，品質越高越耗頻寬。降級為單聲道時也會調整對應碼率。</string>
+    <string name="audio_input_device">音訊輸入設備</string>
+    <string name="audio_input_default">系統預設</string>
+    <string name="audio_input_device_hint">可選內建、耳機、USB 或 Bluetooth 麥克風。直播中拔除時會回退到系統路由。</string>
+    <string name="audio_input_route">輸入路由：%1$s</string>
     <string name="mute_audio">靜音</string>
     <string name="unmute_audio">取消靜音</string>
     <string name="audio_level">峰值 %1$.0f%% · RMS %2$.0f%% · 峰值保持 %3$.0f%% · %4$.1f dBFS</string>

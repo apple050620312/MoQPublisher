@@ -77,7 +77,10 @@ internal object AudioSettings {
 
 data class AudioCaptureStatus(
     val requested: AudioChannel, val actual: AudioChannel, val gainPercent: Int,
-    val bitrateBps: Long = actual.bitrateBps
+    val bitrateBps: Long = actual.bitrateBps,
+    val requestedDeviceId: Int? = null,
+    val actualDeviceId: Int? = null,
+    val actualDeviceName: String? = null
 ) {
     val fellBackToMono: Boolean get() = requested == AudioChannel.STEREO && actual == AudioChannel.MONO
 }

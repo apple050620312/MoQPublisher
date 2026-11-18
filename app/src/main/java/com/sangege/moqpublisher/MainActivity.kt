@@ -121,6 +121,8 @@ fun MainScreen(viewModel: MainViewModel) {
     val audioChannel by viewModel.audioChannel.collectAsState()
     val audioGain by viewModel.audioGain.collectAsState()
     val audioQuality by viewModel.audioQuality.collectAsState()
+    val audioInputDevices by viewModel.audioInputDevices.collectAsState()
+    val audioInputDeviceId by viewModel.audioInputDeviceId.collectAsState()
     val lockLandscape by viewModel.lockLandscape.collectAsState()
     val backgroundStreaming by viewModel.backgroundStreaming.collectAsState()
     val audioCaptureStatus by viewModel.audioCaptureStatus.collectAsState()
@@ -237,6 +239,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     isResumed = true
                     hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                     hasAudioPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    viewModel.refreshAudioInputDevices()
                     // Do not replace the selected APK while returning from installation permission settings.
                     if (!pendingInstallPermission && !preparingAppInstall) viewModel.checkAppUpdates()
                     viewModel.checkCoreUpdates()
@@ -325,6 +328,8 @@ fun MainScreen(viewModel: MainViewModel) {
                 enableAudio = enableAudio, onEnableAudioChange = viewModel::setEnableAudio,
                 audioChannel = audioChannel, onAudioChannelChange = viewModel::setAudioChannel,
                 audioGain = audioGain, onAudioGainChange = viewModel::setAudioGain,
+                audioInputDevices = audioInputDevices, audioInputDeviceId = audioInputDeviceId,
+                onAudioInputDeviceChange = viewModel::setAudioInputDevice,
                 audioQuality = audioQuality, onAudioQualityChange = viewModel::setAudioQuality,
                 audioCaptureStatus = audioCaptureStatus,
                 tlsVerify = tlsVerify, onTlsVerifyChange = viewModel::setTlsVerify,
@@ -907,6 +912,10 @@ private fun StreamControls(
         if (it.fellBackToMono) StatusNotice(stringResource(R.string.stereo_fallback))
         Text(stringResource(R.string.audio_capture_summary, channelDisplayName(it.actual), it.gainPercent, it.bitrateBps / 1000),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        it.actualDeviceName?.let { name ->
+            Text(stringResource(R.string.audio_input_route, name),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         AudioLevelMeter(viewModel)
         if (state is StreamState.Live) {
             val muted by viewModel.audioMuted.collectAsState()
@@ -1053,6 +1062,7 @@ fun SettingsScreen(
     enableAudio: Boolean, onEnableAudioChange: (Boolean) -> Unit,
     audioChannel: AudioChannel, onAudioChannelChange: (AudioChannel) -> Unit,
     audioGain: Int, onAudioGainChange: (Int) -> Unit, audioCaptureStatus: AudioCaptureStatus?,
+    audioInputDevices: List<AudioInputDevice>, audioInputDeviceId: Int, onAudioInputDeviceChange: (Int) -> Unit,
     audioQuality: AudioQuality, onAudioQualityChange: (AudioQuality) -> Unit,
     tlsVerify: Boolean, onTlsVerifyChange: (Boolean) -> Unit,
     language: AppLanguage, onLanguageChange: (AppLanguage) -> Unit,
@@ -1130,6 +1140,13 @@ fun SettingsScreen(
         }
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)
+            SelectionDropdown(
+                stringResource(R.string.audio_input_device), audioInputDeviceId,
+                listOf(DEFAULT_AUDIO_INPUT_DEVICE_ID to stringResource(R.string.audio_input_default)) +
+                    audioInputDevices.map { it.id to it.name },
+                onAudioInputDeviceChange, enableAudio
+            )
+            SupportingText(stringResource(R.string.audio_input_device_hint))
             ChoiceOptions(stringResource(R.string.audio_channel), audioChannel, listOf(
                 AudioChannel.MONO to stringResource(R.string.audio_mono), AudioChannel.STEREO to stringResource(R.string.audio_stereo)),
                 onAudioChannelChange, editable && enableAudio)

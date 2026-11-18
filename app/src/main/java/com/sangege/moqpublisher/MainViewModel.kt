@@ -54,6 +54,7 @@ private const val KEY_ADAPTIVE_BITRATE = "adaptive_bitrate"
 private const val KEY_AUDIO_CHANNEL = "audio_channel"
 private const val KEY_AUDIO_GAIN = "audio_gain_percent"
 private const val KEY_AUDIO_QUALITY = "audio_quality"
+private const val KEY_AUDIO_INPUT_DEVICE_ID = "audio_input_device_id"
 private const val KEY_LOCK_LANDSCAPE = "lock_landscape"
 private const val KEY_BACKGROUND_STREAMING = "background_streaming"
 private const val KEY_LANGUAGE = "app_language"
@@ -115,6 +116,13 @@ class MainViewModel internal constructor(
     val audioGain: StateFlow<Int> = _audioGain.asStateFlow()
     private val _audioQuality = MutableStateFlow(AudioQuality.fromPreference(prefs.getString(KEY_AUDIO_QUALITY, null)))
     val audioQuality = _audioQuality.asStateFlow()
+    private val audioInputRepository = AudioInputDeviceRepository(application)
+    private val _audioInputDevices = MutableStateFlow(audioInputRepository.list())
+    val audioInputDevices: StateFlow<List<AudioInputDevice>> = _audioInputDevices.asStateFlow()
+    private val _audioInputDeviceId = MutableStateFlow(
+        prefs.getInt(KEY_AUDIO_INPUT_DEVICE_ID, DEFAULT_AUDIO_INPUT_DEVICE_ID)
+    )
+    val audioInputDeviceId: StateFlow<Int> = _audioInputDeviceId.asStateFlow()
     private val _lockLandscape = MutableStateFlow(prefs.getBoolean(KEY_LOCK_LANDSCAPE, false))
     val lockLandscape = _lockLandscape.asStateFlow()
     private val _backgroundStreaming = MutableStateFlow(prefs.getBoolean(KEY_BACKGROUND_STREAMING, true))
@@ -190,6 +198,7 @@ class MainViewModel internal constructor(
     val availableResolutions: StateFlow<List<Size>> = _availableResolutions.asStateFlow()
 
     init {
+        streamer.setAudioInputDevice(_audioInputDeviceId.value)
         refreshAvailableResolutions(_useFrontCamera.value)
         syncCamera()
         viewModelScope.launch { session.cameraError.collect { if (it != null) _configurationError.value = it } }
@@ -200,6 +209,23 @@ class MainViewModel internal constructor(
     fun checkAppUpdates() = appUpdates.checkForUpdates()
 
     fun setAudioMuted(muted: Boolean) = streamer.setAudioMuted(muted)
+
+    fun refreshAudioInputDevices() {
+        _audioInputDevices.value = audioInputRepository.list()
+        if (_audioInputDeviceId.value != DEFAULT_AUDIO_INPUT_DEVICE_ID &&
+            _audioInputDevices.value.none { it.id == _audioInputDeviceId.value }) {
+            setAudioInputDevice(DEFAULT_AUDIO_INPUT_DEVICE_ID)
+        }
+    }
+
+    fun setAudioInputDevice(id: Int) {
+        val normalized = if (id == DEFAULT_AUDIO_INPUT_DEVICE_ID || _audioInputDevices.value.any { it.id == id }) id
+        else DEFAULT_AUDIO_INPUT_DEVICE_ID
+        _audioInputDeviceId.value = normalized
+        prefs.edit { putInt(KEY_AUDIO_INPUT_DEVICE_ID, normalized) }
+        streamer.setAudioInputDevice(normalized)
+        clearConfigurationError()
+    }
 
     fun clearPreflightReport() {
         _preflightReport.value = null

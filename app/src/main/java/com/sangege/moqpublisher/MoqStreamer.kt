@@ -4,10 +4,15 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat as AndroidAudioFormat
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import android.os.Process
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import android.util.Log
 import androidx.camera.core.ImageProxy
@@ -153,10 +158,13 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var configuredAudioChannel = AudioChannel.MONO
     private var configuredAudioQuality = AudioQuality.STANDARD
     private var configuredAudioGain = AudioSettings.DEFAULT_GAIN
+    @Volatile
+    private var configuredAudioDeviceId = DEFAULT_AUDIO_INPUT_DEVICE_ID
     private var configuredAudioEnabled = false
     private var configuredProvider = RelayProvider.MOQ_PRO
     private var configuredDraft: Int? = null
     private var audioTrackCounter = 0
+    private var audioDeviceCallback: AudioDeviceCallback? = null
     internal var beforeVideoEncoderClose: () -> Unit = {}
     internal var requestCameraRecovery: () -> Unit = {}
     internal val canStart: Boolean get() = synchronized(lifecycleLock) { !closed && broadcastJob == null }
@@ -520,7 +528,22 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                 producer = audio
 
                 val activeRecord = createdRecord
-                _audioCaptureStatus.value = AudioCaptureStatus(configuredAudioChannel, actualChannel, configuredAudioGain, actualBitrate)
+                val routed = activeRecord.routedDevice
+                val requestedDeviceId = configuredAudioDeviceId.takeUnless { it == DEFAULT_AUDIO_INPUT_DEVICE_ID }
+                val actualDeviceId = routed.id.takeIf { it != 0 }
+                val actualDeviceName = routed.productName?.toString()?.takeIf { it.isNotBlank() }
+                if (requestedDeviceId != null && actualDeviceId != null && requestedDeviceId != actualDeviceId) {
+                    diagnostics.event("audio_device_fallback", mapOf(
+                        "requested_id" to requestedDeviceId, "actual_id" to actualDeviceId,
+                        "actual_name" to actualDeviceName
+                    ))
+                }
+                _audioCaptureStatus.value = AudioCaptureStatus(
+                    configuredAudioChannel, actualChannel, configuredAudioGain, actualBitrate,
+                    requestedDeviceId = requestedDeviceId,
+                    actualDeviceId = actualDeviceId,
+                    actualDeviceName = actualDeviceName
+                )
                 diagnostics.event("audio_started", mapOf(
                     "sample_rate" to sampleRate, "frame_bytes" to frameBytes,
                     "channel_requested" to configuredAudioChannel, "channel_actual" to actualChannel,
@@ -530,6 +553,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     "audio_thread_priority" to Process.THREAD_PRIORITY_AUDIO
                 ))
                 audioRecord = activeRecord
+                registerAudioDeviceWatcher()
                 startAudioPublisher(audio)
                 publisherStarted = true
                 val captureExecutor = Executors.newSingleThreadExecutor { audioThread(it, "MoqAudioCapture") }
@@ -656,6 +680,10 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             maxOf(minimum, AudioSettings.frameBytes(channel) * 4)
         )
         try {
+            val preferred = AudioInputDeviceRepository(context).find(configuredAudioDeviceId)
+            if (preferred != null && !record.setPreferredDevice(preferred)) {
+                diagnostics.event("audio_device_preference_rejected", mapOf("device_id" to preferred.id))
+            }
             check(record.state == AudioRecord.STATE_INITIALIZED && record.channelCount == channel.count &&
                 record.sampleRate == AudioSettings.SAMPLE_RATE) { "Microphone format unavailable: $channel" }
             record.startRecording()
@@ -666,6 +694,53 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             record.release()
             throw e
         }
+    }
+
+    fun setAudioInputDevice(id: Int) {
+        val normalized = if (id == DEFAULT_AUDIO_INPUT_DEVICE_ID) DEFAULT_AUDIO_INPUT_DEVICE_ID else id
+        configuredAudioDeviceId = normalized
+        if (configuredAudioEnabled && isBroadcasting.get()) {
+            val preferred = AudioInputDeviceRepository(context).find(normalized)
+            audioRecord?.let { record ->
+                if (preferred != null) record.setPreferredDevice(preferred)
+            }
+            scheduleMediaRecovery(
+                RecoveryComponent.AUDIO_CAPTURE,
+                IllegalStateException("Audio input device preference changed"),
+                R.string.error_audio_capture
+            )
+        }
+        diagnostics.event("audio_input_device_selected", mapOf("device_id" to normalized.takeUnless { it == DEFAULT_AUDIO_INPUT_DEVICE_ID }))
+    }
+
+    private fun registerAudioDeviceWatcher() {
+        if (audioDeviceCallback != null) return
+        val manager = context.getSystemService(AudioManager::class.java)
+        val callback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                diagnostics.event("audio_devices_added", mapOf("count" to addedDevices.size))
+            }
+
+            override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                val removed = removedDevices.map { it.id }
+                if (configuredAudioDeviceId != DEFAULT_AUDIO_INPUT_DEVICE_ID && configuredAudioDeviceId in removed) {
+                    configuredAudioDeviceId = DEFAULT_AUDIO_INPUT_DEVICE_ID
+                    diagnostics.event("audio_input_device_removed", mapOf("device_id" to removed))
+                    if (isBroadcasting.get()) scheduleMediaRecovery(
+                        RecoveryComponent.AUDIO_CAPTURE,
+                        IllegalStateException("Selected audio input device was removed"),
+                        R.string.error_audio_capture
+                    )
+                } else diagnostics.event("audio_devices_removed", mapOf("count" to removedDevices.size))
+            }
+        }
+        manager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+        audioDeviceCallback = callback
+    }
+
+    private fun unregisterAudioDeviceWatcher() {
+        audioDeviceCallback?.let { context.getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(it) }
+        audioDeviceCallback = null
     }
 
     fun onVideoFrame(imageProxy: ImageProxy) {
@@ -1145,6 +1220,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     }
 
     private fun stopAudioCaptureLocked() {
+        unregisterAudioDeviceWatcher()
         runCatching { audioRecord?.stop() }
         audioCaptureExecutor?.shutdownNow()
         runCatching { audioCaptureFuture?.get(750L, TimeUnit.MILLISECONDS) }
