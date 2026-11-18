@@ -18,6 +18,12 @@ data class RelayProfile(
     val subscribeToken: String = "",
     val broadcastName: String = "twcam.hang"
 ) {
+    /** Returns the exact publication path. An empty Cloudflare name stays empty for createBroadcast(""). */
+    fun publicationPath(moqProPath: String): String = when (provider) {
+        RelayProvider.CLOUDFLARE -> broadcastName.trim()
+        RelayProvider.MOQ_PRO -> moqProPath.trim()
+    }
+
     fun publishUrl(): String = CloudflareRelay.url(protocolDraft, publishToken)
     fun subscribeUrl(): String = CloudflareRelay.url(protocolDraft, subscribeToken)
 

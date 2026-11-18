@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AudioHealthMetricsTest {
+    @Test
+    fun exposesPeakRmsAndClippingLevel() {
+        val metrics = AudioHealthMetrics { 0L }
+        val pcm = byteArrayOf(0, 0, 0xff.toByte(), 0x7f, 0, 0x80.toByte())
+        metrics.captured(pcm)
+        val level = metrics.level()
+        assertTrue(level.peakPercent > 99f)
+        assertTrue(level.rmsPercent > 50f)
+        assertTrue(level.clipping)
+    }
     @Test fun revealsPublisherBurstsEvenWhenAveragePacketRateIsCorrect() {
         var now = 0L
         val metrics = AudioHealthMetrics { now }

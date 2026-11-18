@@ -68,8 +68,20 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     private val _streamState = MutableStateFlow<StreamState>(StreamState.Idle)
     val streamState: StateFlow<StreamState> = _streamState.asStateFlow()
+    private val _lifecycleState = MutableStateFlow(BroadcastLifecycleState())
+    val lifecycleState: StateFlow<BroadcastLifecycleState> = _lifecycleState.asStateFlow()
     private val _audioCaptureStatus = MutableStateFlow<AudioCaptureStatus?>(null)
     val audioCaptureStatus: StateFlow<AudioCaptureStatus?> = _audioCaptureStatus.asStateFlow()
+    private val _audioMuted = MutableStateFlow(false)
+    val audioMuted: StateFlow<Boolean> = _audioMuted.asStateFlow()
+    private val _audioLevel = MutableStateFlow(AudioLevel(0f, 0f, 0f, false))
+    val audioLevel: StateFlow<AudioLevel> = _audioLevel.asStateFlow()
+    private val healthEvaluator = StreamHealthEvaluator()
+    private val _healthState = MutableStateFlow(StreamHealthSnapshot())
+    val healthState: StateFlow<StreamHealthSnapshot> = _healthState.asStateFlow()
+    private val alertManager = StreamAlertManager()
+    private val _alertState = MutableStateFlow(StreamAlertState())
+    val alertState: StateFlow<StreamAlertState> = _alertState.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val lifecycleLock = Any()
@@ -102,6 +114,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var audioCaptureExecutor: ExecutorService? = null
     private var audioCaptureFuture: Future<*>? = null
     private val audioHealth = AudioHealthMetrics()
+    private val audioMute = AtomicBoolean(false)
 
     @Volatile
     private var broadcastProducer: BroadcastProducer? = null
@@ -127,6 +140,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
     private var configuredAudioChannel = AudioChannel.MONO
     private var configuredAudioQuality = AudioQuality.STANDARD
     private var configuredAudioGain = AudioSettings.DEFAULT_GAIN
+    private var configuredAudioEnabled = false
     private var configuredProvider = RelayProvider.MOQ_PRO
     private var configuredDraft: Int? = null
     internal var beforeVideoEncoderClose: () -> Unit = {}
@@ -168,12 +182,19 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             configuredAudioChannel = audioChannel
             configuredAudioQuality = audioQuality
             configuredAudioGain = AudioSettings.normalizeGain(audioGainPercent)
+            configuredAudioEnabled = enableAudio
+            audioMute.set(false)
+            _audioMuted.value = false
             configuredProvider = provider
             configuredDraft = protocolDraft
             _audioCaptureStatus.value = null
+            _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
             videoBitrateControl = VideoBitrateControl(configuredBitrate, if (enableAudio) audioQuality.bitrateBps(audioChannel) else 0L)
             bitrateAdaptationEnabled = adaptiveBitrate
             _streamState.value = StreamState.Connecting
+            transitionLifecycle(BroadcastLifecycleEvent.StartRequested)
+            _healthState.value = healthEvaluator.reset()
+            _alertState.value = alertManager.reset()
             broadcastJob = scope.launch {
                 runBroadcast(
                     relayUrl = relayUrl.trim(),
@@ -198,6 +219,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             monitor = DefaultNetworkMonitor(context) { handovers.trySend(Unit) }
             var reconnectBase = 0L
             while (currentCoroutineContext().isActive) {
+                transitionLifecycle(BroadcastLifecycleEvent.Connecting)
                 coroutineScope {
                     val connection = async {
                         runConnectedBroadcast(relayUrl, streamPath, tlsVerify, enableAudio, reconnectBase)
@@ -212,6 +234,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         (current as? StreamState.Live)?.copy(phase = RelayConnectionPhase.RECONNECTING)
                             ?: StreamState.Live(phase = RelayConnectionPhase.RECONNECTING, endpointDraft = configuredDraft)
                     }
+                    transitionLifecycle(BroadcastLifecycleEvent.Reconnecting)
                     connection.cancelAndJoin()
                 }
                 reconnectBase = ((_streamState.value as? StreamState.Live)?.reconnectCount ?: reconnectBase) + 1
@@ -220,6 +243,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         } catch (e: TimeoutCancellationException) {
             terminalState = StreamState.Error(UiMessage(R.string.error_relay_timeout))
             _streamState.value = terminalState
+            transitionLifecycle(BroadcastLifecycleEvent.Failed(terminalState.message))
             diagnostics.event("relay_connect_timeout")
         } catch (e: CancellationException) {
             diagnostics.event("broadcast_cancelled")
@@ -230,10 +254,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             diagnostics.error("broadcast_error", e)
             terminalState = StreamState.Error(formatError(e, R.string.error_broadcast))
             _streamState.value = terminalState
+            transitionLifecycle(BroadcastLifecycleEvent.Failed(terminalState.message))
         } finally {
             monitor?.close()
             handovers.close()
             cleanup()
+            transitionLifecycle(BroadcastLifecycleEvent.CleanedUp)
             synchronized(lifecycleLock) {
                 if (terminalState is StreamState.Idle) _streamState.value = StreamState.Idle
                 broadcastJob = null
@@ -289,6 +315,8 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
             // announce() updates the local origin. It is not a relay acceptance or decode ACK.
             Log.d(TAG, "Local broadcast advertised; waiting for media demand.")
+            transitionLifecycle(BroadcastLifecycleEvent.Announced)
+            transitionLifecycle(BroadcastLifecycleEvent.SubscriberDemand(false))
             diagnostics.event("broadcast_advertised", mapOf("epoch" to moq.epoch()))
             startStatsMonitoring(moq)
             launch {
@@ -308,6 +336,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                     RelayConnectionPolicy.reconnected(current, epoch, reconnectBase) else current
                             }
                             if (epoch != lastEpoch) {
+                                transitionLifecycle(BroadcastLifecycleEvent.Recovered)
                                 videoPublishQueue?.waitForKeyframe()
                                 synchronized(videoLock) {
                                     hardwareEncoder?.requestKeyframe(((System.nanoTime() - startNanoTime) / 1000L).coerceAtLeast(0))
@@ -318,7 +347,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                         }
                         ConnectionStatus.DISCONNECTED, ConnectionStatus.MIGRATING -> _streamState.update { current ->
                             if (current is StreamState.Live) current.copy(phase = RelayConnectionPhase.RECONNECTING) else current
-                        }
+                        }.also { transitionLifecycle(BroadcastLifecycleEvent.Reconnecting) }
                     }
                     delay(RelayConnectionPolicy.SESSION_STATUS_POLL_MS)
                 }
@@ -409,6 +438,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                     }
                     diagnostics.metrics.published(packet.timestampUs, startNanoTime, packet.accessUnit.data.size)
                     val requested = videoDemand?.isUsed() == true
+                    transitionLifecycle(BroadcastLifecycleEvent.SubscriberDemand(requested))
                     _streamState.update { current ->
                         if (current is StreamState.Live) RelayConnectionPolicy.mediaWritten(current, requested) else current
                     }
@@ -496,9 +526,12 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
                             if (readTotal == frameBytes && isBroadcasting.get()) {
                                 framesRead += AudioSettings.SAMPLES_PER_FRAME
-                                AudioSettings.applyGain(buffer, configuredAudioGain)
+                                AudioSettings.applyGain(buffer, if (audioMute.get()) 0 else configuredAudioGain)
                                 val stamp = timeline.next((System.nanoTime() - startNanoTime) / 1000L)
                                 audioHealth.captured(buffer)
+                                if ((framesRead / AudioSettings.SAMPLES_PER_FRAME) % 5L == 0L) {
+                                    _audioLevel.value = audioHealth.level()
+                                }
                                 if (framesRead % AudioSettings.SAMPLE_RATE == 0L &&
                                     activeRecord.getTimestamp(hardwareTimestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
                                     audioHealth.hardwareClock(framesRead, hardwareTimestamp.framePosition, hardwareTimestamp.nanoTime)
@@ -814,7 +847,45 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
                                 "audio_queue_depth" to (audioPublishQueue?.depth() ?: 0))
                         }
                         val frameMetrics = diagnostics.metrics.sample()
-                        diagnostics.event("metrics", frameMetrics + audioHealth.sample() + encoderStatus + diagnostics.performance() + mapOf(
+                        val audioMetrics = audioHealth.sample()
+                        val health = healthEvaluator.evaluate(StreamHealthInput(
+                            active = true,
+                            relayPhase = (_streamState.value as? StreamState.Live)?.phase,
+                            videoDemanded = encoderStatus["video_used"] == true,
+                            cameraAgeMs = metricLong(frameMetrics["last_camera_age_ms"]),
+                            encoderAgeMs = metricLong(frameMetrics["last_encoded_age_ms"]),
+                            publishedAgeMs = metricLong(frameMetrics["last_video_age_ms"]),
+                            audioExpected = configuredAudioEnabled,
+                            audioAgeMs = metricLong(frameMetrics["last_audio_age_ms"] ?: audioMetrics["audio_capture_interval_max_ms"]),
+                            targetFps = configuredFramerate,
+                            publishedFps = frameMetrics["published_fps"]?.toString()?.toDoubleOrNull(),
+                            queueDepth = videoQueueDepth
+                        ))
+                        val previousHealth = _healthState.value
+                        if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {
+                            _healthState.value = health
+                        }
+                        val alerts = alertManager.update(health, System.currentTimeMillis())
+                        val previousAlerts = _alertState.value
+                        if (alerts.active.map { it.type } != previousAlerts.active.map { it.type } ||
+                            alerts.history.size != previousAlerts.history.size) {
+                            _alertState.value = alerts
+                        }
+                        if (health.level != previousHealth.level || health.reasons != previousHealth.reasons) {
+                            diagnostics.event("stream_health", mapOf(
+                                "level" to health.level,
+                                "reasons" to health.reasons.map { it.name }
+                            ))
+                        }
+                        if (alerts.active != previousAlerts.active) {
+                            diagnostics.event("stream_alerts", mapOf(
+                                "active" to alerts.active.map { it.type.name },
+                                "history_size" to alerts.history.size
+                            ))
+                        }
+                        diagnostics.event("metrics", frameMetrics + audioMetrics + encoderStatus + diagnostics.performance() + mapOf(
+                            "health" to health.level,
+                            "health_reasons" to health.reasons.map { it.name },
                             "epoch" to epoch, "rtt_ms" to rttMs, "send_kbps" to sendKbps,
                             "network_capacity_bps" to stats.estimatedSendRateBps, "transport_bytes_sent" to stats.bytesSent,
                             "transport_bytes_received" to stats.bytesReceived, "transport_bytes_lost" to stats.bytesLost,
@@ -845,6 +916,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
 
     fun stopBroadcast() {
         diagnostics.event("broadcast_stop_requested")
+        transitionLifecycle(BroadcastLifecycleEvent.StopRequested)
         val job = synchronized(lifecycleLock) {
             isBroadcasting.set(false)
             broadcastJob
@@ -857,10 +929,19 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         // schedule another cleanup that could close the next broadcast's resources.
     }
 
+    fun setAudioMuted(muted: Boolean) {
+        if (!configuredAudioEnabled || !isBroadcasting.get()) return
+        audioMute.set(muted)
+        _audioMuted.value = muted
+        diagnostics.event("audio_mute_changed", mapOf("muted" to muted))
+    }
+
     private fun failBroadcast(error: Throwable, fallbackMessage: Int = R.string.error_audio_capture) {
         Log.e(TAG, "Broadcast pipeline failed: ${DiagnosticRedactor.redact(error.stackTraceToString())}")
         diagnostics.error("pipeline_error", error)
-        _streamState.value = StreamState.Error(formatError(error, fallbackMessage))
+        val message = formatError(error, fallbackMessage)
+        _streamState.value = StreamState.Error(message)
+        transitionLifecycle(BroadcastLifecycleEvent.Failed(message))
         stopBroadcast()
     }
 
@@ -922,6 +1003,7 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
             audioRecord = null
             stopAudioPublisher()
             _audioCaptureStatus.value = null
+            _audioLevel.value = AudioLevel(0f, 0f, 0f, false)
         }
 
         synchronized(videoLock) {
@@ -967,5 +1049,19 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
         return if (configuredProvider == RelayProvider.CLOUDFLARE && resource == R.string.error_broadcast)
             UiMessage(R.string.error_cloudflare_connection) else UiMessage(resource)
+    }
+
+    private fun metricLong(value: Any?): Long? = when (value) {
+        is Number -> value.toLong()
+        else -> value?.toString()?.toDoubleOrNull()?.toLong()
+    }
+
+    private fun transitionLifecycle(event: BroadcastLifecycleEvent) {
+        val previous = _lifecycleState.value
+        val next = BroadcastLifecyclePolicy.reduce(previous, event)
+        if (next != previous) {
+            _lifecycleState.value = next
+            diagnostics.event("broadcast_phase", mapOf("phase" to next.phase, "generation" to next.generation))
+        }
     }
 }

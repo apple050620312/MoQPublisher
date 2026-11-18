@@ -1,5 +1,7 @@
 package com.sangege.moqpublisher
 
+data class AudioLevel(val peakPercent: Float, val rmsPercent: Float, val peakHoldPercent: Float, val clipping: Boolean)
+
 /** Distinguishes microphone gaps, publisher bursts, silence, and network-independent queueing. */
 internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nanoTime) {
     private class Cadence {
@@ -30,6 +32,10 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
     private var captured = 0
     private var silent = 0
     private var peak = 0
+    private var rmsSumSquares = 0.0
+    private var rmsSamples = 0L
+    private var peakHold = 0
+    private var clipping = false
     private var bytes = 0L
     private var groups = 0
     private var queueMax = 0
@@ -38,7 +44,8 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
 
     @Synchronized fun reset() {
         capture = Cadence(); publication = Cadence()
-        captured = 0; silent = 0; peak = 0; bytes = 0; groups = 0; queueMax = 0
+        captured = 0; silent = 0; peak = 0; rmsSumSquares = 0.0; rmsSamples = 0
+        peakHold = 0; clipping = false; bytes = 0; groups = 0; queueMax = 0
         unreadMs = null; timestampAgeMs = null
     }
 
@@ -49,10 +56,21 @@ internal class AudioHealthMetrics(private val nanoTime: () -> Long = System::nan
         for (i in 0 until pcm.size - 1 step 2) {
             val sample = ((pcm[i].toInt() and 255) or (pcm[i + 1].toInt() shl 8)).toShort().toInt()
             framePeak = maxOf(framePeak, kotlin.math.abs(sample))
+            rmsSumSquares += sample.toDouble() * sample.toDouble()
+            rmsSamples++
+            if (kotlin.math.abs(sample) >= Short.MAX_VALUE) clipping = true
         }
         if (framePeak == 0) silent++
         peak = maxOf(peak, framePeak)
+        peakHold = maxOf(peakHold, framePeak)
     }
+
+    @Synchronized fun level(): AudioLevel = AudioLevel(
+        peakPercent = peak * 100f / Short.MAX_VALUE,
+        rmsPercent = if (rmsSamples == 0L) 0f else (kotlin.math.sqrt(rmsSumSquares / rmsSamples) * 100.0 / Short.MAX_VALUE).toFloat(),
+        peakHoldPercent = peakHold * 100f / Short.MAX_VALUE,
+        clipping = clipping
+    )
 
     @Synchronized fun published(size: Int, groupClosed: Boolean) {
         publication.observe(nanoTime())

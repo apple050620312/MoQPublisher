@@ -65,6 +65,14 @@ class RelayProfileTest {
             assertFalse(bad, CloudflareRelay.validBroadcast(bad))
     }
 
+    @Test fun unnamedCloudflarePublicationKeepsAnEmptyPathForThePublisher() {
+        val cloudflare = profile().copy(broadcastName = "  ")
+        assertEquals("", cloudflare.publicationPath("legacy/camera"))
+
+        val moqPro = RelayProfile(provider = RelayProvider.MOQ_PRO)
+        assertEquals("legacy/camera", moqPro.publicationPath(" legacy/camera "))
+    }
+
     @Test fun nonHangPublicationDoesNotEnableHangViewingLinks() {
         val p = profile().copy(broadcastName = "space/camera")
         assertFalse(p.canShare())

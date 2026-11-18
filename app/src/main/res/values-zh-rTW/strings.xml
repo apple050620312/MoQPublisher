@@ -143,6 +143,16 @@
     <string name="update_core_incompatible">MoQ 核心 %1$s 已發布，需要先更新 App。目前繼續使用相容的核心。</string>
     <string name="update_open_about">查看更新</string>
     <string name="update_later">稍後</string>
+    <string name="health_warning">直播品質下降，正在監控媒體管線。</string>
+    <string name="health_critical">直播媒體管線可能停滯，請查看診斷。</string>
+    <string name="health_recovering">直播正在恢復中。</string>
+    <string name="health_reconnecting">正在重新連線 Relay。</string>
+    <string name="health_camera_stalled">相機影格暫停更新。</string>
+    <string name="health_encoder_stalled">視訊編碼器輸出暫停。</string>
+    <string name="health_publish_stalled">視訊發布暫停。</string>
+    <string name="health_audio_stalled">音訊擷取暫停。</string>
+    <string name="health_low_fps">發布 FPS 低於目標。</string>
+    <string name="health_queue_pressure">視訊佇列壓力過高。</string>
     <string name="about">關於</string>
     <string name="about_description">MoQ Publisher 版本、App 更新與已下載的 MoQ 核心。</string>
     <string name="core_title">MoQ 核心</string>
@@ -177,6 +187,9 @@
     <string name="audio_quality_maximum">最高品質</string>
     <string name="audio_quality_option">%1$s · %2$d Kbps</string>
     <string name="audio_quality_hint">實際調整 Opus 編碼碼率，品質越高越耗頻寬。降級為單聲道時也會調整對應碼率。</string>
+    <string name="mute_audio">靜音</string>
+    <string name="unmute_audio">取消靜音</string>
+    <string name="audio_level">音訊峰值 %1$.0f%% · RMS %2$.0f%%</string>
     <string name="broadcast_notification_channel">直播通知</string>
     <string name="broadcast_notification_title">MoQ 直播</string>
     <string name="broadcast_notification_live">正在傳送相機與已啟用的音訊，點此返回 App。</string>
@@ -209,7 +222,7 @@
     <string name="error_token_storage">無法安全讀取或儲存連線 Token。請重新輸入；若持續發生，請重新開啟 App。不會改用明文儲存。</string>
     <string name="error_cloudflare_publish_token">請輸入 Cloudflare 的 Publish + Subscribe 連線 Token，不要包含網址、Bearer 前綴或查詢參數。</string>
     <string name="error_cloudflare_draft">此 Cloudflare Profile 使用 MoQ Transport Draft 18。</string>
-    <string name="error_cloudflare_broadcast">請輸入合法的 Cloudflare namespace 路徑，不可包含空白、空路徑、查詢參數或相對路徑。</string>
+    <string name="error_cloudflare_broadcast">直播名稱可留空以傳送未命名推流；若填寫，請輸入合法的 Cloudflare namespace 路徑，不可包含空路徑段、空白、查詢參數或相對路徑。</string>
     <string name="error_cloudflare_connection">Cloudflare Draft 18 連線失敗。請檢查連線 Token、Relay 權限、網路與核心相容性。連線成功不代表 Hang 影音已成功發佈。</string>
     <string name="error_relay_auth">Relay 拒絕驗證或權限。請確認連線 Token 有效、未過期，且允許所需操作。</string>
     <string name="error_relay_protocol">Relay 協定失敗：%1$s／%2$s（代碼 %3$s）。此操作未獲接受，尚未確認影音送達；請查看匯出的診斷。</string>

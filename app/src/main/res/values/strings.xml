@@ -158,6 +158,16 @@
     <string name="update_core_incompatible">MoQ core %1$s has been released and requires an app update first. The compatible core remains in use.</string>
     <string name="update_open_about">View updates</string>
     <string name="update_later">Later</string>
+    <string name="health_warning">Stream quality is reduced. Monitoring the media pipeline.</string>
+    <string name="health_critical">The stream media pipeline may be stalled. Check diagnostics.</string>
+    <string name="health_recovering">The stream is recovering.</string>
+    <string name="health_reconnecting">Reconnecting to the relay.</string>
+    <string name="health_camera_stalled">Camera frames have stalled.</string>
+    <string name="health_encoder_stalled">Video encoder output has stalled.</string>
+    <string name="health_publish_stalled">Video publishing has stalled.</string>
+    <string name="health_audio_stalled">Audio capture has stalled.</string>
+    <string name="health_low_fps">Published FPS is below the target.</string>
+    <string name="health_queue_pressure">Video queue pressure is high.</string>
     <string name="about">About</string>
     <string name="about_description">MoQ Publisher version, app updates and the downloaded MoQ core.</string>
     <string name="core_title">MoQ core</string>
@@ -192,6 +202,9 @@
     <string name="audio_quality_maximum">Maximum</string>
     <string name="audio_quality_option">%1$s &#8226; %2$d Kbps</string>
     <string name="audio_quality_hint">Sets the actual Opus bitrate. Higher quality uses more bandwidth. Mono fallback adjusts the bitrate automatically.</string>
+    <string name="mute_audio">Mute audio</string>
+    <string name="unmute_audio">Unmute audio</string>
+    <string name="audio_level">Audio peak %1$.0f%% · RMS %2$.0f%%</string>
     <string name="broadcast_notification_channel">Live broadcasts</string>
     <string name="broadcast_notification_title">MoQ broadcast</string>
     <string name="broadcast_notification_live">Broadcasting camera and enabled audio. Tap to return to the app.</string>
@@ -224,7 +237,7 @@
     <string name="error_token_storage">Could not securely load or save the connection token. Re-enter it; if the error persists, restart the app. No plaintext fallback is used.</string>
     <string name="error_cloudflare_publish_token">Enter a Cloudflare Publish + Subscribe connection token, without a URL, Bearer prefix or query parameters.</string>
     <string name="error_cloudflare_draft">This Cloudflare profile requires MoQ Transport Draft 18.</string>
-    <string name="error_cloudflare_broadcast">Enter a valid Cloudflare namespace path, without empty segments, spaces, query parameters or relative path segments.</string>
+    <string name="error_cloudflare_broadcast">Leave the broadcast name blank for an unnamed publication, or enter a valid Cloudflare namespace path without empty segments, spaces, query parameters or relative path segments.</string>
     <string name="error_cloudflare_connection">Cloudflare Draft 18 connection failed. Check the connection token, relay permissions, network and compatible core. A connected session alone does not verify Hang publication.</string>
     <string name="error_relay_auth">Relay rejected authentication or permissions. Check that the connection token is valid, unexpired and permits the required operation.</string>
     <string name="error_relay_protocol">Relay protocol failure: %1$s / %2$s (code %3$s). This operation was not accepted; media delivery is unverified. See the exported diagnostics.</string>

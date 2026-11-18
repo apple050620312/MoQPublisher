@@ -47,6 +47,16 @@ class BroadcastService : Service() {
             }
         }
         scope.launch {
+            session.streamer.healthState.collect { health ->
+                if (started && health.level != StreamHealthLevel.IDLE &&
+                    health.level != StreamHealthLevel.HEALTHY) {
+                    getSystemService(NotificationManager::class.java).notify(
+                        NOTIFICATION_ID, notification(session.streamer.streamState.value, health)
+                    )
+                }
+            }
+        }
+        scope.launch {
             while (true) {
                 delay(10 * 60 * 1_000L)
                 if (started) wakeLock?.acquire(15 * 60 * 1_000L)
@@ -70,7 +80,7 @@ class BroadcastService : Service() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
                 (config.enableAudio && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED))
                 throw SecurityException("Broadcast camera/microphone permission was revoked")
-            val notice = notification(StreamState.Connecting)
+            val notice = notification(StreamState.Connecting, session.streamer.healthState.value)
             if (Build.VERSION.SDK_INT >= 30) startForeground(NOTIFICATION_ID, notice,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or (if (config.enableAudio) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0))
             else startForeground(NOTIFICATION_ID, notice)
@@ -109,7 +119,7 @@ class BroadcastService : Service() {
         return createConfigurationContext(Configuration(resources.configuration).apply { setLocale(Locale.forLanguageTag(tag)) })
     }
 
-    private fun notification(state: StreamState): Notification {
+    private fun notification(state: StreamState, health: StreamHealthSnapshot = StreamHealthSnapshot()): Notification {
         val localized = localizedContext()
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(
@@ -118,14 +128,21 @@ class BroadcastService : Service() {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, BroadcastService::class.java).setAction(ACTION_STOP)
             .putExtra(EXTRA_GENERATION, session.generation), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val baseText = localized.getString(when (state) {
+            StreamState.Connecting -> R.string.connecting_relay
+            is StreamState.Live -> state.phase.statusResource()
+            else -> R.string.broadcast_notification_live
+        })
+        val healthText = when (health.level) {
+            StreamHealthLevel.CRITICAL -> localized.getString(R.string.health_critical)
+            StreamHealthLevel.WARNING -> localized.getString(R.string.health_warning)
+            StreamHealthLevel.RECOVERING -> localized.getString(R.string.health_recovering)
+            else -> null
+        }
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_broadcast_notification)
             .setContentTitle(localized.getString(R.string.broadcast_notification_title))
-            .setContentText(localized.getString(when (state) {
-                StreamState.Connecting -> R.string.connecting_relay
-                is StreamState.Live -> state.phase.statusResource()
-                else -> R.string.broadcast_notification_live
-            }))
+            .setContentText(healthText ?: baseText)
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE)
             .addAction(0, localized.getString(R.string.stop_broadcast), stop).build()
     }

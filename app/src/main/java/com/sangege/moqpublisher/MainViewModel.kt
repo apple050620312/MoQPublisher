@@ -69,6 +69,9 @@ class MainViewModel internal constructor(
     val cameraControls = session.controls
     val cameraControlState: StateFlow<CameraControlState> = cameraControls.state
     val streamer = session.streamer
+    val broadcastLifecycle: StateFlow<BroadcastLifecycleState> = streamer.lifecycleState
+    val streamHealth: StateFlow<StreamHealthSnapshot> = streamer.healthState
+    val streamAlerts: StateFlow<StreamAlertState> = streamer.alertState
     internal val cameraEngine = session.camera
     val streamState: StateFlow<StreamState> = streamer.streamState
 
@@ -101,6 +104,8 @@ class MainViewModel internal constructor(
     private val _backgroundStreaming = MutableStateFlow(prefs.getBoolean(KEY_BACKGROUND_STREAMING, true))
     val backgroundStreaming = _backgroundStreaming.asStateFlow()
     val audioCaptureStatus: StateFlow<AudioCaptureStatus?> = streamer.audioCaptureStatus
+    val audioMuted: StateFlow<Boolean> = streamer.audioMuted
+    val audioLevel: StateFlow<AudioLevel> = streamer.audioLevel
 
     private val _relayUrl = MutableStateFlow(
         prefs.getString(KEY_RELAY_URL, DEFAULT_RELAY_URL) ?: DEFAULT_RELAY_URL
@@ -177,6 +182,8 @@ class MainViewModel internal constructor(
     fun checkCoreUpdates() = core.checkForUpdates()
 
     fun checkAppUpdates() = appUpdates.checkForUpdates()
+
+    fun setAudioMuted(muted: Boolean) = streamer.setAudioMuted(muted)
 
     fun downloadAppUpdate() {
         if (!streamState.value.isActive()) appUpdates.downloadUpdate()
@@ -476,8 +483,7 @@ class MainViewModel internal constructor(
         return RelayUrl.maskJwt(getEffectiveRelayUrl())
     }
 
-    fun getEffectiveStreamPath(): String = if (_relayProfile.value.provider == RelayProvider.CLOUDFLARE)
-        _relayProfile.value.broadcastName.trim() else _streamPath.value.trim()
+    fun getEffectiveStreamPath(): String = _relayProfile.value.publicationPath(_streamPath.value)
 
     /** Starts a broadcast only when the current settings are usable. */
     fun startBroadcast(): Boolean {

@@ -139,6 +139,7 @@ fun MainScreen(viewModel: MainViewModel) {
     val configurationError by viewModel.configurationError.collectAsState()
     val coreState by viewModel.coreState.collectAsState()
     val appUpdateState by viewModel.appUpdateState.collectAsState()
+    val streamHealth by viewModel.streamHealth.collectAsState()
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var openAboutOnEntry by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by rememberSaveable {
@@ -337,6 +338,13 @@ fun MainScreen(viewModel: MainViewModel) {
                 isStreaming = active, onBack = { showSettings = false }, openAboutOnEntry = openAboutOnEntry
             )
         }
+        if (!showSettings && streamHealth.level != StreamHealthLevel.IDLE && streamHealth.level != StreamHealthLevel.HEALTHY) {
+            StreamHealthNotice(
+                snapshot = streamHealth,
+                modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp)
+            )
+        }
         updateReminder?.takeIf { isResumed && !pendingInstallPermission && !preparingAppInstall }?.let { reminder ->
             UpdateReminderDialog(
                 reminder = reminder,
@@ -367,6 +375,28 @@ fun MainScreen(viewModel: MainViewModel) {
             )
         }
     }
+}
+
+@Composable
+private fun StreamHealthNotice(snapshot: StreamHealthSnapshot, modifier: Modifier = Modifier) {
+    val message = when {
+        StreamHealthReason.RECONNECTING in snapshot.reasons -> R.string.health_reconnecting
+        StreamHealthReason.ENCODER_STALLED in snapshot.reasons -> R.string.health_encoder_stalled
+        StreamHealthReason.PUBLISH_STALLED in snapshot.reasons -> R.string.health_publish_stalled
+        StreamHealthReason.CAMERA_STALLED in snapshot.reasons -> R.string.health_camera_stalled
+        StreamHealthReason.AUDIO_STALLED in snapshot.reasons -> R.string.health_audio_stalled
+        StreamHealthReason.LOW_FPS in snapshot.reasons -> R.string.health_low_fps
+        StreamHealthReason.QUEUE_PRESSURE in snapshot.reasons -> R.string.health_queue_pressure
+        snapshot.level == StreamHealthLevel.RECOVERING -> R.string.health_recovering
+        snapshot.level == StreamHealthLevel.CRITICAL -> R.string.health_critical
+        else -> R.string.health_warning
+    }
+    StatusNotice(
+        message = stringResource(message),
+        error = snapshot.level == StreamHealthLevel.CRITICAL,
+        loading = snapshot.level == StreamHealthLevel.RECOVERING || StreamHealthReason.RECONNECTING in snapshot.reasons,
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -877,9 +907,32 @@ private fun StreamControls(
         if (it.fellBackToMono) StatusNotice(stringResource(R.string.stereo_fallback))
         Text(stringResource(R.string.audio_capture_summary, channelDisplayName(it.actual), it.gainPercent, it.bitrateBps / 1000),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AudioLevelMeter(viewModel)
+        if (state is StreamState.Live) {
+            val muted by viewModel.audioMuted.collectAsState()
+            OutlinedButton(onClick = { viewModel.setAudioMuted(!muted) }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(if (muted) R.string.unmute_audio else R.string.mute_audio))
+            }
+        }
     }
     if (showBroadcastButton) BroadcastButton(state, onToggleBroadcast)
     DiagnosticsExportButton(viewModel, Modifier.fillMaxWidth().heightIn(min = 48.dp))
+}
+
+@Composable
+private fun AudioLevelMeter(viewModel: MainViewModel) {
+    val level by viewModel.audioLevel.collectAsState()
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.audio_level, level.peakPercent, level.rmsPercent),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (level.clipping) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        LinearProgressIndicator(
+            progress = { (level.peakPercent / 100f).coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
 }
 
 @Composable

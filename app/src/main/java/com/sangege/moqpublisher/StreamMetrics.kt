@@ -15,6 +15,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
     private val counts = LongArray(Counter.entries.size)
     private var sinceNs = nanoTime()
     private var lastCameraNs: Long? = null
+    private var lastEncodedNs: Long? = null
     private var lastVideoNs: Long? = null
     private var lastAudioNs: Long? = null
     private var handoffTotalUs = 0L
@@ -44,6 +45,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
         counts.fill(0)
         sinceNs = nanoTime()
         lastCameraNs = null
+        lastEncodedNs = null
         lastVideoNs = null
         lastAudioNs = null
         handoffTotalUs = 0L
@@ -58,6 +60,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
         val now = nanoTime()
         when (counter) {
             Counter.CAMERA -> lastCameraNs = now
+            Counter.ENCODED -> lastEncodedNs = now
             Counter.AUDIO_PACKET -> lastAudioNs = now
             else -> Unit
         }
@@ -105,6 +108,7 @@ internal class StreamMetrics(private val nanoTime: () -> Long = System::nanoTime
             "video_handoff_avg_ms" to if (count(Counter.PUBLISHED) > 0) handoffTotalUs / count(Counter.PUBLISHED) / 1_000.0 else null,
             "video_handoff_max_ms" to if (count(Counter.PUBLISHED) > 0) handoffMaxUs / 1_000.0 else null,
             "last_camera_age_ms" to age(lastCameraNs),
+            "last_encoded_age_ms" to age(lastEncodedNs),
             "last_video_age_ms" to age(lastVideoNs),
             "last_audio_age_ms" to age(lastAudioNs)
         )
