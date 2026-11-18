@@ -139,7 +139,6 @@ internal class SurfaceVideoEncoder private constructor(
                         if (caps.encoderCapabilities?.isBitrateModeSupported(MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true)
                             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
                     }
-                    check(caps.isFormatSupported(format))
                     codec = MediaCodec.createByCodecName(info.name)
                     codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                     surface = codec.createInputSurface()

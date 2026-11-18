@@ -1206,3 +1206,8 @@ P0 > P1 > P2
 - `v1.0.30`：修復 BroadcastPreflight 將可用 H.264 surface encoder 誤判為不支援的問題。Preflight 現在使用與 `SurfaceVideoEncoder`／`HardwareVideoEncoder` 相同的色彩格式、profile、latency、B-frame、priority、bitrate mode 與 `isFormatSupported` 檢查，避免畫面出現錯誤並阻擋正常開播。
 - 驗證：`testDebugUnitTest` 191 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未在原始截圖裝置執行實機開播回歸。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.30` GitHub Release；檔案為 `MoQPublisher-1.0.30-release.apk`，SHA-256 為 `6f2adab8b26109e8606805ea209838f978a8bb9ac96c0812d2dc5e49fdf49345`。
+
+### 2026-11-19
+
+- `v1.0.31`：修復 `v1.0.30` 對 H.264／H.265 的硬體能力誤判。預檢不再以含 optional MediaCodec keys 的 `isFormatSupported()` 探測格式，也不以相機能力清單阻擋解析度／幀率，保留使用者選定的 codec。`SurfaceVideoEncoder` 與 `HardwareVideoEncoder` 改由實際 `MediaCodec.configure()` 作為最後判斷，讓裝置可使用原本可用的 H.264 與 H.265 組合。
+- 驗證：`testDebugUnitTest`、`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease` 通過；尚未連接 Android 裝置確認原截圖裝置的 H.264／H.265 開播與任意解析度／幀率組合。

@@ -590,8 +590,12 @@ class MainViewModel internal constructor(
             cameraAvailable = cameraAvailable(context),
             audioAvailable = audioAvailable(),
             encoderAvailable = encoderAvailable(),
-            resolutionFpsSupported = _availableResolutions.value.isEmpty() ||
-                _availableResolutions.value.any { it == _videoResolution.value },
+            // CameraX may choose the nearest supported sensor mode. The actual
+            // camera size and MediaCodec configuration are validated when the
+            // stream encoder is opened, so a stale capability list must not
+            // block an otherwise valid user selection here.
+            resolutionFpsSupported = _videoResolution.value.width >= 2 &&
+                _videoResolution.value.height >= 2 && _videoFps.value in SUPPORTED_FPS,
             relayConfigured = settingsError == null,
             publishTokenConfigured = profile.provider != RelayProvider.CLOUDFLARE || CloudflareRelay.validToken(profile.publishToken),
             subscribeTokenConfigured = profile.subscribeToken.isNotBlank(),
@@ -636,40 +640,17 @@ class MainViewModel internal constructor(
     }
 
     private fun encoderAvailable(): Boolean = runCatching {
-        val mime = if (_videoCodec.value == "H265") MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
-        val bitrate = VideoBitrateSettings.parseKbps(_videoBitrateKbps.value)?.times(1_000L) ?: return@runCatching false
+        val codecName = _videoCodec.value
+        val mime = if (codecName == "H265") MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
         MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
             if (!info.isEncoder || !info.supportedTypes.any { it.equals(mime, ignoreCase = true) } || !isHardwareEncoder(info)) return@any false
             runCatching {
                 val capabilities = info.getCapabilitiesForType(mime)
-                val color = when {
-                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in capabilities.colorFormats ->
-                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
-                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible in capabilities.colorFormats ->
-                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
-                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar in capabilities.colorFormats ->
-                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
-                    android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar in capabilities.colorFormats ->
-                        android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-                    else -> null
-                } ?: return@runCatching false
-                val format = MediaFormat.createVideoFormat(mime, _videoResolution.value.width, _videoResolution.value.height).apply {
-                    setInteger(MediaFormat.KEY_COLOR_FORMAT, color)
-                    setInteger(MediaFormat.KEY_FRAME_RATE, _videoFps.value)
-                    setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-                    setInteger(MediaFormat.KEY_PRIORITY, 0)
-                    if (Build.VERSION.SDK_INT >= 26) setInteger(MediaFormat.KEY_LATENCY, 0)
-                    if (Build.VERSION.SDK_INT >= 29) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
-                    val profile = if (_videoCodec.value == "H265") MediaCodecInfo.CodecProfileLevel.HEVCProfileMain
-                    else MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline
-                    if (capabilities.profileLevels.any { it.profile == profile }) setInteger(MediaFormat.KEY_PROFILE, profile)
-                    if (capabilities.encoderCapabilities?.isBitrateModeSupported(
-                            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR) == true) {
-                        setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-                    }
-                }
-                capabilities.isFormatSupported(format)
+                // The normal CameraX path feeds a MediaCodec input surface.
+                // Do not call isFormatSupported here. Vendor implementations
+                // often reject a probe format with optional keys even though
+                // configure() accepts the same requested stream settings.
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface in capabilities.colorFormats
             }.getOrDefault(false)
         }
     }.getOrDefault(false)

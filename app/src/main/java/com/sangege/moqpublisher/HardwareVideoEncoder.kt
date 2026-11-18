@@ -272,7 +272,6 @@ internal class HardwareVideoEncoder private constructor(
                             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
                         }
                     }
-                    check(capabilities.isFormatSupported(format)) { "Unsupported resolution or frame rate" }
                     encoder = MediaCodec.createByCodecName(candidate.name)
                     encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                     encoder.start()
