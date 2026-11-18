@@ -971,6 +971,9 @@ private fun LiveStats(stats: StreamState.Live, codec: String, fps: Int) {
             stats.encoderName?.let { name ->
                 StatItem(stringResource(R.string.stat_encoder), name, Modifier.fillMaxWidth())
             }
+            stats.videoBitrateBps?.let { bitrate ->
+                StatItem(stringResource(R.string.stat_encoder_bitrate), stringResource(R.string.value_mbps, bitrate / 1_000_000.0), Modifier.fillMaxWidth())
+            }
             Text(stringResource(R.string.stat_reconnects, stats.reconnectCount), style = MaterialTheme.typography.bodySmall)
             stats.endpointDraft?.let { Text(stringResource(R.string.stat_endpoint_draft, it), style = MaterialTheme.typography.bodySmall) }
             Text(stringResource(R.string.publishing_not_decode_verified), style = MaterialTheme.typography.bodySmall)
@@ -1134,12 +1137,12 @@ fun SettingsScreen(
             OutlinedTextField(value = videoBitrateKbps, onValueChange = { onVideoBitrateChange(it.take(32)) },
                 label = { Text(stringResource(R.string.target_bitrate)) },
                 supportingText = { Text(stringResource(if (bitrateValid) R.string.bitrate_hint else R.string.error_bitrate_invalid)) },
-                isError = !bitrateValid, enabled = editable, singleLine = true, shape = MaterialTheme.shapes.small,
+                isError = !bitrateValid, enabled = true, singleLine = true, shape = MaterialTheme.shapes.small,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }), modifier = Modifier.fillMaxWidth())
             SettingSwitch(stringResource(R.string.adaptive_bitrate),
                 stringResource(if (adaptiveBitrate) R.string.adaptive_bitrate_on else R.string.adaptive_bitrate_off),
-                adaptiveBitrate, onAdaptiveBitrateChange, editable)
+                adaptiveBitrate, onAdaptiveBitrateChange, true)
         }
         SettingCard(stringResource(R.string.audio_settings), stringResource(R.string.audio_settings_description)) {
             SettingSwitch(stringResource(R.string.broadcast_audio), stringResource(R.string.broadcast_audio_hint), enableAudio, onEnableAudioChange, editable)

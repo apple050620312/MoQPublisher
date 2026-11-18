@@ -1195,3 +1195,5 @@ P0 > P1 > P2
 - `v1.0.26`：直播狀態與儀表板顯示實際選用的硬體 MediaCodec 名稱，diagnostics 每秒保存 encoder name；保留 codec 不支援動態碼率時停用 ABR 的安全降級。
 - 驗證：`testDebugUnitTest` 188 項通過；`assembleRelease`、`assembleDebugAndroidTest`、`lintRelease`（0 error）、UTF-8/XML 掃描、APK v2 簽章與 zipalign 檢查通過。尚未連接 Android 裝置比較不同廠牌 encoder 名稱與動態碼率行為。
 - 已以本機 `publish-release.ps1` 建立並上傳 `v1.0.26` GitHub Release；檔案為 `MoQPublisher-1.0.26-release.apk`，SHA-256 為 `ba5b17ed3370a838bf0402be567b4c44f4147f9f07ea05dc013bd754760e2cf4`。
+- `v1.0.27`：支援直播中修改 target bitrate 與 ABR 開關。ABR ceiling 會即時更新，關閉 ABR 時嘗試套用 target，codec 拒絕 runtime bitrate 變更時保留最後有效值並寫入 diagnostics；儀表板新增 encoder bitrate。
+- 驗證：`testDebugUnitTest` 189 項通過；release APK、Android 測試編譯、lint、UTF-8/XML、簽章與 zipalign 將在本版本發布前重新確認。尚未連接 Android 裝置實測各廠牌 MediaCodec runtime bitrate 行為。

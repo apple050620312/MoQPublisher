@@ -1187,6 +1187,33 @@ class MoqStreamer(private val context: Context, private val diagnostics: AppDiag
         }
     }
 
+    fun setVideoBitrate(bitrateBps: Long) {
+        val normalized = bitrateBps.coerceIn(VideoBitrateSettings.MIN_BPS, Int.MAX_VALUE.toLong())
+        configuredBitrate = normalized
+        videoBitrateControl?.setCeiling(normalized)
+        if (isBroadcasting.get()) {
+            synchronized(videoLock) {
+                if (!bitrateAdaptationEnabled) {
+                    runCatching { hardwareEncoder?.setBitrate(normalized) }
+                        .onSuccess { diagnostics.event("video_bitrate_manual_changed", mapOf("bitrate_bps" to normalized)) }
+                        .onFailure { diagnostics.error("video_bitrate_manual_change_failed", it) }
+                }
+            }
+        }
+    }
+
+    fun setAdaptiveBitrate(enabled: Boolean) {
+        bitrateAdaptationEnabled = enabled
+        if (isBroadcasting.get()) {
+            synchronized(videoLock) {
+                if (!enabled) runCatching { hardwareEncoder?.setBitrate(configuredBitrate) }
+                    .onSuccess { diagnostics.event("video_bitrate_adaptation_disabled", mapOf("bitrate_bps" to configuredBitrate)) }
+                    .onFailure { diagnostics.error("video_bitrate_manual_change_failed", it) }
+            }
+        }
+        diagnostics.event("video_bitrate_adaptation", mapOf("enabled" to enabled))
+    }
+
     private fun failBroadcast(error: Throwable, fallbackMessage: Int = R.string.error_audio_capture) {
         Log.e(TAG, "Broadcast pipeline failed: ${DiagnosticRedactor.redact(error.stackTraceToString())}")
         diagnostics.error("pipeline_error", error)

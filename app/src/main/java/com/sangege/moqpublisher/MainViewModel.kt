@@ -397,12 +397,14 @@ class MainViewModel internal constructor(
 
     fun setVideoBitrateKbps(value: String) {
         _videoBitrateKbps.value = value
+        VideoBitrateSettings.parseKbps(value)?.let(streamer::setVideoBitrate)
         clearConfigurationError()
         prefs.edit { putString(KEY_VIDEO_BITRATE, value) }
     }
 
     fun setAdaptiveBitrate(enabled: Boolean) {
         _adaptiveBitrate.value = enabled
+        streamer.setAdaptiveBitrate(enabled)
         clearConfigurationError()
         prefs.edit { putBoolean(KEY_ADAPTIVE_BITRATE, enabled) }
     }

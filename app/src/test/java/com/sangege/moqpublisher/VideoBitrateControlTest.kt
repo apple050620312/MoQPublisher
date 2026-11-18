@@ -54,4 +54,13 @@ class VideoBitrateControlTest {
         val control = VideoBitrateControl(2_500_000L, 64_000L)
         assertEquals(100_000L, control.update(0uL))
     }
+
+    @Test
+    fun changingTheCeilingBoundsFutureAdaptationWithoutExceedingIt() {
+        val control = VideoBitrateControl(8_000_000L, 0L)
+        control.setCeiling(2_000_000L)
+        assertTrue(control.currentBps <= 2_000_000L)
+        repeat(20) { control.update(100_000_000uL) }
+        assertEquals(2_000_000L, control.currentBps)
+    }
 }

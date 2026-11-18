@@ -1,12 +1,18 @@
 package com.sangege.moqpublisher
 
 /** Leaves transport/audio headroom; drops promptly and recovers gradually. */
-internal class VideoBitrateControl(private val ceilingBps: Long, private val audioBps: Long) {
+internal class VideoBitrateControl(private var ceilingBps: Long, private val audioBps: Long) {
     init {
         require(ceilingBps > 0 && audioBps >= 0)
     }
     var currentBps = ceilingBps
         private set
+
+    fun setCeiling(value: Long) {
+        require(value > 0)
+        ceilingBps = value
+        currentBps = currentBps.coerceAtMost(value)
+    }
 
     private var smoothedCapacityBps: Double? = null
 
